@@ -1,0 +1,199 @@
+import { randomUUID } from 'node:crypto';
+
+export class PollError extends Error {
+  constructor(message, status = 400) { super(message); this.status = status; }
+}
+export const normalize = value => value.normalize('NFKC').trim().toLocaleLowerCase('ru');
+const requireThat = (condition, message, status) => { if (!condition) throw new PollError(message, status); };
+function validatePresetName(value) {
+  requireThat(typeof value === 'string' && value.trim().length > 0 && value.trim().length <= 50, 'Название шаблона должно содержать от 1 до 50 символов.');
+  return value.trim();
+}
+export function validateDraft(input) {
+  requireThat(input && typeof input === 'object', 'Некорректный опрос.');
+  requireThat(typeof input.question === 'string' && input.question.trim().length > 0 && input.question.trim().length <= 100, 'Вопрос должен содержать от 1 до 100 символов.');
+  requireThat(Array.isArray(input.options) && input.options.length >= 2 && input.options.length <= 6, 'Добавьте от 2 до 6 вариантов.');
+  const keywords = new Set();
+  const options = input.options.map((option, index) => {
+    requireThat(option && typeof option.name === 'string' && option.name.trim().length > 0 && option.name.trim().length <= 40, `Заполните название варианта ${index + 1} (до 40 символов).`);
+    requireThat(typeof option.word === 'string', `Заполните ключевое слово ${index + 1}.`);
+    const word = normalize(option.word);
+    requireThat(word.length > 0 && word.length <= 24 && !/\s/u.test(word), 'Ключевое слово: до 24 символов, без пробелов.');
+    requireThat(!keywords.has(word), 'Ключевые слова должны различаться.');
+    keywords.add(word);
+    return { id: String(index + 1), name: option.name.trim(), word };
+  });
+  requireThat(Number.isInteger(input.duration) && input.duration >= 10 && input.duration <= 3600, 'Длительность — от 10 до 3600 секунд.');
+  requireThat(typeof input.secret === 'boolean' && typeof input.allowChange === 'boolean', 'Некорректные настройки опроса.');
+  requireThat(input.showOverlay === undefined || typeof input.showOverlay === 'boolean', 'Некорректный режим отображения.');
+  requireThat(input.source === undefined || ['test', 'twitch'].includes(input.source), 'Некорректный источник голосов.');
+  return { question: input.question.trim(), options, duration: input.duration, secret: input.secret, allowChange: input.allowChange, showOverlay: input.showOverlay ?? true, source: input.source ?? 'test' };
+}
+export function initialState() {
+  return {
+    schema: 1, revision: 0, draftRevision: 0,
+    draft: { question: 'Во что играем дальше?', options: [{ id: '1', name: 'Minecraft', word: 'майн' }, { id: '2', name: 'Valorant', word: 'вало' }, { id: '3', name: 'Hollow Knight', word: 'холлоу' }], duration: 60, secret: false, allowChange: false, showOverlay: true, source: 'test' },
+    presets: [],
+    poll: null,
+  };
+}
+export function validateStoredState(state) {
+  requireThat(state?.schema === 1 && Number.isInteger(state.revision) && state.revision >= 0 && Number.isInteger(state.draftRevision) && state.draftRevision >= 0, 'Формат файла состояния не поддерживается.');
+  state.draft = validateDraft(state.draft);
+  state.presets ??= [];
+  requireThat(Array.isArray(state.presets) && state.presets.length <= 30, 'Повреждена библиотека шаблонов.');
+  const presetIds = new Set();
+  state.presets = state.presets.map(preset => {
+    requireThat(preset && typeof preset.id === 'string' && !presetIds.has(preset.id), 'Повреждены идентификаторы шаблонов.');
+    presetIds.add(preset.id);
+    return { id: preset.id, name: validatePresetName(preset.name), draft: validateDraft(preset.draft), createdAt: Number.isFinite(preset.createdAt) ? preset.createdAt : 0, updatedAt: Number.isFinite(preset.updatedAt) ? preset.updatedAt : 0 };
+  });
+  if (state.poll) {
+    const p = state.poll;
+    validateDraft(p);
+    p.source ??= 'test';
+    p.showOverlay ??= true;
+    requireThat(p.source !== 'twitch' || typeof p.broadcasterId === 'string', 'Повреждён канал опроса.');
+    requireThat(typeof p.id === 'string' && ['running', 'ended'].includes(p.status) && Number.isFinite(p.deadline) && typeof p.visible === 'boolean' && Number.isFinite(p.startedAt), 'Повреждены данные опроса.');
+    requireThat(Array.isArray(p.voters) && Array.isArray(p.events) && p.events.every(e => typeof e === 'string'), 'Повреждены данные голосов.');
+    const counts = p.options.map(() => 0), users = new Set();
+    for (const entry of p.voters) {
+      requireThat(Array.isArray(entry) && entry.length === 2 && typeof entry[0] === 'string' && !users.has(entry[0]), 'Повреждены данные зрителей.');
+      const index = p.options.findIndex(o => o.id === entry[1]);
+      requireThat(index >= 0, 'Голос ссылается на неизвестный вариант.');
+      users.add(entry[0]); counts[index]++;
+    }
+    requireThat(p.options.every((o, i) => Number.isInteger(o.votes) && o.votes === counts[i]), 'Нарушена целостность счётчиков голосов.');
+  }
+  return state;
+}
+export function publicState(state, now = Date.now()) {
+  const result = structuredClone(state);
+  if (result.poll) { delete result.poll.voters; delete result.poll.events; }
+  result.serverNow = now;
+  return result;
+}
+export function applyCommand(state, command, now = Date.now()) {
+  requireThat(command && typeof command.type === 'string', 'Неизвестная команда.');
+  const next = structuredClone(state);
+  let changed = false;
+  let outcome = 'ok';
+  const p = next.poll;
+  // Deadline is authoritative, including commands arriving between timer ticks.
+  if (p?.status === 'running' && now >= p.deadline) { p.status = 'ended'; p.endedAt = p.deadline; changed = true; }
+  switch (command.type) {
+    case 'tick': break;
+    case 'save-draft':
+    case 'start': {
+      requireThat(command.draftRevision === next.draftRevision, 'Опрос изменён в другой панели. Загрузите актуальную версию.', 409);
+      requireThat(next.poll?.status !== 'running', 'Сначала завершите текущий опрос.', 409);
+      const draft = validateDraft(command.draft);
+      next.draft = draft;
+      next.draftRevision++;
+      if (command.type === 'start') {
+        requireThat(draft.source !== 'twitch' || typeof command.broadcasterId === 'string' && command.broadcasterId.length > 0, 'Сначала подключите Twitch.');
+        next.poll = { ...structuredClone(draft), broadcasterId: draft.source === 'twitch' ? command.broadcasterId : null, id: randomUUID(), status: 'running', visible: draft.showOverlay, startedAt: now, deadline: now + draft.duration * 1000, endedAt: null, options: draft.options.map(o => ({ ...o, votes: 0 })), voters: [], events: [] };
+      }
+      changed = true;
+      break;
+    }
+    case 'preset-create': {
+      requireThat(next.presets.length < 30, 'Можно сохранить не больше 30 шаблонов.');
+      const draft = validateDraft(command.draft);
+      next.presets.push({ id: randomUUID(), name: validatePresetName(command.name), draft, createdAt: now, updatedAt: now });
+      changed = true;
+      break;
+    }
+    case 'preset-update': {
+      const preset = next.presets.find(item => item.id === command.presetId);
+      requireThat(preset, 'Шаблон уже удалён.', 409);
+      if (command.name !== undefined) preset.name = validatePresetName(command.name);
+      if (command.draft !== undefined) preset.draft = validateDraft(command.draft);
+      requireThat(command.name !== undefined || command.draft !== undefined, 'Нет изменений для шаблона.');
+      preset.updatedAt = now; changed = true;
+      break;
+    }
+    case 'preset-delete': {
+      const index = next.presets.findIndex(item => item.id === command.presetId);
+      requireThat(index >= 0, 'Шаблон уже удалён.', 409);
+      next.presets.splice(index, 1); changed = true;
+      break;
+    }
+    case 'preset-move': {
+      requireThat(command.direction === -1 || command.direction === 1, 'Некорректное перемещение шаблона.');
+      const index = next.presets.findIndex(item => item.id === command.presetId);
+      requireThat(index >= 0, 'Шаблон уже удалён.', 409);
+      const target = index + command.direction;
+      if (target >= 0 && target < next.presets.length) {
+        [next.presets[index], next.presets[target]] = [next.presets[target], next.presets[index]]; changed = true;
+      }
+      break;
+    }
+    case 'preset-apply': {
+      requireThat(command.draftRevision === next.draftRevision, 'Опрос изменён в другой панели. Загрузите актуальную версию.', 409);
+      requireThat(next.poll?.status !== 'running', 'Сначала завершите текущий опрос.', 409);
+      const preset = next.presets.find(item => item.id === command.presetId);
+      requireThat(preset, 'Шаблон уже удалён.', 409);
+      next.draft = structuredClone(preset.draft); next.draftRevision++; changed = true;
+      break;
+    }
+    case 'settings-import': {
+      requireThat(command.draftRevision === next.draftRevision, 'Опрос изменён в другой панели. Загрузите актуальную версию.', 409);
+      requireThat(!next.poll, 'Сначала закройте текущий опрос.', 409);
+      const settings = command.settings;
+      requireThat(settings && typeof settings === 'object' && settings.schema === 1 && settings.app === 'projectCHAT', 'Этот файл настроек не поддерживается.');
+      requireThat(Array.isArray(settings.presets) && settings.presets.length <= 30, 'В файле должно быть не больше 30 шаблонов.');
+      next.draft = validateDraft(settings.draft);
+      next.presets = settings.presets.map(preset => ({
+        id: randomUUID(),
+        name: validatePresetName(preset?.name),
+        draft: validateDraft(preset?.draft),
+        createdAt: now,
+        updatedAt: now,
+      }));
+      next.draftRevision++;
+      changed = true;
+      break;
+    }
+    case 'finish':
+    case 'extend':
+    case 'visibility':
+    case 'vote':
+    case 'clear': {
+      requireThat(p && command.pollId === p.id, 'Этот опрос уже сменился. Обновите панель.', 409);
+      if (command.type === 'visibility') {
+        requireThat(typeof command.visible === 'boolean', 'Некорректная видимость.');
+        changed ||= p.visible !== command.visible;
+        p.visible = command.visible;
+      } else if (command.type === 'clear') {
+        requireThat(p.status !== 'running', 'Сначала завершите текущий опрос.', 409);
+        next.poll = null; changed = true;
+      } else if (command.type === 'finish') {
+        if (p.status === 'running') { p.status = 'ended'; p.endedAt = now; changed = true; }
+      } else if (command.type === 'extend') {
+        requireThat(p.status === 'running', 'Опрос уже завершён.', 409);
+        requireThat(p.deadline + 30000 - p.startedAt <= 7200000, 'Максимальная длительность с продлениями — 2 часа.');
+        p.deadline += 30000; changed = true;
+      } else {
+        if (p.status !== 'running') { outcome = 'closed'; break; }
+        if ((command.source ?? 'test') !== (p.source ?? 'test')) { outcome = 'wrong-source'; break; }
+        if (p.source === 'twitch' && (command.broadcasterId !== p.broadcasterId || !Number.isFinite(command.sentAt) || command.sentAt < p.startedAt || command.sentAt >= p.deadline)) { outcome = 'wrong-channel-or-time'; break; }
+        requireThat(typeof command.viewerId === 'string' && command.viewerId.length > 0 && command.viewerId.length <= 128 && typeof command.eventId === 'string' && command.eventId.length > 0 && command.eventId.length <= 128 && typeof command.message === 'string' && command.message.length <= 500, 'Некорректное сообщение.');
+        if (p.events.includes(command.eventId)) { outcome = 'duplicate-event'; break; }
+        const option = p.options.find(o => o.word === normalize(command.message));
+        if (!option) { outcome = 'unmatched'; break; }
+        // Remember no-op matches too, so their redelivery cannot undo a later choice.
+        p.events.push(command.eventId); changed = true;
+        const existing = p.voters.find(entry => entry[0] === command.viewerId);
+        if (existing && (!p.allowChange || existing[1] === option.id)) { outcome = 'already-voted'; break; }
+        if (existing) { p.options.find(o => o.id === existing[1]).votes--; existing[1] = option.id; }
+        else p.voters.push([command.viewerId, option.id]);
+        option.votes++; outcome = existing ? 'changed' : 'counted';
+      }
+      break;
+    }
+    default: throw new PollError('Неизвестная команда.');
+  }
+  if (changed) next.revision++;
+  return { state: changed ? next : state, changed, outcome };
+}

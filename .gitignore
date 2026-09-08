@@ -1,0 +1,10 @@
+data/
+dist/
+node_modules/
+release/
+build/icon.png
+build/update-config.json
+.DS_Store
+*.log
+.env
+.agents/
