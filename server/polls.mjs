@@ -9,6 +9,17 @@ function validatePresetName(value) {
   requireThat(typeof value === 'string' && value.trim().length > 0 && value.trim().length <= 50, 'Название шаблона должно содержать от 1 до 50 символов.');
   return value.trim();
 }
+export function defaultWidget() {
+  return { accent: '#d3fb75', surface: 'solid', density: 'comfortable', showTimer: true, showKeywords: true };
+}
+export function validateWidget(input) {
+  requireThat(input && typeof input === 'object', 'Некорректные настройки виджета.');
+  requireThat(typeof input.accent === 'string' && /^#[0-9a-f]{6}$/iu.test(input.accent), 'Некорректный цвет виджета.');
+  requireThat(['solid', 'glass'].includes(input.surface), 'Некорректный фон виджета.');
+  requireThat(['comfortable', 'compact'].includes(input.density), 'Некорректная плотность виджета.');
+  requireThat(typeof input.showTimer === 'boolean' && typeof input.showKeywords === 'boolean', 'Некорректные элементы виджета.');
+  return { accent: input.accent.toLowerCase(), surface: input.surface, density: input.density, showTimer: input.showTimer, showKeywords: input.showKeywords };
+}
 export function validateDraft(input) {
   requireThat(input && typeof input === 'object', 'Некорректный опрос.');
   requireThat(typeof input.question === 'string' && input.question.trim().length > 0 && input.question.trim().length <= 100, 'Вопрос должен содержать от 1 до 100 символов.');
@@ -34,6 +45,7 @@ export function initialState() {
     schema: 1, revision: 0, draftRevision: 0,
     draft: { question: 'Во что играем дальше?', options: [{ id: '1', name: 'Minecraft', word: 'майн' }, { id: '2', name: 'Valorant', word: 'вало' }, { id: '3', name: 'Hollow Knight', word: 'холлоу' }], duration: 60, secret: false, allowChange: false, showOverlay: true, source: 'test' },
     presets: [],
+    widget: defaultWidget(),
     poll: null,
   };
 }
@@ -48,6 +60,7 @@ export function validateStoredState(state) {
     presetIds.add(preset.id);
     return { id: preset.id, name: validatePresetName(preset.name), draft: validateDraft(preset.draft), createdAt: Number.isFinite(preset.createdAt) ? preset.createdAt : 0, updatedAt: Number.isFinite(preset.updatedAt) ? preset.updatedAt : 0 };
   });
+  state.widget = validateWidget(state.widget ?? defaultWidget());
   if (state.poll) {
     const p = state.poll;
     validateDraft(p);
@@ -151,7 +164,13 @@ export function applyCommand(state, command, now = Date.now()) {
         createdAt: now,
         updatedAt: now,
       }));
+      next.widget = validateWidget(settings.widget ?? defaultWidget());
       next.draftRevision++;
+      changed = true;
+      break;
+    }
+    case 'widget-update': {
+      next.widget = validateWidget(command.widget);
       changed = true;
       break;
     }

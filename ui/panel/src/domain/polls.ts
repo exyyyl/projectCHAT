@@ -33,12 +33,21 @@ export type Preset = {
 
 export type PresetDialogState = { mode: "create" | "rename"; preset?: Preset }
 
+export type WidgetSettings = {
+  accent: string
+  surface: "solid" | "glass"
+  density: "comfortable" | "compact"
+  showTimer: boolean
+  showKeywords: boolean
+}
+
 export type ServerState = {
   revision: number
   draftRevision: number
   serverNow: number
   draft: Draft
   presets: Preset[]
+  widget: WidgetSettings
   poll: Poll | null
 }
 

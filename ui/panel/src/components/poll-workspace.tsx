@@ -1,22 +1,17 @@
-import { useState } from "react"
-import {
-  ChevronDown,
-  Copy,
-  ExternalLink,
-  Eye,
-  EyeOff,
-  Plus,
-  Radio,
-  X,
-} from "lucide-react"
+import { ChevronDown, Eye, EyeOff, Plus, X } from "lucide-react"
 
 import { PollResults, PollTimer } from "@/components/poll-results"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import type { CommandResult, Draft, Poll, PollOption } from "@/domain/polls"
+import type {
+  CommandResult,
+  Draft,
+  Poll,
+  PollOption,
+  WidgetSettings,
+} from "@/domain/polls"
 import { pluralVotes, validateDraft } from "@/domain/polls"
 
 type PollWorkspaceProps = {
@@ -26,6 +21,7 @@ type PollWorkspaceProps = {
   busy: boolean
   twitchPhase: string
   privatePreview: boolean
+  widget: WidgetSettings
   onChangeDraft: (update: (current: Draft) => Draft) => void
   onStart: () => void
   onClear: () => void
@@ -53,6 +49,7 @@ export function PollWorkspace({
   busy,
   twitchPhase,
   privatePreview,
+  widget,
   onChangeDraft,
   onStart,
   onClear,
@@ -79,25 +76,14 @@ export function PollWorkspace({
       className={`grid ${showPreview ? "lg:grid-cols-[minmax(360px,.82fr)_minmax(420px,1.18fr)]" : "grid-cols-1"}`}
     >
       <section className="min-w-0 p-6 lg:p-8">
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {poll
-                ? poll.status === "running"
-                  ? "Голосование"
-                  : "Результат"
-                : "Новый опрос"}
-            </h1>
-            <span className="mt-1 block text-xs text-brand">
-              {poll
-                ? poll.status === "running"
-                  ? "Идёт опрос"
-                  : "Завершён"
-                : "Черновик"}
+        {poll && (
+          <div className="mb-6 flex items-center justify-between gap-4">
+            <span className="text-xs text-brand">
+              {poll.status === "running" ? "Идёт опрос" : "Завершён"}
             </span>
+            <PollTimer poll={poll} />
           </div>
-          {poll && <PollTimer poll={poll} />}
-        </div>
+        )}
 
         <ToggleGroup
           type="single"
@@ -223,7 +209,9 @@ export function PollWorkspace({
           </details>
         )}
       </section>
-      {showPreview && <PreviewPane current={current} onStream={onStream} />}
+      {showPreview && (
+        <PreviewPane current={current} onStream={onStream} widget={widget} />
+      )}
     </div>
   )
 }
@@ -395,11 +383,12 @@ function DraftForm({
 function PreviewPane({
   current,
   onStream,
+  widget,
 }: {
   current: Draft | Poll
   onStream: boolean
+  widget: WidgetSettings
 }) {
-  const [copied, setCopied] = useState(false)
   return (
     <section className="min-w-0 border-t border-border-subtle bg-panel-muted p-6 lg:border-t-0 lg:border-l lg:p-8">
       <div className="mb-4 text-xs font-medium text-muted-foreground">
@@ -407,47 +396,12 @@ function PreviewPane({
       </div>
       <div className="preview-stage min-h-97.5 rounded-2xl p-6">
         <div className="max-w-82.5">
-          <PollResults poll={current} compact />
+          <PollResults poll={current} compact widget={widget} />
         </div>
       </div>
       <div className="mt-3 text-xs text-muted-foreground">
         {onStream ? "На стриме" : "Скрыт на стриме"}
       </div>
-      <Card className="mt-6 border-border-subtle bg-surface-subtle">
-        <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand">
-            <Radio className="size-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="font-medium">Оверлей для OBS</div>
-            <div className="mt-0.5 text-xs text-muted-foreground">
-              Browser Source · 480 × 640
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                await navigator.clipboard.writeText(
-                  `${location.origin}/overlay`
-                )
-                setCopied(true)
-                setTimeout(() => setCopied(false), 1800)
-              }}
-            >
-              <Copy />
-              {copied ? "Скопировано" : "Адрес"}
-            </Button>
-            <Button asChild variant="outline" size="icon-sm">
-              <a href="/overlay" target="_blank" rel="noreferrer">
-                <ExternalLink />
-                <span className="sr-only">Открыть оверлей</span>
-              </a>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </section>
   )
 }

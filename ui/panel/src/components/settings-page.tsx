@@ -4,11 +4,12 @@ import { Download, FileUp } from "lucide-react"
 import { UpdateSettings } from "@/components/update-control"
 import { TwitchSettings } from "@/components/twitch-settings"
 import { Button } from "@/components/ui/button"
-import type { Draft, Preset, TwitchState } from "@/domain/polls"
+import type { Draft, Preset, TwitchState, WidgetSettings } from "@/domain/polls"
 
 type SettingsPageProps = {
   draft: Draft
   presets: Preset[]
+  widget: WidgetSettings
   canImport: boolean
   busy: boolean
   twitch: TwitchState
@@ -21,6 +22,7 @@ type SettingsPageProps = {
 export function SettingsPage({
   draft,
   presets,
+  widget,
   canImport,
   busy,
   twitch,
@@ -42,6 +44,7 @@ export function SettingsPage({
         name: preset.name,
         draft: preset.draft,
       })),
+      widget,
     }
     const blob = new Blob([JSON.stringify(settings, null, 2)], {
       type: "application/json",
@@ -71,14 +74,7 @@ export function SettingsPage({
   }
 
   return (
-    <section className="mx-auto max-w-3xl p-6 lg:p-8">
-      <div className="mb-7">
-        <h1 className="text-2xl font-semibold tracking-tight">Настройки</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Данные приложения и обновления
-        </p>
-      </div>
-
+    <section className="mx-auto max-w-3xl p-6 lg:p-8" aria-label="Настройки">
       <div className="space-y-4">
         <div className="rounded-xl border border-border-subtle bg-surface-subtle p-5">
           <div className="mb-5">

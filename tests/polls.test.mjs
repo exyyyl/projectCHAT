@@ -148,6 +148,15 @@ test('settings import rejects active polls and malformed backups', () => {
   const running = start();
   assert.throws(() => applyCommand(running, { type: 'settings-import', draftRevision: 1, settings: { schema: 1, app: 'projectCHAT', draft: initial.draft, presets: [] } }), /закройте/);
 });
+test('widget settings are validated, persisted and included in imports', () => {
+  const initial = initialState();
+  const widget = { accent: '#a970ff', surface: 'glass', density: 'compact', showTimer: false, showKeywords: false };
+  let state = applyCommand(initial, { type: 'widget-update', widget }).state;
+  assert.deepEqual(state.widget, widget);
+  assert.throws(() => applyCommand(state, { type: 'widget-update', widget: { ...widget, accent: 'purple' } }), /цвет/);
+  state = applyCommand(initial, { type: 'settings-import', draftRevision: 0, settings: { schema: 1, app: 'projectCHAT', draft: initial.draft, presets: [], widget } }).state;
+  assert.deepEqual(state.widget, widget);
+});
 test('stale panel cannot replace a newer draft or mutate a different poll', () => {
   const original = initialState();
   const updated = applyCommand(original, { type: 'save-draft', draftRevision: 0, draft: { ...original.draft, question: 'Новый вопрос' } }).state;

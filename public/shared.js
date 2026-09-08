@@ -38,9 +38,14 @@ export function createOverlay(root) {
   setInterval(tick, 250);
   return {
     connection(value) { connected = value; tick(); },
-    render(poll, serverNow = Date.now()) {
+    render(poll, serverNow = Date.now(), widget = {}) {
       offset = serverNow - Date.now();
       current = poll;
+      root.style.setProperty('--pc-accent', widget.accent || '#d3fb75');
+      root.classList.toggle('pc-widget-glass', widget.surface === 'glass');
+      root.classList.toggle('pc-widget-compact', widget.density === 'compact');
+      root.classList.toggle('pc-hide-keywords', widget.showKeywords === false);
+      timer.hidden = widget.showTimer === false;
       if (!poll) { root.classList.add('is-hidden'); root.setAttribute('aria-hidden', 'true'); return; }
       const visible = poll.visible !== false;
       // A new private poll must not flash its content during the previous poll's fade-out.

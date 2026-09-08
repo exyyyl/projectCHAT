@@ -1,5 +1,11 @@
 import type { ReactNode } from "react"
-import { LayoutTemplate, ListChecks, Settings2, WifiOff } from "lucide-react"
+import {
+  LayoutTemplate,
+  ListChecks,
+  PanelsTopLeft,
+  Settings2,
+  WifiOff,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -8,7 +14,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 
-export type AppView = "polls" | "presets" | "settings"
+export type AppView = "polls" | "presets" | "widget" | "settings"
 
 type AppSidebarProps = {
   view: AppView
@@ -20,6 +26,7 @@ type AppSidebarProps = {
 const navigation = [
   { id: "polls", label: "Опросы", icon: ListChecks },
   { id: "presets", label: "Шаблоны", icon: LayoutTemplate },
+  { id: "widget", label: "Виджет", icon: PanelsTopLeft },
 ] as const
 
 export function AppSidebar({

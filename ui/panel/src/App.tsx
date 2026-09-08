@@ -6,6 +6,7 @@ import { PresetDialogs } from "@/components/preset-dialogs"
 import { PresetLibrary } from "@/components/preset-library"
 import { SettingsPage } from "@/components/settings-page"
 import { TwitchAccount } from "@/components/twitch-account"
+import { WidgetPage } from "@/components/widget-page"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { validateDraft } from "@/domain/polls"
 import { usePollController } from "@/hooks/use-poll-controller"
@@ -81,6 +82,7 @@ export function App() {
               busy={busy}
               twitchPhase={twitch.phase}
               privatePreview={privatePreview}
+              widget={state.widget}
               onChangeDraft={controller.changeDraft}
               onStart={() => void controller.start()}
               onClear={() => void controller.clear()}
@@ -134,6 +136,7 @@ export function App() {
             <SettingsPage
               draft={draft}
               presets={state.presets}
+              widget={state.widget}
               canImport={canEdit}
               busy={busy}
               twitch={twitch}
@@ -141,6 +144,19 @@ export function App() {
               onImport={controller.importSettings}
               onTwitchClientChange={controller.setTwitchClient}
               onTwitchCommand={(type) => void controller.twitchCommand(type)}
+            />
+          )}
+
+          {view === "widget" && (
+            <WidgetPage
+              poll={poll}
+              draft={draft}
+              widget={state.widget}
+              busy={busy}
+              onUpdate={(widget) =>
+                void controller.run("widget-update", { widget })
+              }
+              onSetOutput={(visible) => void controller.setOutput(visible)}
             />
           )}
         </main>

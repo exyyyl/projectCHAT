@@ -45,19 +45,7 @@ export function PresetLibrary({
   onDelete,
 }: PresetLibraryProps) {
   return (
-    <section className="p-6 lg:p-8">
-      <div className="mb-7 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Шаблоны</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Готовые опросы для быстрого запуска
-          </p>
-        </div>
-        <span className="font-mono text-xs text-muted-foreground">
-          {presets.length}/30
-        </span>
-      </div>
-
+    <section className="p-6 lg:p-8" aria-label="Шаблоны">
       <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
         <button
           className="group flex min-h-36 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border-strong bg-surface-subtle text-muted-foreground transition-colors hover:border-brand/40 hover:bg-brand/5 hover:text-foreground disabled:pointer-events-none disabled:opacity-35"
