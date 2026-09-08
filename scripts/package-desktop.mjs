@@ -14,6 +14,9 @@ await writeFile('build/update-config.json', JSON.stringify({ url: updateUrl }, n
 await sharp('build/icon-source.png').resize(512, 512).png().toFile('build/icon.png')
 await sharp('build/icon-source.png').resize(64, 64).png().toFile('public/favicon.png')
 
+const streamDockIcons = spawnSync('node', ['scripts/generate-stream-dock-icons.mjs'], { stdio: 'inherit' })
+if (streamDockIcons.status !== 0) process.exit(streamDockIcons.status || 1)
+
 const panel = spawnSync('npm', ['run', 'build:panel'], { stdio: 'inherit' })
 if (panel.status !== 0) process.exit(panel.status || 1)
 const builder = process.platform === 'win32' ? 'node_modules/.bin/electron-builder.cmd' : 'node_modules/.bin/electron-builder'

@@ -1,10 +1,11 @@
-import { ChevronDown, Eye, EyeOff, Plus, X } from "lucide-react"
+import { ArrowRight, ChevronDown } from "lucide-react"
+import { useState, type ReactNode } from "react"
 
+import { PollDraftFields } from "@/components/poll-draft-fields"
 import { PollResults, PollTimer } from "@/components/poll-results"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { useToast } from "@/components/ui/toast"
 import type {
   CommandResult,
   Draft,
@@ -20,13 +21,11 @@ type PollWorkspaceProps = {
   connected: boolean
   busy: boolean
   twitchPhase: string
-  privatePreview: boolean
   widget: WidgetSettings
   onChangeDraft: (update: (current: Draft) => Draft) => void
   onStart: () => void
   onClear: () => void
   onSetOutput: (visible: boolean) => void
-  onTogglePreview: () => void
   onRun: (
     type: string,
     data?: Record<string, unknown>
@@ -35,347 +34,274 @@ type PollWorkspaceProps = {
   onSimulate: () => void
 }
 
-const durations = [
-  [30, "30 сек"],
-  [60, "1 мин"],
-  [180, "3 мин"],
-  [300, "5 мин"],
-] as const
-
 export function PollWorkspace({
   poll,
   draft,
   connected,
   busy,
   twitchPhase,
-  privatePreview,
   widget,
   onChangeDraft,
   onStart,
   onClear,
   onSetOutput,
-  onTogglePreview,
   onRun,
   onVote,
   onSimulate,
 }: PollWorkspaceProps) {
   const current = poll || draft
-  const isDemo = current.source === "test"
-  const onStream = poll ? poll.visible : draft.showOverlay !== false
-  const showPreview = onStream || privatePreview
-  const total =
-    poll?.options.reduce((sum, option) => sum + option.votes, 0) || 0
-  const canStart =
-    connected &&
-    !busy &&
-    !validateDraft(draft) &&
-    (draft.source !== "twitch" || twitchPhase === "connected")
+  const onStream = poll ? poll.visible : draft.showOverlay
 
   return (
-    <div
-      className={`grid ${showPreview ? "lg:grid-cols-[minmax(360px,.82fr)_minmax(420px,1.18fr)]" : "grid-cols-1"}`}
-    >
+    <div className="grid min-h-full lg:grid-cols-[minmax(390px,.86fr)_minmax(420px,1.14fr)]">
       <section className="min-w-0 p-6 lg:p-8">
-        {poll && (
-          <div className="mb-6 flex items-center justify-between gap-4">
-            <span className="text-xs text-brand">
-              {poll.status === "running" ? "Идёт опрос" : "Завершён"}
-            </span>
-            <PollTimer poll={poll} />
-          </div>
-        )}
+        <div className="mx-auto max-w-160">
+          {poll ? (
+            <ActivePoll
+              poll={poll}
+              busy={busy}
+              onSetOutput={onSetOutput}
+              onRun={onRun}
+              onVote={onVote}
+              onSimulate={onSimulate}
+              onClear={onClear}
+            />
+          ) : (
+            <PollComposer
+              draft={draft}
+              connected={connected}
+              busy={busy}
+              twitchPhase={twitchPhase}
+              onChange={onChangeDraft}
+              onSetOutput={onSetOutput}
+              onStart={onStart}
+            />
+          )}
+        </div>
+      </section>
 
-        <ToggleGroup
-          type="single"
-          value={current.source}
-          disabled={!!poll || busy}
-          onValueChange={(value) =>
-            value &&
-            onChangeDraft((item) => ({
-              ...item,
-              source: value as Draft["source"],
-            }))
-          }
-          className="mb-7 justify-start"
-        >
-          <ToggleGroupItem value="test">Демо</ToggleGroupItem>
-          <ToggleGroupItem value="twitch">Twitch-чат</ToggleGroupItem>
-        </ToggleGroup>
+      <PreviewPane current={current} onStream={onStream} widget={widget} />
+    </div>
+  )
+}
 
-        {!poll && <DraftForm draft={draft} onChange={onChangeDraft} />}
-        {poll && (
-          <div>
-            <PollResults poll={poll} />
-            <div className="mt-5 text-xs text-muted-foreground">
-              {pluralVotes(total)}
-            </div>
-          </div>
-        )}
+function PollComposer({
+  draft,
+  connected,
+  busy,
+  twitchPhase,
+  onChange,
+  onSetOutput,
+  onStart,
+}: {
+  draft: Draft
+  connected: boolean
+  busy: boolean
+  twitchPhase: string
+  onChange: PollWorkspaceProps["onChangeDraft"]
+  onSetOutput: (visible: boolean) => void
+  onStart: () => void
+}) {
+  const showToast = useToast()
+  const draftError = validateDraft(draft)
+  const twitchUnavailable =
+    draft.source === "twitch" && twitchPhase !== "connected"
+  const startIssue = !connected
+    ? "Нет связи с локальным сервером."
+    : draftError
+      ? draftError
+      : twitchUnavailable
+        ? "Подключите Twitch через профиль."
+        : ""
 
-        <div className="mt-7">
+  return (
+    <div className="space-y-7">
+      <div className="grid gap-5 sm:grid-cols-2">
+        <SegmentedSetting label="Голоса">
           <ToggleGroup
             type="single"
-            value={onStream ? "stream" : "panel"}
+            value={draft.source}
+            disabled={busy}
+            onValueChange={(value) =>
+              value &&
+              onChange((item) => ({
+                ...item,
+                source: value as Draft["source"],
+              }))
+            }
+            className="grid w-full grid-cols-2 rounded-xl border border-border-subtle bg-surface-subtle p-1"
+          >
+            <ToggleGroupItem value="twitch">Twitch-чат</ToggleGroupItem>
+            <ToggleGroupItem value="test">Демо</ToggleGroupItem>
+          </ToggleGroup>
+        </SegmentedSetting>
+
+        <SegmentedSetting label="Виджет в OBS">
+          <ToggleGroup
+            type="single"
+            value={draft.showOverlay ? "stream" : "panel"}
             disabled={busy}
             onValueChange={(value) => value && onSetOutput(value === "stream")}
-            className="grid grid-cols-2 rounded-xl border border-border-subtle bg-surface-subtle p-1"
+            className="grid w-full grid-cols-2 rounded-xl border border-border-subtle bg-surface-subtle p-1"
           >
-            <ToggleGroupItem value="stream">
-              <Eye />
-              На стриме
-            </ToggleGroupItem>
-            <ToggleGroupItem value="panel">
-              <EyeOff />
-              Только в панели
-            </ToggleGroupItem>
+            <ToggleGroupItem value="stream">На стриме</ToggleGroupItem>
+            <ToggleGroupItem value="panel">Скрыт</ToggleGroupItem>
           </ToggleGroup>
-          {!onStream && (
+        </SegmentedSetting>
+      </div>
+
+      <PollDraftFields draft={draft} idPrefix="poll" onChange={onChange} />
+
+      <div className="pt-1">
+        <Button
+          className="h-11 w-full text-[15px]"
+          disabled={busy}
+          onClick={() => {
+            if (startIssue) {
+              showToast({
+                message: startIssue,
+                tone: twitchUnavailable ? "warning" : "error",
+              })
+              return
+            }
+            onStart()
+          }}
+        >
+          {busy ? "Запуск…" : "Запустить опрос"}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function ActivePoll({
+  poll,
+  busy,
+  onSetOutput,
+  onRun,
+  onVote,
+  onSimulate,
+  onClear,
+}: {
+  poll: Poll
+  busy: boolean
+  onSetOutput: (visible: boolean) => void
+  onRun: PollWorkspaceProps["onRun"]
+  onVote: (option: PollOption) => void
+  onSimulate: () => void
+  onClear: () => void
+}) {
+  const running = poll.status === "running"
+  const total = poll.options.reduce((sum, option) => sum + option.votes, 0)
+
+  return (
+    <div>
+      <div className="mb-7 flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span
+            className={`size-2 shrink-0 rounded-full ${running ? "bg-brand" : "bg-muted-foreground/60"}`}
+          />
+          <span className="truncate text-sm font-medium">
+            {running ? "Опрос идёт" : "Опрос завершён"}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {poll.source === "twitch" ? "Twitch-чат" : "Демо"}
+          </span>
+        </div>
+        <PollTimer poll={poll} />
+      </div>
+
+      <PollResults poll={poll} />
+      <div className="mt-4 text-xs text-muted-foreground">
+        {pluralVotes(total)}
+      </div>
+
+      <div className="mt-7 space-y-2">
+        <div className="text-xs text-muted-foreground">Виджет в OBS</div>
+        <ToggleGroup
+          type="single"
+          value={poll.visible ? "stream" : "panel"}
+          disabled={busy}
+          onValueChange={(value) => value && onSetOutput(value === "stream")}
+          className="grid w-full grid-cols-2 rounded-xl border border-border-subtle bg-surface-subtle p-1"
+        >
+          <ToggleGroupItem value="stream">На стриме</ToggleGroupItem>
+          <ToggleGroupItem value="panel">Скрыт</ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+
+      <div className="mt-5 flex gap-2">
+        {running ? (
+          <>
+            <Button
+              variant="outline"
+              className="h-10"
+              disabled={busy}
+              onClick={() => void onRun("extend", { pollId: poll.id })}
+            >
+              +30 сек
+            </Button>
+            <Button
+              variant="secondary"
+              className="h-10 flex-1"
+              disabled={busy}
+              onClick={() => void onRun("finish", { pollId: poll.id })}
+            >
+              Завершить опрос
+            </Button>
+          </>
+        ) : (
+          <Button className="h-10 w-full" disabled={busy} onClick={onClear}>
+            Изменить и запустить снова
+          </Button>
+        )}
+      </div>
+
+      {running && poll.source === "test" && (
+        <details className="group mt-7 rounded-xl bg-surface-subtle p-4">
+          <summary className="flex cursor-pointer list-none items-center justify-between text-sm text-muted-foreground">
+            Демо-голоса
+            <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {poll.options.map((option) => (
+              <Button
+                key={option.id}
+                variant="outline"
+                size="sm"
+                className="font-mono"
+                disabled={busy}
+                onClick={() => onVote(option)}
+              >
+                {option.word}
+              </Button>
+            ))}
             <Button
               variant="ghost"
               size="sm"
-              className="mt-2"
-              onClick={onTogglePreview}
+              disabled={busy}
+              onClick={onSimulate}
             >
-              {privatePreview ? "Свернуть предпросмотр" : "Предпросмотр"}
+              Сымитировать чат
             </Button>
-          )}
-        </div>
-
-        <div className="mt-7 flex gap-2">
-          {!poll && (
-            <Button
-              className="h-10 flex-1"
-              disabled={!canStart}
-              onClick={onStart}
-            >
-              Запустить опрос
-            </Button>
-          )}
-          {poll?.status === "running" && (
-            <>
-              <Button
-                variant="outline"
-                className="h-10"
-                disabled={busy}
-                onClick={() => void onRun("extend", { pollId: poll.id })}
-              >
-                +30 сек
-              </Button>
-              <Button
-                variant="secondary"
-                className="h-10 flex-1"
-                disabled={busy}
-                onClick={() => void onRun("finish", { pollId: poll.id })}
-              >
-                Завершить
-              </Button>
-            </>
-          )}
-          {poll?.status === "ended" && (
-            <Button className="h-10 flex-1" disabled={busy} onClick={onClear}>
-              Редактировать
-            </Button>
-          )}
-        </div>
-
-        {poll?.status === "running" && isDemo && (
-          <details className="group mt-7 border-t border-border-subtle pt-5">
-            <summary className="flex cursor-pointer list-none items-center justify-between text-sm text-muted-foreground">
-              Демо-голоса
-              <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
-            </summary>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {poll.options.map((option) => (
-                <Button
-                  key={option.id}
-                  variant="outline"
-                  size="sm"
-                  className="font-mono"
-                  disabled={busy}
-                  onClick={() => onVote(option)}
-                >
-                  {option.word}
-                </Button>
-              ))}
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={onSimulate}
-              >
-                Сымитировать чат
-              </Button>
-            </div>
-          </details>
-        )}
-      </section>
-      {showPreview && (
-        <PreviewPane current={current} onStream={onStream} widget={widget} />
+          </div>
+        </details>
       )}
     </div>
   )
 }
 
-function DraftForm({
-  draft,
-  onChange,
+function SegmentedSetting({
+  label,
+  children,
 }: {
-  draft: Draft
-  onChange: PollWorkspaceProps["onChangeDraft"]
+  label: string
+  children: ReactNode
 }) {
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <label
-          className="text-xs text-muted-foreground"
-          htmlFor="poll-question"
-        >
-          Вопрос
-        </label>
-        <Textarea
-          id="poll-question"
-          rows={3}
-          maxLength={100}
-          value={draft.question}
-          onChange={(event) =>
-            onChange((item) => ({ ...item, question: event.target.value }))
-          }
-          className="resize-none text-lg"
-        />
-      </div>
-      <div>
-        <div className="mb-2 grid grid-cols-[1.35fr_1fr_32px] gap-2 text-xs text-muted-foreground">
-          <span>Вариант</span>
-          <span>Ключевое слово</span>
-        </div>
-        <div className="space-y-2">
-          {draft.options.map((option, index) => (
-            <div
-              key={option.id}
-              className="grid grid-cols-[1.35fr_1fr_32px] gap-2"
-            >
-              <Input
-                value={option.name}
-                maxLength={40}
-                aria-label={`Вариант ${index + 1}`}
-                onChange={(event) =>
-                  onChange((item) => ({
-                    ...item,
-                    options: item.options.map((entry, optionIndex) =>
-                      optionIndex === index
-                        ? { ...entry, name: event.target.value }
-                        : entry
-                    ),
-                  }))
-                }
-              />
-              <Input
-                value={option.word}
-                maxLength={24}
-                aria-label={`Ключевое слово ${index + 1}`}
-                className="font-mono text-xs"
-                onChange={(event) =>
-                  onChange((item) => ({
-                    ...item,
-                    options: item.options.map((entry, optionIndex) =>
-                      optionIndex === index
-                        ? { ...entry, word: event.target.value }
-                        : entry
-                    ),
-                  }))
-                }
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={draft.options.length <= 2}
-                onClick={() =>
-                  onChange((item) => ({
-                    ...item,
-                    options: item.options
-                      .filter((_, optionIndex) => optionIndex !== index)
-                      .map((entry, optionIndex) => ({
-                        ...entry,
-                        id: String(optionIndex + 1),
-                      })),
-                  }))
-                }
-              >
-                <X />
-                <span className="sr-only">Удалить вариант</span>
-              </Button>
-            </div>
-          ))}
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mt-2"
-          disabled={draft.options.length >= 6}
-          onClick={() =>
-            onChange((item) => ({
-              ...item,
-              options: [
-                ...item.options,
-                { id: String(item.options.length + 1), name: "", word: "" },
-              ],
-            }))
-          }
-        >
-          <Plus />
-          Добавить вариант
-        </Button>
-      </div>
-      <div className="space-y-2">
-        <div className="text-xs text-muted-foreground">Длительность</div>
-        <ToggleGroup
-          type="single"
-          value={String(draft.duration)}
-          onValueChange={(value) =>
-            value && onChange((item) => ({ ...item, duration: Number(value) }))
-          }
-          className="justify-start"
-        >
-          {durations.map(([value, label]) => (
-            <ToggleGroupItem key={value} value={String(value)}>
-              {label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
-      <details className="group border-t border-border-subtle pt-4">
-        <summary className="flex cursor-pointer list-none items-center justify-between text-sm text-muted-foreground">
-          Дополнительно
-          <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
-        </summary>
-        <div className="mt-4 space-y-3 text-sm">
-          <label className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={draft.secret}
-              onChange={(event) =>
-                onChange((item) => ({ ...item, secret: event.target.checked }))
-              }
-              className="accent-brand"
-            />
-            Скрывать результаты до финала
-          </label>
-          <label className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={draft.allowChange}
-              onChange={(event) =>
-                onChange((item) => ({
-                  ...item,
-                  allowChange: event.target.checked,
-                }))
-              }
-              className="accent-brand"
-            />
-            Разрешить переголосование
-          </label>
-        </div>
-      </details>
+    <div className="space-y-2">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      {children}
     </div>
   )
 }
@@ -389,19 +315,130 @@ function PreviewPane({
   onStream: boolean
   widget: WidgetSettings
 }) {
+  const twitchPoll = "status" in current && current.source === "twitch"
+
   return (
-    <section className="min-w-0 border-t border-border-subtle bg-panel-muted p-6 lg:border-t-0 lg:border-l lg:p-8">
-      <div className="mb-4 text-xs font-medium text-muted-foreground">
-        Предпросмотр
-      </div>
-      <div className="preview-stage min-h-97.5 rounded-2xl p-6">
-        <div className="max-w-82.5">
-          <PollResults poll={current} compact widget={widget} />
+    <section className="min-w-0 bg-panel-muted p-6 lg:p-8">
+      <div
+        className={`lg:sticky lg:top-8 ${twitchPoll ? "2xl:grid 2xl:grid-cols-[minmax(420px,1.2fr)_minmax(280px,.8fr)] 2xl:items-start 2xl:gap-6" : ""}`}
+      >
+        <div>
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <span className="text-xs font-medium text-muted-foreground">
+              Предпросмотр
+            </span>
+            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span
+                className={`size-1.5 rounded-full ${onStream ? "bg-brand" : "bg-muted-foreground/60"}`}
+              />
+              {onStream ? "В OBS" : "Скрыт в OBS"}
+            </span>
+          </div>
+          <div
+            className={`preview-stage rounded-2xl p-6 ${twitchPoll ? "min-h-80" : "min-h-97.5"}`}
+          >
+            <div className="max-w-82.5">
+              <PollResults poll={current} compact widget={widget} />
+            </div>
+          </div>
         </div>
-      </div>
-      <div className="mt-3 text-xs text-muted-foreground">
-        {onStream ? "На стриме" : "Скрыт на стриме"}
+
+        {twitchPoll && <ChatVoteFeed poll={current} />}
       </div>
     </section>
+  )
+}
+
+function ChatVoteFeed({ poll }: { poll: Poll }) {
+  const entries = [...poll.activity].reverse()
+
+  return (
+    <div className="mt-6 2xl:mt-0">
+      <div className="mb-3 text-xs font-medium text-muted-foreground">
+        Голоса из чата
+      </div>
+
+      {entries.length ? (
+        <div
+          className="max-h-80 space-y-1 overflow-y-auto rounded-xl bg-surface-subtle p-1 2xl:max-h-[calc(100vh-8rem)]"
+          aria-live="polite"
+          aria-label="Совпавшие сообщения Twitch-чата"
+        >
+          {entries.map((entry) => {
+            const option = poll.options.find(
+              (item) => item.id === entry.optionId
+            )
+            if (!option) return null
+            const previousOption = poll.options.find(
+              (item) => item.id === entry.previousOptionId
+            )
+            return (
+              <div
+                key={entry.id}
+                className="flex animate-in items-start gap-3 rounded-lg px-3 py-2.5 duration-200 fade-in slide-in-from-top-1"
+              >
+                <TwitchAvatar name={entry.viewerName} src={entry.avatarUrl} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-sm font-medium">
+                      {entry.viewerName}
+                    </span>
+                    {previousOption && (
+                      <span className="shrink-0 text-[11px] text-brand/70">
+                        изменил(а) голос
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs">
+                    {previousOption && (
+                      <>
+                        <span className="max-w-24 truncate text-muted-foreground line-through">
+                          {previousOption.name}
+                        </span>
+                        <ArrowRight className="size-3 shrink-0 text-muted-foreground" />
+                      </>
+                    )}
+                    <span className="flex min-w-0 items-center gap-2 rounded-md bg-brand/8 px-2 py-1">
+                      <span className="truncate text-foreground">
+                        {option.name}
+                      </span>
+                      <span className="shrink-0 font-mono text-[11px] text-brand/70">
+                        {option.word}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="rounded-xl bg-surface-subtle px-4 py-5 text-sm text-muted-foreground">
+          {poll.status === "running"
+            ? "Совпавшие сообщения появятся здесь."
+            : "Совпавших сообщений не было."}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TwitchAvatar({ name, src }: { name: string; src?: string }) {
+  const [failed, setFailed] = useState(false)
+
+  if (src && !failed)
+    return (
+      <img
+        src={src}
+        alt=""
+        className="size-8 shrink-0 rounded-full bg-surface-raised object-cover"
+        onError={() => setFailed(true)}
+      />
+    )
+
+  return (
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-raised text-xs font-medium text-foreground">
+      {Array.from(name)[0]?.toLocaleUpperCase("ru")}
+    </span>
   )
 }

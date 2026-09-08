@@ -5,6 +5,11 @@ export class PollError extends Error {
 }
 export const normalize = value => value.normalize('NFKC').trim().toLocaleLowerCase('ru');
 const requireThat = (condition, message, status) => { if (!condition) throw new PollError(message, status); };
+function isTwitchImage(value) {
+  if (value === undefined || value === '') return true;
+  try { const url = new URL(value); return url.protocol === 'https:' && url.hostname === 'static-cdn.jtvnw.net' && !url.port && !url.username && !url.password; }
+  catch { return false; }
+}
 function validatePresetName(value) {
   requireThat(typeof value === 'string' && value.trim().length > 0 && value.trim().length <= 50, 'Название шаблона должно содержать от 1 до 50 символов.');
   return value.trim();
@@ -76,13 +81,28 @@ export function validateStoredState(state) {
       requireThat(index >= 0, 'Голос ссылается на неизвестный вариант.');
       users.add(entry[0]); counts[index]++;
     }
+    p.activity ??= [];
+    requireThat(Array.isArray(p.activity) && p.activity.length <= 50, 'Повреждена лента голосов.');
+    const activityIds = new Set();
+    for (const entry of p.activity) {
+      requireThat(entry && typeof entry.id === 'string' && entry.id.length > 0 && entry.id.length <= 128 && !activityIds.has(entry.id), 'Повреждена лента голосов.');
+      requireThat(typeof entry.viewerName === 'string' && entry.viewerName.length > 0 && entry.viewerName.length <= 50, 'Повреждено имя зрителя.');
+      requireThat(p.options.some(option => option.id === entry.optionId) && Number.isFinite(entry.at), 'Повреждена лента голосов.');
+      entry.viewerId = typeof entry.viewerId === 'string' && entry.viewerId.length > 0 && entry.viewerId.length <= 128 ? entry.viewerId : `legacy:${entry.id}`;
+      requireThat(entry.previousOptionId === undefined || p.options.some(option => option.id === entry.previousOptionId), 'Повреждена смена голоса.');
+      requireThat(isTwitchImage(entry.avatarUrl), 'Повреждено изображение зрителя.');
+      activityIds.add(entry.id);
+    }
     requireThat(p.options.every((o, i) => Number.isInteger(o.votes) && o.votes === counts[i]), 'Нарушена целостность счётчиков голосов.');
   }
   return state;
 }
 export function publicState(state, now = Date.now()) {
   const result = structuredClone(state);
-  if (result.poll) { delete result.poll.voters; delete result.poll.events; }
+  if (result.poll) {
+    delete result.poll.voters; delete result.poll.events;
+    for (const entry of result.poll.activity) delete entry.viewerId;
+  }
   result.serverNow = now;
   return result;
 }
@@ -105,7 +125,7 @@ export function applyCommand(state, command, now = Date.now()) {
       next.draftRevision++;
       if (command.type === 'start') {
         requireThat(draft.source !== 'twitch' || typeof command.broadcasterId === 'string' && command.broadcasterId.length > 0, 'Сначала подключите Twitch.');
-        next.poll = { ...structuredClone(draft), broadcasterId: draft.source === 'twitch' ? command.broadcasterId : null, id: randomUUID(), status: 'running', visible: draft.showOverlay, startedAt: now, deadline: now + draft.duration * 1000, endedAt: null, options: draft.options.map(o => ({ ...o, votes: 0 })), voters: [], events: [] };
+        next.poll = { ...structuredClone(draft), broadcasterId: draft.source === 'twitch' ? command.broadcasterId : null, id: randomUUID(), status: 'running', visible: draft.showOverlay, startedAt: now, deadline: now + draft.duration * 1000, endedAt: null, options: draft.options.map(o => ({ ...o, votes: 0 })), voters: [], events: [], activity: [] };
       }
       changed = true;
       break;
@@ -150,6 +170,18 @@ export function applyCommand(state, command, now = Date.now()) {
       next.draft = structuredClone(preset.draft); next.draftRevision++; changed = true;
       break;
     }
+    case 'preset-next': {
+      requireThat(next.poll?.status !== 'running', 'Сначала завершите текущий опрос.', 409);
+      requireThat(next.presets.length > 0, 'Сначала создайте хотя бы один шаблон.');
+      const serializedDraft = JSON.stringify(next.draft);
+      const current = next.presets.findIndex(preset => JSON.stringify(preset.draft) === serializedDraft);
+      const preset = next.presets[(current + 1) % next.presets.length];
+      next.draft = structuredClone(preset.draft);
+      next.draftRevision++;
+      changed = true;
+      outcome = preset.name;
+      break;
+    }
     case 'settings-import': {
       requireThat(command.draftRevision === next.draftRevision, 'Опрос изменён в другой панели. Загрузите актуальную версию.', 409);
       requireThat(!next.poll, 'Сначала закройте текущий опрос.', 409);
@@ -172,6 +204,13 @@ export function applyCommand(state, command, now = Date.now()) {
     case 'widget-update': {
       next.widget = validateWidget(command.widget);
       changed = true;
+      break;
+    }
+    case 'activity-avatar': {
+      requireThat(p && command.pollId === p.id, 'Этот опрос уже сменился.', 409);
+      requireThat(typeof command.eventId === 'string' && isTwitchImage(command.avatarUrl), 'Некорректное изображение зрителя.');
+      const entry = p.activity.find(item => item.id === command.eventId);
+      if (entry && entry.avatarUrl !== command.avatarUrl) { entry.avatarUrl = command.avatarUrl; changed = true; }
       break;
     }
     case 'finish':
@@ -198,6 +237,7 @@ export function applyCommand(state, command, now = Date.now()) {
         if ((command.source ?? 'test') !== (p.source ?? 'test')) { outcome = 'wrong-source'; break; }
         if (p.source === 'twitch' && (command.broadcasterId !== p.broadcasterId || !Number.isFinite(command.sentAt) || command.sentAt < p.startedAt || command.sentAt >= p.deadline)) { outcome = 'wrong-channel-or-time'; break; }
         requireThat(typeof command.viewerId === 'string' && command.viewerId.length > 0 && command.viewerId.length <= 128 && typeof command.eventId === 'string' && command.eventId.length > 0 && command.eventId.length <= 128 && typeof command.message === 'string' && command.message.length <= 500, 'Некорректное сообщение.');
+        if (p.source === 'twitch') requireThat(typeof command.viewerName === 'string' && command.viewerName.length > 0 && command.viewerName.length <= 50, 'Некорректное имя зрителя.');
         if (p.events.includes(command.eventId)) { outcome = 'duplicate-event'; break; }
         const option = p.options.find(o => o.word === normalize(command.message));
         if (!option) { outcome = 'unmatched'; break; }
@@ -205,9 +245,16 @@ export function applyCommand(state, command, now = Date.now()) {
         p.events.push(command.eventId); changed = true;
         const existing = p.voters.find(entry => entry[0] === command.viewerId);
         if (existing && (!p.allowChange || existing[1] === option.id)) { outcome = 'already-voted'; break; }
+        const previousOptionId = existing?.[1];
         if (existing) { p.options.find(o => o.id === existing[1]).votes--; existing[1] = option.id; }
         else p.voters.push([command.viewerId, option.id]);
         option.votes++; outcome = existing ? 'changed' : 'counted';
+        if (p.source === 'twitch') {
+          const previousEntry = p.activity.find(entry => entry.viewerId === command.viewerId);
+          if (previousEntry) p.activity.splice(p.activity.indexOf(previousEntry), 1);
+          p.activity.push({ id: command.eventId, viewerId: command.viewerId, viewerName: command.viewerName, avatarUrl: previousEntry?.avatarUrl || '', optionId: option.id, ...(existing ? { previousOptionId } : {}), at: command.sentAt });
+          if (p.activity.length > 50) p.activity.splice(0, p.activity.length - 50);
+        }
       }
       break;
     }

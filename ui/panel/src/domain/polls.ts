@@ -5,6 +5,15 @@ export type PollOption = {
   votes?: number
 }
 
+export type VoteActivity = {
+  id: string
+  viewerName: string
+  avatarUrl?: string
+  optionId: string
+  previousOptionId?: string
+  at: number
+}
+
 export type Draft = {
   question: string
   options: PollOption[]
@@ -23,6 +32,7 @@ export type Poll = Omit<Draft, "options"> & {
   startedAt: number
   broadcasterId?: string | null
   options: Array<PollOption & { votes: number }>
+  activity: VoteActivity[]
 }
 
 export type Preset = {
@@ -31,7 +41,8 @@ export type Preset = {
   draft: Draft
 }
 
-export type PresetDialogState = { mode: "create" | "rename"; preset?: Preset }
+export type PresetDialogState =
+  { mode: "create" } | { mode: "edit"; preset: Preset }
 
 export type WidgetSettings = {
   accent: string
@@ -68,7 +79,22 @@ export type CommandResult = {
   outcome?: string
 }
 
-export const EMPTY_TWITCH: TwitchState = { phase: "disconnected", login: "" }
+export const EMPTY_TWITCH: TwitchState = { phase: "loading", login: "" }
+
+export function createBlankDraft(): Draft {
+  return {
+    question: "",
+    options: [
+      { id: "1", name: "", word: "" },
+      { id: "2", name: "", word: "" },
+    ],
+    duration: 60,
+    secret: false,
+    allowChange: false,
+    showOverlay: true,
+    source: "twitch",
+  }
+}
 
 export function percentages(options: Array<{ votes?: number }>) {
   const total = options.reduce((sum, option) => sum + (option.votes || 0), 0)
@@ -97,6 +123,12 @@ export function validateDraft(draft: Draft | null) {
     if (words.has(word)) return "Ключевые слова должны различаться."
     words.add(word)
   }
+  if (
+    !Number.isInteger(draft.duration) ||
+    draft.duration < 10 ||
+    draft.duration > 3600
+  )
+    return "Укажите время от 10 до 3600 секунд."
   return ""
 }
 

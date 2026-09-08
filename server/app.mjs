@@ -10,6 +10,7 @@ const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
 const panelDir = join(publicDir, 'panel-build');
 const files = { '/': [join(panelDir, 'index.html'), 'text/html', true], '/overlay': ['overlay.html', 'text/html'], '/overlay.js': ['overlay.js', 'text/javascript'], '/shared.js': ['shared.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/favicon.png': ['favicon.png', 'image/png'], '/fonts/geist-cyrillic.woff2': ['fonts/geist-cyrillic.woff2', 'font/woff2'], '/fonts/geist-latin.woff2': ['fonts/geist-latin.woff2', 'font/woff2'] };
 const assetTypes = { '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.svg': 'image/svg+xml' };
+const requireThat = (condition, message, status) => { if (!condition) throw new PollError(message, status); };
 export async function createApp({ dataDir, now = Date.now, twitchOptions = {} } = {}) {
   const store = await createStore(join(dataDir, 'state.json'), { now });
   const twitch = await createTwitch({ filename: join(dataDir, 'twitch.json'), store, now, ...twitchOptions });
@@ -19,7 +20,7 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {} } 
   const server = createServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'no-referrer');
-    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: stream-dock-icon: https://static-cdn.jtvnw.net; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
     try {
       const host = request.headers.host;
       if (!allowedHosts.has(host)) return json(response, 403, { error: 'Недопустимый адрес сервера.' });
@@ -40,6 +41,48 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {} } 
         request.on('close', () => { clearInterval(heartbeat); off(); offTwitch(); streams.delete(response); });
         return;
       }
+      if (request.method === 'POST' && path === '/api/stream-dock') {
+        if (!request.headers['content-type']?.startsWith('application/json') || request.headers['x-projectchat-control'] !== 'stream-dock-v1') return json(response, 415, { error: 'Ожидается команда projectCHAT Stream Dock.' });
+        let bytes = 0, text = '';
+        for await (const chunk of request) {
+          bytes += chunk.length;
+          if (bytes > 4096) { json(response, 413, { error: 'Слишком большая команда.' }); return; }
+          text += chunk;
+        }
+        let input;
+        try { input = JSON.parse(text); } catch { return json(response, 400, { error: 'Некорректный JSON.' }); }
+        const state = store.snapshot();
+        let command, message;
+        if (input?.action === 'start') {
+          requireThat(!state.poll || state.poll.status !== 'running', 'Опрос уже запущен.', 409);
+          let broadcasterId;
+          if (state.draft.source === 'twitch') {
+            const connection = twitch.snapshot();
+            requireThat(connection.phase === 'connected', 'Сначала подключите Twitch в projectCHAT.', 409);
+            broadcasterId = connection.userId;
+          }
+          command = { type: 'start', draftRevision: state.draftRevision, draft: state.draft, broadcasterId };
+          message = 'Опрос запущен';
+        } else if (input?.action === 'finish') {
+          requireThat(state.poll?.status === 'running', 'Сейчас нет активного опроса.', 409);
+          command = { type: 'finish', pollId: state.poll.id };
+          message = 'Опрос завершён';
+        } else if (input?.action === 'toggle-output') {
+          requireThat(state.poll, 'Сейчас нет опроса.', 409);
+          command = { type: 'visibility', pollId: state.poll.id, visible: !state.poll.visible };
+          message = state.poll.visible ? 'Виджет скрыт' : 'Виджет показан';
+        } else if (input?.action === 'extend') {
+          requireThat(state.poll?.status === 'running', 'Сейчас нет активного опроса.', 409);
+          command = { type: 'extend', pollId: state.poll.id };
+          message = 'Добавлено 30 секунд';
+        } else if (input?.action === 'next-preset') {
+          command = { type: 'preset-next' };
+        } else {
+          throw new PollError('Неизвестное действие Stream Dock.');
+        }
+        const result = await store.command(command);
+        return json(response, 200, { ok: true, message: message || `Выбран шаблон «${result.outcome}»`, state: result.state });
+      }
       if (request.method === 'POST' && ['/api/command', '/api/twitch'].includes(path)) {
         if (!request.headers['content-type']?.startsWith('application/json') || request.headers['x-poll-client'] !== 'panel') return json(response, 415, { error: 'Ожидается JSON-команда панели.' });
         let bytes = 0, text = '';
@@ -52,6 +95,7 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {} } 
         try { command = JSON.parse(text); } catch { return json(response, 400, { error: 'Некорректный JSON.' }); }
         if (!command || typeof command !== 'object' || Array.isArray(command)) throw new PollError('Некорректная команда.');
         if (path === '/api/twitch') return json(response, 200, await twitch.command(command));
+        if (command.type === 'activity-avatar') throw new PollError('Неизвестная команда.');
         if (command.type === 'vote') command.source = 'test';
         if (command.type === 'start' && command.draft?.source === 'twitch') {
           const connection = twitch.snapshot();

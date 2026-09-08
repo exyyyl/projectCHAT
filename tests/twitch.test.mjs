@@ -10,10 +10,11 @@ const clientId = 'testclient12345';
 const tokens = { access_token: 'private-access', refresh_token: 'private-refresh', expires_in: 14400 };
 const account = { client_id: clientId, user_id: '123', login: 'streamer', scopes: ['user:read:chat'], expires_in: 14400 };
 const profile = { data: [{ id: '123', login: 'streamer', display_name: 'Streamer', profile_image_url: 'https://static-cdn.jtvnw.net/jtv_user_pictures/streamer.png' }] };
+const viewerProfile = { data: [{ id: '456', login: 'viewer', display_name: 'Viewer', profile_image_url: 'https://static-cdn.jtvnw.net/jtv_user_pictures/viewer.png' }] };
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
 const welcome = id => ({ metadata: { message_type: 'session_welcome' }, payload: { session: { id, keepalive_timeout_seconds: 30 } } });
 function notification(now, event = {}) {
-  return { metadata: { message_type: 'notification', message_timestamp: new Date(now).toISOString() }, payload: { subscription: { type: 'channel.chat.message' }, event: { broadcaster_user_id: '123', chatter_user_id: '456', message_id: 'message1', message: { text: 'МАЙН' }, ...event } } };
+  return { metadata: { message_type: 'notification', message_timestamp: new Date(now).toISOString() }, payload: { subscription: { type: 'channel.chat.message' }, event: { broadcaster_user_id: '123', chatter_user_id: '456', chatter_user_name: 'Viewer', message_id: 'message1', message: { text: 'МАЙН' }, ...event } } };
 }
 async function fixture(t, customFetch, saved) {
   let time = 1000000;
@@ -37,7 +38,7 @@ async function fixture(t, customFetch, saved) {
       if (url.endsWith('/device')) return response({ device_code: 'private-device', user_code: 'ABCD1234', verification_uri: 'https://www.twitch.tv/activate?public=true', expires_in: 1800, interval: 5 });
       if (url.endsWith('/token')) return response(tokens);
       if (url.endsWith('/validate')) return response(account);
-      if (url.includes('/helix/users?')) return response(profile);
+      if (url.includes('/helix/users?')) return response(new URL(url).searchParams.get('id') === '456' ? viewerProfile : profile);
       if (url.endsWith('/subscriptions')) return response({ data: [{ id: 'sub' }] }, 202);
       throw new Error('Unexpected URL');
     },
@@ -73,11 +74,16 @@ test('real chat counts while hidden, deduplicates and excludes shared-channel an
   const s = f.store.snapshot();
   await f.store.command({ type: 'start', draftRevision: s.draftRevision, draft: { ...s.draft, source: 'twitch', showOverlay: false }, broadcasterId: '123' });
   const ws = f.sockets[0];
-  await ws.message(notification(f.now())); await ws.message(notification(f.now()));
-  await ws.message(notification(f.now(), { message_id: 'shared', chatter_user_id: '789', source_broadcaster_user_id: '999' }));
-  await ws.message(notification(f.now() - 1, { message_id: 'old', chatter_user_id: '789' }));
+  const voteAt = f.now();
+  await ws.message(notification(voteAt)); await ws.message(notification(voteAt));
+  await ws.message(notification(voteAt, { message_id: 'ordinary-chat', message: { text: 'Всем привет' } }));
+  await ws.message(notification(voteAt, { message_id: 'shared', chatter_user_id: '789', source_broadcaster_user_id: '999' }));
+  await ws.message(notification(voteAt - 1, { message_id: 'old', chatter_user_id: '789' }));
+  await f.advance(75);
   assert.equal(f.store.snapshot().poll.options[0].votes, 1);
   assert.equal(f.store.snapshot().poll.visible, false);
+  assert.deepEqual(f.store.snapshot().poll.activity, [{ id: 'message1', viewerName: 'Viewer', avatarUrl: viewerProfile.data[0].profile_image_url, optionId: '1', at: voteAt }]);
+  assert.doesNotMatch(JSON.stringify(f.store.snapshot()), /twitch:456/);
   assert.equal(chatVote(notification(f.now()), { ...f.store.snapshot().poll, source: 'test' }, '123'), null);
 });
 test('Twitch session migration keeps old connection until welcome without resubscribing', async t => {

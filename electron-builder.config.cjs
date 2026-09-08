@@ -10,6 +10,7 @@ module.exports = {
   },
   files: [
     'desktop/**/*',
+    'build/icon.png',
     'server/**/*',
     'public/**/*',
     'package.json',
@@ -18,6 +19,7 @@ module.exports = {
   ],
   extraResources: [
     { from: 'build/update-config.json', to: 'update-config.json' },
+    { from: 'build/stream-dock-plugins', to: 'stream-dock-plugins' },
   ],
   publish: {
     provider: 'generic',

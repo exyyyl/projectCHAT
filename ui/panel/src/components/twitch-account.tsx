@@ -1,5 +1,11 @@
 import { useState } from "react"
-import { ChevronDown, ExternalLink, UserRound } from "lucide-react"
+import {
+  ChevronDown,
+  ExternalLink,
+  LoaderCircle,
+  LogOut,
+  UserRound,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -13,7 +19,6 @@ type TwitchAccountProps = {
   state: TwitchState
   placement?: "header" | "sidebar"
   onCommand: (type: "connect" | "disconnect") => void
-  onOpenSettings?: () => void
 }
 
 function TwitchAvatar({
@@ -51,9 +56,9 @@ export function TwitchAccount({
   state,
   placement = "header",
   onCommand,
-  onOpenSettings,
 }: TwitchAccountProps) {
   const [open, setOpen] = useState(false)
+  const loading = state.phase === "loading"
   const connected =
     state.phase === "connected" || state.phase === "reconnecting"
   const authorizing = ["connecting", "authorizing"].includes(state.phase)
@@ -73,6 +78,30 @@ export function TwitchAccount({
             ? "Ожидаем подтверждение"
             : state.error || "Аккаунт не подключён"
   const sidebar = placement === "sidebar"
+
+  if (loading) {
+    return (
+      <div
+        className={
+          sidebar
+            ? "flex h-11 w-full items-center gap-2.5 px-2"
+            : "flex h-9 items-center gap-2 rounded-full px-2.5"
+        }
+        role="status"
+        aria-label="Загрузка профиля Twitch"
+      >
+        <span
+          className={`${sidebar ? "size-8" : "size-5"} shrink-0 animate-pulse rounded-full bg-[#a970ff]/16`}
+        />
+        <span className="min-w-0 flex-1 space-y-1.5">
+          <span className="block h-2.5 w-18 animate-pulse rounded-full bg-white/10" />
+          {sidebar && (
+            <span className="block h-2 w-12 animate-pulse rounded-full bg-white/6" />
+          )}
+        </span>
+      </div>
+    )
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -100,7 +129,13 @@ export function TwitchAccount({
             <span className="min-w-0 text-left">
               <span className="block truncate text-sm">{accountLabel}</span>
               <span className="block truncate text-[10px] font-normal text-muted-foreground">
-                {connected ? "Twitch" : "Подключить"}
+                {connected
+                  ? state.phase === "reconnecting"
+                    ? "Подключаемся…"
+                    : "Чат подключён"
+                  : authorizing
+                    ? "Вход в аккаунт…"
+                    : "Не подключён"}
               </span>
             </span>
           ) : (
@@ -116,17 +151,17 @@ export function TwitchAccount({
         side={sidebar ? "right" : "bottom"}
         align="end"
         sideOffset={sidebar ? 10 : 4}
-        className="w-84 overflow-hidden p-0"
+        className="w-80 overflow-hidden p-2"
       >
-        <div className="p-5">
+        <div className="rounded-xl bg-white/[0.035] p-3">
           <div className="flex items-center gap-3">
             <TwitchAvatar
               state={state}
-              className="size-11"
+              className="size-10"
               alt={state.login ? `Аватар ${state.login}` : ""}
             />
             <div className="min-w-0">
-              <div className="truncate font-medium">
+              <div className="truncate text-sm font-medium">
                 {connected
                   ? state.displayName || state.login
                   : "Twitch-аккаунт"}
@@ -139,49 +174,48 @@ export function TwitchAccount({
               </div>
             </div>
           </div>
-
-          {state.device && (
-            <div className="mt-5 space-y-3">
-              <div className="flex h-16 items-center justify-center rounded-xl border border-border-subtle bg-surface-subtle font-mono text-2xl tracking-[.2em] text-brand">
-                {state.device.code}
-              </div>
-              <Button asChild className="h-10 w-full">
-                <a href={state.device.url} target="_blank" rel="noreferrer">
-                  Подтвердить в Twitch <ExternalLink />
-                </a>
-              </Button>
-            </div>
-          )}
-
-          {!connected && !state.device && !authorizing && (
-            <Button
-              className="mt-5 h-9 w-full"
-              onClick={() => {
-                setOpen(false)
-                onOpenSettings?.()
-              }}
-            >
-              Настроить подключение
-            </Button>
-          )}
-
-          {!state.device && authorizing && (
-            <div className="mt-5 rounded-lg border border-border-subtle bg-surface-subtle px-3 py-2.5 text-xs text-muted-foreground">
-              {connectionStatus}
-            </div>
-          )}
-
-          {(connected || authorizing || state.device) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-4 w-full text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => onCommand("disconnect")}
-            >
-              {connected ? "Отключить аккаунт" : "Отменить вход"}
-            </Button>
-          )}
         </div>
+
+        {state.device && (
+          <div className="p-3 pb-2">
+            <div className="text-[11px] text-muted-foreground">Код входа</div>
+            <div className="mt-2 flex h-12 items-center justify-center rounded-lg bg-black/20 font-mono text-xl tracking-[.22em] text-brand">
+              {state.device.code}
+            </div>
+            <Button asChild className="mt-3 h-9 w-full">
+              <a href={state.device.url} target="_blank" rel="noreferrer">
+                Открыть Twitch <ExternalLink />
+              </a>
+            </Button>
+          </div>
+        )}
+
+        {!connected && !state.device && !authorizing && (
+          <div className="p-2 pb-1">
+            <Button className="h-9 w-full" onClick={() => onCommand("connect")}>
+              Подключить Twitch
+            </Button>
+          </div>
+        )}
+
+        {!state.device && authorizing && (
+          <div className="flex items-center gap-2 px-3 py-4 text-xs text-muted-foreground">
+            <LoaderCircle className="size-3.5 animate-spin" />
+            {connectionStatus}
+          </div>
+        )}
+
+        {(connected || authorizing || state.device) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-1 w-full justify-start gap-2.5 px-3 text-muted-foreground hover:bg-destructive/8 hover:text-destructive"
+            onClick={() => onCommand("disconnect")}
+          >
+            <LogOut />
+            {connected ? "Отключить Twitch" : "Отменить вход"}
+          </Button>
+        )}
       </PopoverContent>
     </Popover>
   )

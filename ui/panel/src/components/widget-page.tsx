@@ -1,9 +1,10 @@
 import { useState } from "react"
-import { Check, Copy, ExternalLink, Eye, EyeOff, RotateCcw } from "lucide-react"
+import { Check, Copy, ExternalLink, RotateCcw } from "lucide-react"
 
 import { PollResults } from "@/components/poll-results"
 import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { useToast } from "@/components/ui/toast"
 import type { Draft, Poll, WidgetSettings } from "@/domain/polls"
 
 type WidgetPageProps = {
@@ -40,6 +41,7 @@ export function WidgetPage({
   onSetOutput,
 }: WidgetPageProps) {
   const [copied, setCopied] = useState(false)
+  const showToast = useToast()
   const current = poll || draft
   const visible = poll ? poll.visible : draft.showOverlay
   const overlayUrl = `${location.origin}/overlay`
@@ -69,7 +71,6 @@ export function WidgetPage({
                 disabled={busy}
                 onClick={() => onSetOutput(!visible)}
               >
-                {visible ? <EyeOff /> : <Eye />}
                 {visible ? "Скрыть" : "Показать"}
               </Button>
             </div>
@@ -100,6 +101,10 @@ export function WidgetPage({
               onClick={async () => {
                 await navigator.clipboard.writeText(overlayUrl)
                 setCopied(true)
+                showToast({
+                  message: "Ссылка на виджет скопирована",
+                  tone: "success",
+                })
                 setTimeout(() => setCopied(false), 1800)
               }}
             >

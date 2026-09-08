@@ -3,6 +3,7 @@ import { CheckCircle2, Download, LoaderCircle, RefreshCw } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useToast } from "@/components/ui/toast"
 
 const updateStatus = (update: DesktopUpdateState) => {
   switch (update.phase) {
@@ -28,6 +29,7 @@ const updateStatus = (update: DesktopUpdateState) => {
 }
 
 export function UpdateSettings() {
+  const showToast = useToast()
   const [info, setInfo] = useState<DesktopInfo | null>(null)
   const [update, setUpdate] = useState<DesktopUpdateState | null>(null)
 
@@ -49,6 +51,14 @@ export function UpdateSettings() {
       unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    if (update?.phase === "error")
+      showToast({
+        message: update.message || "Не удалось проверить обновления",
+        tone: "error",
+      })
+  }, [showToast, update?.message, update?.phase])
 
   const bridge = window.streamPollsDesktop
   if (!info || !update || !bridge)

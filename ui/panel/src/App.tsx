@@ -1,19 +1,32 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import { AppSidebar, type AppView } from "@/components/app-sidebar"
 import { PollWorkspace } from "@/components/poll-workspace"
 import { PresetDialogs } from "@/components/preset-dialogs"
 import { PresetLibrary } from "@/components/preset-library"
 import { SettingsPage } from "@/components/settings-page"
+import { StreamDockPage } from "@/components/stream-dock-page"
 import { TwitchAccount } from "@/components/twitch-account"
 import { WidgetPage } from "@/components/widget-page"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { validateDraft } from "@/domain/polls"
+import { ToastProvider, useToast } from "@/components/ui/toast"
 import { usePollController } from "@/hooks/use-poll-controller"
 
 export function App() {
+  return (
+    <ToastProvider>
+      <TooltipProvider>
+        <AppContent />
+      </TooltipProvider>
+    </ToastProvider>
+  )
+}
+
+function AppContent() {
   const controller = usePollController()
+  const showToast = useToast()
   const [view, setView] = useState<AppView>("polls")
+  const [desktopDevelopment, setDesktopDevelopment] = useState<boolean>()
   const {
     state,
     draft,
@@ -21,16 +34,33 @@ export function App() {
     connected,
     busy,
     error,
-    privatePreview,
     selectedPreset,
     presetDialog,
-    presetName,
     deletePreset,
     twitchClient,
     poll,
     canEdit,
     twitchWarning,
   } = controller
+
+  useEffect(() => {
+    if (error) showToast({ message: error, tone: "error" })
+  }, [error, showToast])
+
+  useEffect(() => {
+    if (twitchWarning)
+      showToast({ message: twitchWarning, tone: "warning", duration: 6500 })
+  }, [showToast, twitchWarning])
+
+  useEffect(() => {
+    let active = true
+    void window.streamPollsDesktop
+      ?.getInfo()
+      .then((info) => active && setDesktopDevelopment(info.development))
+    return () => {
+      active = false
+    }
+  }, [])
 
   if (!state || !draft)
     return (
@@ -40,143 +70,111 @@ export function App() {
     )
 
   return (
-    <TooltipProvider>
-      <div className="flex h-screen overflow-hidden bg-panel text-foreground">
-        <AppSidebar
-          view={view}
-          connected={connected}
-          onNavigate={setView}
-          account={
-            <TwitchAccount
-              placement="sidebar"
-              state={twitch}
-              onCommand={(type) => void controller.twitchCommand(type)}
-              onOpenSettings={() => setView("settings")}
-            />
-          }
-        />
+    <div className="flex h-screen overflow-hidden bg-panel text-foreground">
+      <AppSidebar
+        view={view}
+        connected={connected}
+        streamDockComingSoon={desktopDevelopment === false}
+        onNavigate={setView}
+        account={
+          <TwitchAccount
+            placement="sidebar"
+            state={twitch}
+            onCommand={(type) => void controller.twitchCommand(type)}
+          />
+        }
+      />
 
-        <main className="min-w-0 flex-1 overflow-y-auto bg-panel">
-          {error && (
-            <div
-              role="alert"
-              className="border-b border-destructive/15 bg-destructive/8 px-6 py-3 text-sm text-red-200 lg:px-8"
-            >
-              {error}
-            </div>
-          )}
-          {twitchWarning && (
-            <div
-              role="status"
-              className="border-b border-amber-300/10 bg-amber-400/8 px-6 py-3 text-sm text-amber-100 lg:px-8"
-            >
-              {twitchWarning}
-            </div>
-          )}
+      <main className="min-w-0 flex-1 overflow-y-auto bg-panel">
+        {view === "polls" && (
+          <PollWorkspace
+            poll={poll}
+            draft={draft}
+            connected={connected}
+            busy={busy}
+            twitchPhase={twitch.phase}
+            widget={state.widget}
+            onChangeDraft={controller.changeDraft}
+            onStart={() => void controller.start()}
+            onClear={() => void controller.clear()}
+            onSetOutput={(visible) => void controller.setOutput(visible)}
+            onRun={controller.run}
+            onVote={(option) => void controller.vote(option)}
+            onSimulate={controller.simulate}
+          />
+        )}
 
-          {view === "polls" && (
-            <PollWorkspace
-              poll={poll}
-              draft={draft}
-              connected={connected}
-              busy={busy}
-              twitchPhase={twitch.phase}
-              privatePreview={privatePreview}
-              widget={state.widget}
-              onChangeDraft={controller.changeDraft}
-              onStart={() => void controller.start()}
-              onClear={() => void controller.clear()}
-              onSetOutput={(visible) => void controller.setOutput(visible)}
-              onTogglePreview={() =>
-                controller.setPrivatePreview((value) => !value)
-              }
-              onRun={controller.run}
-              onVote={(option) => void controller.vote(option)}
-              onSimulate={controller.simulate}
-            />
-          )}
+        {view === "presets" && (
+          <PresetLibrary
+            presets={state.presets}
+            selectedId={selectedPreset}
+            canApply={canEdit}
+            canManage={connected}
+            canCreate={state.presets.length < 30}
+            busy={busy}
+            onCreate={() => controller.setPresetDialog({ mode: "create" })}
+            onApply={(preset) => {
+              void controller.applyPreset(preset).then((applied) => {
+                if (applied) setView("polls")
+              })
+            }}
+            onEdit={(preset) =>
+              controller.setPresetDialog({ mode: "edit", preset })
+            }
+            onMove={(preset, direction) =>
+              void controller.run("preset-move", {
+                presetId: preset.id,
+                direction,
+              })
+            }
+            onDelete={controller.setDeletePreset}
+          />
+        )}
 
-          {view === "presets" && (
-            <PresetLibrary
-              presets={state.presets}
-              selectedId={selectedPreset}
-              canEdit={canEdit}
-              canCreate={!validateDraft(draft)}
-              busy={busy}
-              onCreate={() => {
-                controller.setPresetName(draft.question)
-                controller.setPresetDialog({ mode: "create" })
-              }}
-              onApply={(preset) => {
-                void controller.applyPreset(preset).then((applied) => {
-                  if (applied) setView("polls")
-                })
-              }}
-              onUpdate={(preset) =>
-                void controller.run("preset-update", {
-                  presetId: preset.id,
-                  draft,
-                })
-              }
-              onRename={(preset) => {
-                controller.setPresetName(preset.name)
-                controller.setPresetDialog({ mode: "rename", preset })
-              }}
-              onMove={(preset, direction) =>
-                void controller.run("preset-move", {
-                  presetId: preset.id,
-                  direction,
-                })
-              }
-              onDelete={controller.setDeletePreset}
-            />
-          )}
+        {view === "settings" && (
+          <SettingsPage
+            draft={draft}
+            presets={state.presets}
+            widget={state.widget}
+            canImport={canEdit}
+            busy={busy}
+            twitch={twitch}
+            twitchClient={twitchClient}
+            onImport={controller.importSettings}
+            onTwitchClientChange={controller.setTwitchClient}
+            onTwitchCommand={(type) => void controller.twitchCommand(type)}
+          />
+        )}
 
-          {view === "settings" && (
-            <SettingsPage
-              draft={draft}
-              presets={state.presets}
-              widget={state.widget}
-              canImport={canEdit}
-              busy={busy}
-              twitch={twitch}
-              twitchClient={twitchClient}
-              onImport={controller.importSettings}
-              onTwitchClientChange={controller.setTwitchClient}
-              onTwitchCommand={(type) => void controller.twitchCommand(type)}
-            />
-          )}
+        {view === "widget" && (
+          <WidgetPage
+            poll={poll}
+            draft={draft}
+            widget={state.widget}
+            busy={busy}
+            onUpdate={(widget) =>
+              void controller.run("widget-update", { widget })
+            }
+            onSetOutput={(visible) => void controller.setOutput(visible)}
+          />
+        )}
 
-          {view === "widget" && (
-            <WidgetPage
-              poll={poll}
-              draft={draft}
-              widget={state.widget}
-              busy={busy}
-              onUpdate={(widget) =>
-                void controller.run("widget-update", { widget })
-              }
-              onSetOutput={(visible) => void controller.setOutput(visible)}
-            />
-          )}
-        </main>
+        {view === "stream-dock" && <StreamDockPage />}
+      </main>
 
-        <PresetDialogs
-          dialog={presetDialog}
-          name={presetName}
-          draft={draft}
-          pendingDelete={deletePreset}
-          onNameChange={controller.setPresetName}
-          onSave={() => void controller.savePreset()}
-          onClose={() => controller.setPresetDialog(null)}
-          onDeleteChange={controller.setDeletePreset}
-          onConfirmDelete={(preset) => {
-            void controller.run("preset-delete", { presetId: preset.id })
-            controller.setDeletePreset(null)
-          }}
-        />
-      </div>
-    </TooltipProvider>
+      <PresetDialogs
+        dialog={presetDialog}
+        pendingDelete={deletePreset}
+        busy={busy}
+        onSave={controller.savePreset}
+        onClose={() => controller.setPresetDialog(null)}
+        onDeleteChange={controller.setDeletePreset}
+        onConfirmDelete={(preset) => {
+          void controller.run("preset-delete", { presetId: preset.id })
+          controller.setDeletePreset(null)
+        }}
+      />
+    </div>
   )
 }
 

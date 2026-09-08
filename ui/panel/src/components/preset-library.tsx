@@ -1,9 +1,9 @@
 import {
   ArrowLeft,
   ArrowRight,
+  FilePenLine,
   MoreHorizontal,
   Plus,
-  Save,
   Trash2,
 } from "lucide-react"
 
@@ -20,13 +20,13 @@ import type { Preset } from "@/domain/polls"
 type PresetLibraryProps = {
   presets: Preset[]
   selectedId: string | null
-  canEdit: boolean
+  canApply: boolean
+  canManage: boolean
   canCreate: boolean
   busy: boolean
   onCreate: () => void
   onApply: (preset: Preset) => void
-  onUpdate: (preset: Preset) => void
-  onRename: (preset: Preset) => void
+  onEdit: (preset: Preset) => void
   onMove: (preset: Preset, direction: -1 | 1) => void
   onDelete: (preset: Preset) => void
 }
@@ -34,13 +34,13 @@ type PresetLibraryProps = {
 export function PresetLibrary({
   presets,
   selectedId,
-  canEdit,
+  canApply,
+  canManage,
   canCreate,
   busy,
   onCreate,
   onApply,
-  onUpdate,
-  onRename,
+  onEdit,
   onMove,
   onDelete,
 }: PresetLibraryProps) {
@@ -49,7 +49,7 @@ export function PresetLibrary({
       <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
         <button
           className="group flex min-h-36 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border-strong bg-surface-subtle text-muted-foreground transition-colors hover:border-brand/40 hover:bg-brand/5 hover:text-foreground disabled:pointer-events-none disabled:opacity-35"
-          disabled={!canEdit || !canCreate}
+          disabled={!canManage || !canCreate || busy}
           onClick={onCreate}
         >
           <span className="flex size-9 items-center justify-center rounded-full border border-border-strong bg-surface-raised transition-colors group-hover:border-brand/30 group-hover:text-brand">
@@ -69,7 +69,7 @@ export function PresetLibrary({
           >
             <button
               className="flex size-full min-h-36 flex-col items-start p-4 pr-11 text-left disabled:opacity-40"
-              disabled={!canEdit || busy}
+              disabled={!canApply || busy}
               onClick={() => onApply(preset)}
             >
               <span className="max-w-full truncate text-[15px] font-medium">
@@ -89,7 +89,7 @@ export function PresetLibrary({
                   variant="ghost"
                   size="icon-sm"
                   className="absolute top-3 right-3 rounded-md opacity-60 hover:opacity-100"
-                  disabled={!canEdit || busy}
+                  disabled={!canManage || busy}
                 >
                   <MoreHorizontal />
                   <span className="sr-only">
@@ -98,12 +98,9 @@ export function PresetLibrary({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem onSelect={() => onUpdate(preset)}>
-                  <Save />
-                  Обновить содержимое
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => onRename(preset)}>
-                  Переименовать
+                <DropdownMenuItem onSelect={() => onEdit(preset)}>
+                  <FilePenLine />
+                  Редактировать
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

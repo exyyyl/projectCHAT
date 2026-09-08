@@ -19,12 +19,10 @@ export function usePollController() {
   const [connected, setConnected] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const [privatePreview, setPrivatePreview] = useState(false)
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null)
   const [presetDialog, setPresetDialog] = useState<PresetDialogState | null>(
     null
   )
-  const [presetName, setPresetName] = useState("")
   const [deletePreset, setDeletePreset] = useState<Preset | null>(null)
   const [twitchClient, setTwitchClient] = useState("")
 
@@ -173,7 +171,7 @@ export function usePollController() {
     poll?.source === "twitch" && poll.status === "running"
       ? twitch.userId && poll.broadcasterId !== twitch.userId
         ? "Опрос привязан к другому аккаунту Twitch."
-        : twitch.phase !== "connected"
+        : !["connected", "loading"].includes(twitch.phase)
           ? "Нет связи с Twitch. Голоса из чата сейчас не поступают."
           : twitch.lastGapAt && twitch.lastGapAt >= poll.startedAt
             ? "Был разрыв связи с Twitch. Часть голосов могла не поступить."
@@ -191,7 +189,6 @@ export function usePollController() {
     if (poll) await run("clear", { pollId: poll.id }, true)
   }
   const setOutput = async (visible: boolean) => {
-    setPrivatePreview(false)
     if (poll) await run("visibility", { pollId: poll.id, visible })
     else changeDraft((value) => ({ ...value, showOverlay: visible }))
   }
@@ -212,19 +209,20 @@ export function usePollController() {
     setSelectedPreset(null)
     return true
   }
-  const savePreset = async () => {
-    if (!draft || !presetName.trim()) return
+  const savePreset = async (name: string, presetDraft: Draft) => {
     const result =
-      presetDialog?.mode === "rename" && presetDialog.preset
+      presetDialog?.mode === "edit"
         ? await run("preset-update", {
             presetId: presetDialog.preset.id,
-            name: presetName.trim(),
+            name: name.trim(),
+            draft: presetDraft,
           })
-        : await run("preset-create", { name: presetName.trim(), draft })
-    if (!result) return
+        : await run("preset-create", { name: name.trim(), draft: presetDraft })
+    if (!result) return false
     if (presetDialog?.mode === "create")
       setSelectedPreset(result.state.presets.at(-1)?.id || null)
     setPresetDialog(null)
+    return true
   }
   const twitchCommand = async (type: "connect" | "disconnect") => {
     setBusy(true)
@@ -296,10 +294,8 @@ export function usePollController() {
     connected,
     busy,
     error,
-    privatePreview,
     selectedPreset,
     presetDialog,
-    presetName,
     deletePreset,
     twitchClient,
     poll,
@@ -316,9 +312,7 @@ export function usePollController() {
     twitchCommand,
     vote,
     simulate,
-    setPrivatePreview,
     setPresetDialog,
-    setPresetName,
     setDeletePreset,
     setTwitchClient,
   }

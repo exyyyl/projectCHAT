@@ -78,22 +78,40 @@ test('panel-only poll starts hidden, counts votes, reveals and ends without rese
   assert.equal(state.draft.showOverlay, false);
 });
 test('legacy saved data migrates to test mode and visible default', () => {
-  const state = start(); delete state.draft.source; delete state.draft.showOverlay; delete state.poll.source; delete state.poll.showOverlay;
+  const state = start(); delete state.draft.source; delete state.draft.showOverlay; delete state.poll.source; delete state.poll.showOverlay; delete state.poll.activity;
   const result = validateStoredState(state);
   assert.equal(result.draft.source, 'test'); assert.equal(result.draft.showOverlay, true);
   assert.equal(result.poll.source, 'test');
+  assert.deepEqual(result.poll.activity, []);
 });
 test('Twitch and demo votes are isolated and a live poll stays bound to channel and time', () => {
   const initial = initialState();
   let state = applyCommand(initial, { type: 'start', draftRevision: 0, draft: { ...initial.draft, source: 'twitch', showOverlay: false }, broadcasterId: '123' }, 1000).state;
   assert.equal(vote(state).outcome, 'wrong-source');
-  const live = { source: 'twitch', broadcasterId: '123', sentAt: 1500 };
+  const live = { source: 'twitch', broadcasterId: '123', sentAt: 1500, viewerName: 'Viewer' };
   assert.equal(vote(state, { ...live, broadcasterId: '456' }).outcome, 'wrong-channel-or-time');
   assert.equal(vote(state, { ...live, sentAt: 999 }).outcome, 'wrong-channel-or-time');
   state = vote(state, live).state;
   assert.equal(state.poll.options[0].votes, 1);
+  assert.deepEqual(state.poll.activity, [{ id: 'event-1', viewerId: 'viewer-1', viewerName: 'Viewer', avatarUrl: '', optionId: '1', at: 1500 }]);
   assert.equal(vote(state, live).outcome, 'duplicate-event');
+  const repeated = vote(state, { ...live, eventId: 'event-2', message: 'вало' });
+  assert.equal(repeated.outcome, 'already-voted');
+  assert.equal(repeated.state.poll.activity.length, 1);
   assert.equal(vote(start(), live).outcome, 'wrong-source');
+});
+test('Twitch re-vote updates one viewer row and marks the previous choice', () => {
+  const initial = initialState();
+  let state = applyCommand(initial, { type: 'start', draftRevision: 0, draft: { ...initial.draft, source: 'twitch', allowChange: true }, broadcasterId: '123' }, 1000).state;
+  state = vote(state, { source: 'twitch', broadcasterId: '123', sentAt: 1500, viewerName: 'Viewer' }).state;
+  state = vote(state, { source: 'twitch', broadcasterId: '123', sentAt: 1600, viewerName: 'Viewer', eventId: 'event-2', message: 'вало' }).state;
+  assert.deepEqual(state.poll.options.map(option => option.votes), [0, 1, 0]);
+  assert.equal(state.poll.activity.length, 1);
+  assert.deepEqual(state.poll.activity[0], { id: 'event-2', viewerId: 'viewer-1', viewerName: 'Viewer', avatarUrl: '', optionId: '2', previousOptionId: '1', at: 1600 });
+  state = applyCommand(state, { type: 'activity-avatar', pollId: state.poll.id, eventId: 'event-2', avatarUrl: 'https://static-cdn.jtvnw.net/avatar.png' }, 1700).state;
+  const visible = publicState(state).poll.activity[0];
+  assert.equal(visible.avatarUrl, 'https://static-cdn.jtvnw.net/avatar.png');
+  assert.equal(visible.viewerId, undefined);
 });
 test('presets can be created, applied, updated, reordered and deleted', () => {
   let state = initialState();
@@ -110,6 +128,11 @@ test('presets can be created, applied, updated, reordered and deleted', () => {
   state = applyCommand(state, { type: 'preset-apply', presetId: games.id, draftRevision: state.draftRevision }, 5000).state;
   assert.equal(state.draft.duration, 180);
   assert.equal(state.draftRevision, 1);
+  const nextPreset = applyCommand(state, { type: 'preset-next' }, 5500);
+  assert.equal(nextPreset.outcome, 'Перерыв');
+  state = nextPreset.state;
+  assert.equal(state.draft.question, 'Когда перерыв?');
+  assert.equal(state.draftRevision, 2);
   state = applyCommand(state, { type: 'preset-delete', presetId: pause.id }, 6000).state;
   assert.deepEqual(state.presets.map(item => item.id), [games.id]);
 });

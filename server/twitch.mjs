@@ -16,7 +16,11 @@ export function chatVote(message, poll, userId) {
   const sentAt = Date.parse(message.metadata.message_timestamp);
   if (!Number.isFinite(sentAt) || sentAt < poll.startedAt || sentAt >= poll.deadline) return null;
   if (typeof event.chatter_user_id !== 'string' || typeof event.message_id !== 'string' || typeof event.message?.text !== 'string') return null;
-  return { type: 'vote', source: 'twitch', pollId: poll.id, broadcasterId: userId, sentAt, viewerId: `twitch:${event.chatter_user_id}`, eventId: event.message_id, message: event.message.text };
+  const rawName = typeof event.chatter_user_name === 'string' ? event.chatter_user_name : event.chatter_user_login;
+  if (typeof rawName !== 'string') return null;
+  const viewerName = rawName.normalize('NFKC').replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, 50);
+  if (!viewerName) return null;
+  return { type: 'vote', source: 'twitch', pollId: poll.id, broadcasterId: userId, sentAt, viewerId: `twitch:${event.chatter_user_id}`, viewerName, eventId: event.message_id, message: event.message.text };
 }
 
 export async function createTwitch({ filename, store, fetcher = fetch, Socket = WebSocket, now = Date.now, later = setTimeout, cancel = clearTimeout }) {
@@ -24,6 +28,8 @@ export async function createTwitch({ filename, store, fetcher = fetch, Socket = 
   let epoch = 0, stopped = false, timer, maintenance, retry, retryCount = 0;
   let pending = null, currentSocket = null, work = Promise.resolve(), disk = Promise.resolve();
   const sockets = new Set(), listeners = new Set();
+  const avatarCache = new Map(), avatarQueue = new Map();
+  let avatarTimer = null;
   try {
     const saved = JSON.parse(await readFile(filename, 'utf8'));
     if (typeof saved.clientId !== 'string' || (saved.accessToken && (typeof saved.accessToken !== 'string' || typeof saved.refreshToken !== 'string'))) throw new Error('invalid');
@@ -40,7 +46,8 @@ export async function createTwitch({ filename, store, fetcher = fetch, Socket = 
   const ensure = version => { if (!alive(version)) throw pauseError(); };
   const serial = task => { const result = work.then(task); work = result.catch(() => {}); return result; };
   function reset() {
-    epoch++; cancel(timer); cancel(maintenance); cancel(retry); timer = maintenance = retry = null;
+    epoch++; cancel(timer); cancel(maintenance); cancel(retry); cancel(avatarTimer); timer = maintenance = retry = avatarTimer = null;
+    avatarQueue.clear();
     pending = null; currentSocket = null;
     for (const entry of [...sockets]) { sockets.delete(entry); cancel(entry.watchdog); entry.ws.close(); }
   }
@@ -55,6 +62,47 @@ export async function createTwitch({ filename, store, fetcher = fetch, Socket = 
       error.remoteStatus = response.status; error.code = data.message || data.error; throw error;
     }
     return data;
+  }
+  const avatarUrl = value => {
+    if (typeof value !== 'string') return '';
+    try { const url = new URL(value); return url.protocol === 'https:' && url.hostname === 'static-cdn.jtvnw.net' && !url.port && !url.username && !url.password ? url.href : ''; }
+    catch { return ''; }
+  };
+  async function flushAvatars(version) {
+    avatarTimer = null;
+    if (!alive(version) || avatarQueue.size === 0) return;
+    const ids = [...avatarQueue.keys()].slice(0, 100);
+    const entries = new Map(ids.map(id => [id, avatarQueue.get(id)]));
+    for (const id of ids) avatarQueue.delete(id);
+    try {
+      const query = new URLSearchParams(ids.map(id => ['id', id]));
+      const users = await request(`https://api.twitch.tv/helix/users?${query}`, { headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': credentials.clientId } });
+      if (!alive(version)) return;
+      const profiles = new Map((Array.isArray(users.data) ? users.data : []).map(user => [user?.id, avatarUrl(user?.profile_image_url)]));
+      for (const id of ids) {
+        const image = profiles.get(id) || '';
+        avatarCache.set(id, image);
+        if (!image) continue;
+        for (const entry of entries.get(id) || []) {
+          try { await store.command({ type: 'activity-avatar', pollId: entry.pollId, eventId: entry.eventId, avatarUrl: image }); }
+          catch { /* the poll or feed entry may already have changed */ }
+        }
+      }
+    } catch { /* avatar loading must never interrupt chat voting */ }
+    if (alive(version) && avatarQueue.size > 0 && !avatarTimer) avatarTimer = later(() => flushAvatars(version), 75);
+  }
+  async function queueAvatar(userId, pollId, eventId, version) {
+    if (avatarCache.has(userId)) {
+      const image = avatarCache.get(userId);
+      if (image) {
+        try { await store.command({ type: 'activity-avatar', pollId, eventId, avatarUrl: image }); }
+        catch { /* the poll or feed entry may already have changed */ }
+      }
+      return;
+    }
+    const entries = avatarQueue.get(userId) || [];
+    entries.push({ pollId, eventId }); avatarQueue.set(userId, entries);
+    if (!avatarTimer) avatarTimer = later(() => flushAvatars(version), 75);
   }
   const form = (path, values) => request(AUTH + path, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(values) });
   async function saveTokens(tokens, version) {
@@ -143,7 +191,10 @@ export async function createTwitch({ filename, store, fetcher = fetch, Socket = 
           }
           case 'notification': {
             const vote = chatVote(message, store.snapshot().poll, status.userId);
-            if (vote) await store.command(vote);
+            if (vote) {
+              const result = await store.command(vote);
+              if (result.outcome === 'counted' || result.outcome === 'changed') await queueAvatar(message.payload.event.chatter_user_id, vote.pollId, vote.eventId, version);
+            }
             break;
           }
           case 'session_reconnect':

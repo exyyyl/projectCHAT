@@ -11,8 +11,11 @@ test('HTTP commands, independent SSE clients, reconnect, and static routes', asy
   const url = await app.listen(0);
   t.after(() => app.close());
   const request = (body, headers = {}) => fetch(url + '/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Poll-Client': 'panel', ...headers }, body: JSON.stringify(body) });
+  const control = (action, headers = {}) => fetch(url + '/api/stream-dock', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-projectCHAT-Control': 'stream-dock-v1', ...headers }, body: JSON.stringify({ action }) });
   for (const path of ['/', '/overlay', '/shared.js', '/style.css', '/fonts/geist-cyrillic.woff2', '/fonts/geist-latin.woff2']) assert.equal((await fetch(url + path)).status, 200);
-  const panelHtml = await (await fetch(url + '/')).text();
+  const panelResponse = await fetch(url + '/');
+  assert.match(panelResponse.headers.get('content-security-policy'), /https:\/\/static-cdn\.jtvnw\.net/);
+  const panelHtml = await panelResponse.text();
   const assets = [...panelHtml.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map(match => match[1]);
   assert.equal(assets.length, 2);
   for (const asset of assets) assert.equal((await fetch(url + asset)).status, 200);
@@ -24,6 +27,7 @@ test('HTTP commands, independent SSE clients, reconnect, and static routes', asy
   });
   assert.equal(invalidHost, 403);
   assert.equal((await fetch(url + '/api/command', { method: 'POST', body: '{}' })).status, 415);
+  assert.equal((await fetch(url + '/api/stream-dock', { method: 'POST', body: '{}' })).status, 415);
   const abort = new AbortController();
   const response = await fetch(url + '/api/events', { signal: abort.signal });
   assert.match(response.headers.get('content-type'), /text\/event-stream/);
@@ -53,4 +57,7 @@ test('HTTP commands, independent SSE clients, reconnect, and static routes', asy
   const injected = await (await request({ type: 'vote', source: 'twitch', broadcasterId: '123', sentAt: Date.now(), pollId: live.state.poll.id, viewerId: 'fake', eventId: 'fake', message: 'майн' })).json();
   assert.equal(injected.outcome, 'wrong-source');
   assert.equal(injected.state.poll.options[0].votes, 0);
+  assert.equal((await (await control('extend')).json()).message, 'Добавлено 30 секунд');
+  assert.equal((await (await control('toggle-output')).json()).state.poll.visible, true);
+  assert.equal((await (await control('finish')).json()).state.poll.status, 'ended');
 });

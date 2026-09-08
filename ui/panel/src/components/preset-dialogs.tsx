@@ -1,3 +1,6 @@
+import { useState } from "react"
+
+import { PollDraftFields } from "@/components/poll-draft-fields"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,21 +15,25 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import type { Draft, Preset, PresetDialogState } from "@/domain/polls"
-import { Keyword } from "@/components/poll-results"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { useToast } from "@/components/ui/toast"
+import {
+  createBlankDraft,
+  type Draft,
+  type Preset,
+  type PresetDialogState,
+  validateDraft,
+} from "@/domain/polls"
 
 type PresetDialogsProps = {
   dialog: PresetDialogState | null
-  name: string
-  draft: Draft | null
   pendingDelete: Preset | null
-  onNameChange: (value: string) => void
-  onSave: () => void
+  busy: boolean
+  onSave: (name: string, draft: Draft) => Promise<boolean>
   onClose: () => void
   onDeleteChange: (preset: Preset | null) => void
   onConfirmDelete: (preset: Preset) => void
@@ -34,10 +41,8 @@ type PresetDialogsProps = {
 
 export function PresetDialogs({
   dialog,
-  name,
-  draft,
   pendingDelete,
-  onNameChange,
+  busy,
   onSave,
   onClose,
   onDeleteChange,
@@ -45,59 +50,15 @@ export function PresetDialogs({
 }: PresetDialogsProps) {
   return (
     <>
-      <Dialog open={!!dialog} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {dialog?.mode === "rename"
-                ? "Переименовать шаблон"
-                : "Новый шаблон"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label
-                className="text-xs text-muted-foreground"
-                htmlFor="preset-name"
-              >
-                Название
-              </label>
-              <Input
-                id="preset-name"
-                autoFocus
-                maxLength={50}
-                placeholder="Например, выбор следующей игры"
-                value={name}
-                onChange={(event) => onNameChange(event.target.value)}
-                onKeyDown={(event) => event.key === "Enter" && onSave()}
-              />
-            </div>
-            {dialog?.mode === "create" && draft && (
-              <div className="rounded-xl border border-border-subtle bg-surface-subtle p-4">
-                <div className="truncate text-sm font-medium">
-                  {draft.question}
-                </div>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {draft.options.map((option) => (
-                    <Keyword key={option.id}>{option.word}</Keyword>
-                  ))}
-                </div>
-                <div className="mt-3 text-[11px] text-muted-foreground">
-                  Параметры текущего опроса будут сохранены в шаблон.
-                </div>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={onClose}>
-              Отмена
-            </Button>
-            <Button onClick={onSave} disabled={!name.trim()}>
-              {dialog?.mode === "rename" ? "Переименовать" : "Создать шаблон"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {dialog && (
+        <PresetEditorDialog
+          key={dialog.mode === "edit" ? dialog.preset.id : "new"}
+          dialog={dialog}
+          busy={busy}
+          onSave={onSave}
+          onClose={onClose}
+        />
+      )}
 
       <AlertDialog
         open={!!pendingDelete}
@@ -109,7 +70,7 @@ export function PresetDialogs({
               Удалить «{pendingDelete?.name}»?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Шаблон будет удалён с этого компьютера. Текущий черновик не
+              Шаблон будет удалён с этого компьютера. Текущий опрос не
               изменится.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -125,5 +86,167 @@ export function PresetDialogs({
         </AlertDialogContent>
       </AlertDialog>
     </>
+  )
+}
+
+function PresetEditorDialog({
+  dialog,
+  busy,
+  onSave,
+  onClose,
+}: {
+  dialog: PresetDialogState
+  busy: boolean
+  onSave: (name: string, draft: Draft) => Promise<boolean>
+  onClose: () => void
+}) {
+  const editing = dialog.mode === "edit"
+  const showToast = useToast()
+  const [name, setName] = useState(editing ? dialog.preset.name : "")
+  const [draft, setDraft] = useState<Draft>(() =>
+    editing ? structuredClone(dialog.preset.draft) : createBlankDraft()
+  )
+  const [error, setError] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  const changeDraft = (update: (current: Draft) => Draft) => {
+    setDraft(update)
+    setError("")
+  }
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!name.trim()) {
+      setError("Добавьте название шаблона.")
+      showToast({ message: "Добавьте название шаблона.", tone: "error" })
+      return
+    }
+    const draftError = validateDraft(draft)
+    if (draftError) {
+      setError(draftError)
+      showToast({ message: draftError, tone: "error" })
+      return
+    }
+    setSaving(true)
+    if (!(await onSave(name.trim(), draft))) {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => !open && !busy && !saving && onClose()}
+    >
+      <DialogContent className="max-h-[calc(100vh-2rem)] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogHeader className="border-b border-border-subtle px-6 py-5 pr-14">
+          <DialogTitle className="text-lg">
+            {editing ? "Редактирование шаблона" : "Новый шаблон"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <form
+          className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto]"
+          onSubmit={(event) => void submit(event)}
+        >
+          <div className="min-h-0 overflow-y-auto px-6 py-5">
+            <div className="space-y-6">
+              <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <div className="space-y-2">
+                  <label
+                    className="text-xs text-muted-foreground"
+                    htmlFor="preset-name"
+                  >
+                    Название шаблона
+                  </label>
+                  <Input
+                    id="preset-name"
+                    autoFocus
+                    maxLength={50}
+                    placeholder="Выбор следующей игры"
+                    value={name}
+                    aria-invalid={!!error && !name.trim()}
+                    onChange={(event) => {
+                      setName(event.target.value)
+                      setError("")
+                    }}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs text-muted-foreground">Голоса</div>
+                  <ToggleGroup
+                    type="single"
+                    value={draft.source}
+                    onValueChange={(value) =>
+                      value &&
+                      changeDraft((item) => ({
+                        ...item,
+                        source: value as Draft["source"],
+                      }))
+                    }
+                  >
+                    <ToggleGroupItem value="test">Демо</ToggleGroupItem>
+                    <ToggleGroupItem value="twitch">Twitch-чат</ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+              </div>
+
+              <PollDraftFields
+                draft={draft}
+                idPrefix="preset"
+                onChange={changeDraft}
+                extraSettings={
+                  <div className="space-y-2">
+                    <div className="text-xs text-muted-foreground">
+                      Отображение
+                    </div>
+                    <ToggleGroup
+                      type="single"
+                      value={draft.showOverlay ? "stream" : "panel"}
+                      onValueChange={(value) =>
+                        value &&
+                        changeDraft((item) => ({
+                          ...item,
+                          showOverlay: value === "stream",
+                        }))
+                      }
+                      className="grid w-full grid-cols-2 rounded-xl border border-border-subtle bg-surface-subtle p-1"
+                    >
+                      <ToggleGroupItem value="stream">
+                        На стриме
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="panel">
+                        Только в панели
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  </div>
+                }
+              />
+            </div>
+          </div>
+
+          <div className="flex min-h-17 items-center justify-end gap-4 border-t border-border-subtle bg-muted/35 px-6 py-4">
+            <div className="flex shrink-0 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy || saving}
+                onClick={onClose}
+              >
+                Отмена
+              </Button>
+              <Button type="submit" disabled={busy || saving}>
+                {busy || saving
+                  ? "Сохранение…"
+                  : editing
+                    ? "Сохранить"
+                    : "Создать"}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "Actions": [
+    {
+      "Icon": "images/start",
+      "Name": "Запустить опрос",
+      "States": [{ "Image": "images/start", "ShowTitle": false }],
+      "SupportedInMultiActions": true,
+      "Tooltip": "Запустить текущий черновик projectCHAT",
+      "UUID": "ru.projectchat.control.start"
+    },
+    {
+      "Icon": "images/finish",
+      "Name": "Завершить опрос",
+      "States": [{ "Image": "images/finish", "ShowTitle": false }],
+      "SupportedInMultiActions": true,
+      "Tooltip": "Завершить активный опрос",
+      "UUID": "ru.projectchat.control.finish"
+    },
+    {
+      "Icon": "images/visibility",
+      "Name": "Показать или скрыть виджет",
+      "States": [{ "Image": "images/visibility", "ShowTitle": false }],
+      "SupportedInMultiActions": true,
+      "Tooltip": "Переключить видимость OBS-виджета",
+      "UUID": "ru.projectchat.control.toggle-output"
+    },
+    {
+      "Icon": "images/extend",
+      "Name": "Добавить 30 секунд",
+      "States": [{ "Image": "images/extend", "ShowTitle": false }],
+      "SupportedInMultiActions": true,
+      "Tooltip": "Продлить активный опрос на 30 секунд",
+      "UUID": "ru.projectchat.control.extend"
+    },
+    {
+      "Icon": "images/preset",
+      "Name": "Следующий шаблон",
+      "States": [{ "Image": "images/preset", "ShowTitle": false }],
+      "SupportedInMultiActions": true,
+      "Tooltip": "Выбрать следующий шаблон projectCHAT",
+      "UUID": "ru.projectchat.control.next-preset"
+    }
+  ],
+  "Author": "projectCHAT",
+  "Category": "projectCHAT",
+  "CategoryIcon": "images/plugin",
+  "CodePath": "ProjectChatPlugin.exe",
+  "CodePathWin": "ProjectChatPlugin.exe",
+  "Description": "Управление опросами и OBS-виджетом projectCHAT.",
+  "Icon": "images/plugin",
+  "Name": "projectCHAT",
+  "OS": [{ "Platform": "windows", "MinimumVersion": "10" }],
+  "SDKVersion": 2,
+  "Software": { "MinimumVersion": "6.4" },
+  "URL": "https://github.com/exyyyl/projectCHAT",
+  "UUID": "ru.projectchat.control",
+  "Version": "0.1.0.0"
+}
