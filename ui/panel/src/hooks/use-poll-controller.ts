@@ -24,7 +24,6 @@ export function usePollController() {
     null
   )
   const [deletePreset, setDeletePreset] = useState<Preset | null>(null)
-  const [twitchClient, setTwitchClient] = useState("")
 
   const stateRef = useRef(state)
   const draftRef = useRef(draft)
@@ -96,7 +95,6 @@ export function usePollController() {
     source.addEventListener("twitch", (event) => {
       const value = JSON.parse((event as MessageEvent).data) as TwitchState
       setTwitch(value)
-      if (value.clientId) setTwitchClient(value.clientId)
     })
     source.onopen = () => setConnected(true)
     source.onerror = () => setConnected(false)
@@ -167,6 +165,7 @@ export function usePollController() {
 
   const poll = state?.poll || null
   const canEdit = !poll && !!draft
+  const canApplyPreset = poll?.status !== "running" && !!draft
   const twitchWarning =
     poll?.source === "twitch" && poll.status === "running"
       ? twitch.userId && poll.broadcasterId !== twitch.userId
@@ -234,7 +233,7 @@ export function usePollController() {
           "Content-Type": "application/json",
           "X-Poll-Client": "panel",
         },
-        body: JSON.stringify({ type, clientId: twitchClient }),
+        body: JSON.stringify({ type }),
       })
       const result = (await response.json()) as TwitchState & { error?: string }
       if (!response.ok)
@@ -297,9 +296,9 @@ export function usePollController() {
     selectedPreset,
     presetDialog,
     deletePreset,
-    twitchClient,
     poll,
     canEdit,
+    canApplyPreset,
     twitchWarning,
     changeDraft,
     run,
@@ -314,6 +313,5 @@ export function usePollController() {
     simulate,
     setPresetDialog,
     setDeletePreset,
-    setTwitchClient,
   }
 }

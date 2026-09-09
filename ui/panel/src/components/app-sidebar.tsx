@@ -4,7 +4,6 @@ import {
   LayoutTemplate,
   ListChecks,
   PanelsTopLeft,
-  Settings2,
   WifiOff,
 } from "lucide-react"
 
@@ -99,27 +98,7 @@ export function AppSidebar({
         </Tooltip>
       )}
 
-      <div className="mt-auto flex items-center gap-1 rounded-xl bg-white/[0.025] p-1">
-        <div className="min-w-0 flex-1">{account}</div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-lg"
-              className={
-                view === "settings"
-                  ? "bg-surface-raised text-brand"
-                  : "text-muted-foreground"
-              }
-              aria-label="Настройки приложения"
-              onClick={() => onNavigate("settings")}
-            >
-              <Settings2 />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right">Настройки приложения</TooltipContent>
-        </Tooltip>
-      </div>
+      <div className="mt-auto rounded-xl bg-white/[0.025] p-1">{account}</div>
     </aside>
   )
 }

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react"
-import { CheckCircle2, Download, LoaderCircle, RefreshCw } from "lucide-react"
+import { Download, LoaderCircle, RefreshCw } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/toast"
 
@@ -10,21 +9,21 @@ const updateStatus = (update: DesktopUpdateState) => {
     case "development":
       return "Режим разработки"
     case "unconfigured":
-      return "Источник обновлений не настроен"
+      return "Обновления не настроены"
     case "checking":
-      return "Проверяем новую версию…"
+      return "Ищем обновление…"
     case "available":
-      return `Доступна версия ${update.availableVersion}`
+      return `Доступна ${update.availableVersion}`
     case "downloading":
       return `Загрузка · ${update.progress}%`
     case "ready":
-      return `Версия ${update.availableVersion} готова`
+      return `${update.availableVersion} готова`
     case "error":
-      return "Не удалось проверить обновления"
+      return "Ошибка проверки"
     case "current":
-      return "Установлена последняя версия"
+      return "Последняя версия"
     default:
-      return "Можно проверить обновления"
+      return "Проверка обновлений"
   }
 }
 
@@ -63,58 +62,30 @@ export function UpdateSettings() {
   const bridge = window.streamPollsDesktop
   if (!info || !update || !bridge)
     return (
-      <div className="rounded-xl border border-border-subtle bg-surface-subtle px-4 py-3 text-sm text-muted-foreground">
-        Обновления доступны в приложении projectCHAT.
+      <div className="rounded-xl bg-surface-subtle px-4 py-3 text-sm text-muted-foreground">
+        Доступно в установленном приложении.
       </div>
     )
 
   const working = update.phase === "checking" || update.phase === "downloading"
 
   return (
-    <div>
-      <div className="flex items-start justify-between gap-4">
-        <div>
+    <div className="rounded-xl bg-surface-subtle p-1">
+      <div className="flex min-h-16 items-center gap-4 rounded-lg px-3.5 py-3">
+        <div className="min-w-0 flex-1">
           <div className="text-sm font-medium">{updateStatus(update)}</div>
-          {update.message && (
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              {update.message}
-            </p>
-          )}
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            projectCHAT {info.version}
+          </div>
         </div>
-        <Badge
-          variant="outline"
-          className="font-mono text-[10px] text-muted-foreground uppercase"
-        >
-          {info.platform === "win32"
-            ? "Windows"
-            : info.platform === "darwin"
-              ? "macOS"
-              : info.platform}
-        </Badge>
-      </div>
 
-      {update.phase === "downloading" && (
-        <div className="mt-4 h-1 overflow-hidden rounded-full bg-track">
-          <div
-            className="h-full rounded-full bg-brand transition-[width]"
-            style={{ width: `${update.progress}%` }}
-          />
-        </div>
-      )}
-
-      <div className="mt-5 flex items-center justify-between gap-4 border-t border-border-subtle pt-4">
-        <span className="text-xs text-muted-foreground">
-          projectCHAT · {info.version}
-        </span>
         {update.phase === "available" && (
           <Button onClick={() => void bridge.downloadUpdate()}>
-            <Download />
-            Скачать
+            <Download /> Скачать
           </Button>
         )}
         {update.phase === "ready" && (
           <Button onClick={() => void bridge.installUpdate()}>
-            <RefreshCw />
             Установить
           </Button>
         )}
@@ -124,20 +95,25 @@ export function UpdateSettings() {
             disabled={working}
             onClick={() => void bridge.checkForUpdates()}
           >
-            <RefreshCw />
-            Проверить
+            <RefreshCw /> Проверить
           </Button>
         )}
         {working && (
           <Button variant="outline" disabled>
             <LoaderCircle className="animate-spin" />
-            {update.phase === "checking" ? "Проверка" : "Загрузка"}
+            {update.phase === "checking" ? "Проверяем" : `${update.progress}%`}
           </Button>
         )}
-        {update.phase === "development" && (
-          <CheckCircle2 className="size-4 text-muted-foreground" />
-        )}
       </div>
+
+      {update.phase === "downloading" && (
+        <div className="mx-3.5 mb-3 h-1 overflow-hidden rounded-full bg-track">
+          <div
+            className="h-full rounded-full bg-brand transition-[width]"
+            style={{ width: `${update.progress}%` }}
+          />
+        </div>
+      )}
     </div>
   )
 }

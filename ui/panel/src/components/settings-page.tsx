@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react"
 import { Download, FileUp } from "lucide-react"
 
-import { UpdateSettings } from "@/components/update-control"
 import { TwitchSettings } from "@/components/twitch-settings"
+import { UpdateSettings } from "@/components/update-control"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/components/ui/toast"
@@ -15,9 +15,7 @@ type SettingsPageProps = {
   canImport: boolean
   busy: boolean
   twitch: TwitchState
-  twitchClient: string
   onImport: (settings: unknown) => Promise<boolean>
-  onTwitchClientChange: (value: string) => void
   onTwitchCommand: (type: "connect" | "disconnect") => void
 }
 
@@ -28,9 +26,7 @@ export function SettingsPage({
   canImport,
   busy,
   twitch,
-  twitchClient,
   onImport,
-  onTwitchClientChange,
   onTwitchCommand,
 }: SettingsPageProps) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -78,7 +74,7 @@ export function SettingsPage({
               ? "Автозапуск включён"
               : "Автозапуск выключен"
             : value
-              ? "Приложение продолжит работу в трее"
+              ? "Работа в трее включена"
               : "Работа в трее выключена",
         tone: "success",
       })
@@ -104,6 +100,7 @@ export function SettingsPage({
       presets: presets.map((preset) => ({
         name: preset.name,
         draft: preset.draft,
+        pinned: preset.pinned,
       })),
       widget,
     }
@@ -140,24 +137,24 @@ export function SettingsPage({
   }
 
   return (
-    <section className="mx-auto max-w-3xl p-6 lg:p-8" aria-label="Настройки">
-      <div className="space-y-4">
-        <div className="rounded-xl border border-border-subtle bg-surface-subtle p-5">
-          <div className="mb-5">
-            <h2 className="font-medium">Запуск и фон</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Поведение установленного приложения
-            </p>
-          </div>
+    <section
+      className="h-full min-h-0 overflow-y-auto p-6 lg:p-8"
+      aria-label="Настройки"
+    >
+      <div className="mx-auto max-w-2xl space-y-9 pb-8">
+        <SettingsPanel title="Twitch">
+          <TwitchSettings
+            state={twitch}
+            busy={busy}
+            onCommand={onTwitchCommand}
+          />
+        </SettingsPanel>
 
-          <div className="space-y-2">
+        <SettingsPanel title="Приложение">
+          <div className="space-y-1 rounded-xl bg-surface-subtle p-1">
             <PreferenceRow
-              label="Запускать вместе с системой"
-              description={
-                preferences && !preferences.openAtLoginSupported
-                  ? "Доступно после установки приложения"
-                  : "Открывать projectCHAT после входа в систему"
-              }
+              label="Запускать с системой"
+              unavailable={preferences && !preferences.openAtLoginSupported}
               checked={preferences?.openAtLogin ?? false}
               disabled={
                 !preferences?.openAtLoginSupported ||
@@ -169,7 +166,7 @@ export function SettingsPage({
             />
             <PreferenceRow
               label="Продолжать работу в трее"
-              description="При закрытии окна опросы и виджет останутся активны"
+              unavailable={preferences && !preferences.runInBackgroundSupported}
               checked={preferences?.runInBackground ?? false}
               disabled={
                 !preferences?.runInBackgroundSupported ||
@@ -180,50 +177,37 @@ export function SettingsPage({
               }
             />
           </div>
-
           {!bridge && (
             <p className="mt-3 text-xs text-muted-foreground">
-              Системные настройки доступны в приложении projectCHAT.
+              Доступно в установленном приложении.
             </p>
           )}
-        </div>
+        </SettingsPanel>
 
-        <div className="rounded-xl border border-border-subtle bg-surface-subtle p-5">
-          <div className="mb-5">
-            <h2 className="font-medium">Twitch</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Подключение к чату канала
-            </p>
-          </div>
-          <TwitchSettings
-            state={twitch}
-            clientId={twitchClient}
-            busy={busy}
-            onClientIdChange={onTwitchClientChange}
-            onCommand={onTwitchCommand}
-          />
-        </div>
-
-        <div className="rounded-xl border border-border-subtle bg-surface-subtle p-5">
-          <div>
-            <h2 className="font-medium">Данные</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Черновик и шаблоны можно перенести на другой компьютер.
-            </p>
-          </div>
-          <div className="mt-5 flex flex-wrap gap-2 border-t border-border-subtle pt-4">
-            <Button variant="outline" onClick={exportSettings}>
-              <Download />
-              Экспортировать
-            </Button>
-            <Button
-              variant="outline"
-              disabled={!canImport || busy}
-              onClick={() => inputRef.current?.click()}
-            >
-              <FileUp />
-              Импортировать
-            </Button>
+        <SettingsPanel title="Данные">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <DataAction
+              title="Экспорт"
+              detail={`${presets.length} шаблонов`}
+              action={
+                <Button variant="outline" onClick={exportSettings}>
+                  <Download /> Скачать
+                </Button>
+              }
+            />
+            <DataAction
+              title="Импорт"
+              detail={canImport ? "Файл JSON" : "Завершите опрос"}
+              action={
+                <Button
+                  variant="outline"
+                  disabled={!canImport || busy}
+                  onClick={() => inputRef.current?.click()}
+                >
+                  <FileUp /> Выбрать
+                </Button>
+              }
+            />
             <input
               ref={inputRef}
               type="file"
@@ -232,47 +216,55 @@ export function SettingsPage({
               onChange={(event) => void importSettings(event)}
             />
           </div>
-          {!canImport && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              Закройте текущий опрос перед импортом.
-            </p>
-          )}
-        </div>
+        </SettingsPanel>
 
-        <div className="rounded-xl border border-border-subtle bg-surface-subtle p-5">
-          <div className="mb-5">
-            <h2 className="font-medium">Обновления</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Установка запускается только вручную.
-            </p>
-          </div>
+        <SettingsPanel title="Обновления">
           <UpdateSettings />
-        </div>
+        </SettingsPanel>
       </div>
     </section>
   )
 }
 
+function SettingsPanel({
+  title,
+  children,
+}: {
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <div>
+      <h2 className="mb-6 text-xl font-semibold tracking-[-0.025em]">
+        {title}
+      </h2>
+      {children}
+    </div>
+  )
+}
+
 function PreferenceRow({
   label,
-  description,
+  unavailable,
   checked,
   disabled,
   onCheckedChange,
 }: {
   label: string
-  description: string
+  unavailable?: boolean
   checked: boolean
   disabled: boolean
   onCheckedChange: (checked: boolean) => void
 }) {
   return (
-    <label className="flex items-center justify-between gap-5 rounded-xl bg-white/[0.025] px-4 py-3.5">
-      <span className="min-w-0">
-        <span className="block text-sm font-medium">{label}</span>
-        <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
-          {description}
-        </span>
+    <label className="flex min-h-13 items-center justify-between gap-5 rounded-lg px-3.5 py-2.5 hover:bg-white/[0.025]">
+      <span className="min-w-0 text-sm font-medium">
+        {label}
+        {unavailable && (
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
+            Недоступно
+          </span>
+        )}
       </span>
       <Switch
         checked={checked}
@@ -281,5 +273,27 @@ function PreferenceRow({
         onCheckedChange={onCheckedChange}
       />
     </label>
+  )
+}
+
+function DataAction({
+  title,
+  detail,
+  action,
+}: {
+  title: string
+  detail: string
+  action: React.ReactNode
+}) {
+  return (
+    <div className="flex min-h-17 items-center gap-5 rounded-xl bg-surface-subtle px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium">{title}</div>
+        <div className="mt-0.5 truncate text-xs text-muted-foreground">
+          {detail}
+        </div>
+      </div>
+      {action}
+    </div>
   )
 }

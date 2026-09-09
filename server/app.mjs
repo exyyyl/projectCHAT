@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createStore } from './store.mjs';
 import { createTwitch } from './twitch.mjs';
 import { PollError } from './polls.mjs';
+import { TWITCH_CLIENT_ID } from './config.mjs';
 
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
 const panelDir = join(publicDir, 'panel-build');
@@ -13,7 +14,7 @@ const assetTypes = { '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'fo
 const requireThat = (condition, message, status) => { if (!condition) throw new PollError(message, status); };
 export async function createApp({ dataDir, now = Date.now, twitchOptions = {} } = {}) {
   const store = await createStore(join(dataDir, 'state.json'), { now });
-  const twitch = await createTwitch({ filename: join(dataDir, 'twitch.json'), store, now, ...twitchOptions });
+  const twitch = await createTwitch({ filename: join(dataDir, 'twitch.json'), store, now, clientId: TWITCH_CLIENT_ID, ...twitchOptions });
   const streams = new Set();
   let allowedHosts;
   const json = (response, status, data) => { response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(data)); };

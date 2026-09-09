@@ -15,15 +15,38 @@ function validatePresetName(value) {
   return value.trim();
 }
 export function defaultWidget() {
-  return { accent: '#d3fb75', surface: 'solid', density: 'comfortable', showTimer: true, showKeywords: true };
+  return { accent: '#d3fb75', surface: 'solid', density: 'comfortable', radius: 'medium', titleSize: 'medium', width: 'medium', opacity: 100, font: 'geist', optionStyle: 'rows', optionSize: 'medium', keywordStyle: 'outline', barSize: 'medium', showTimer: true, showKeywords: true, showBars: true, showVotes: true, showPercentages: true };
 }
 export function validateWidget(input) {
   requireThat(input && typeof input === 'object', 'Некорректные настройки виджета.');
+  const defaults = defaultWidget();
+  const radius = input.radius ?? defaults.radius;
+  const titleSize = input.titleSize ?? defaults.titleSize;
+  const width = input.width ?? defaults.width;
+  const opacity = input.opacity ?? defaults.opacity;
+  const font = input.font ?? defaults.font;
+  const optionStyle = input.optionStyle ?? defaults.optionStyle;
+  const optionSize = input.optionSize ?? defaults.optionSize;
+  const keywordStyle = input.keywordStyle ?? defaults.keywordStyle;
+  const barSize = input.barSize ?? defaults.barSize;
+  const showBars = input.showBars ?? defaults.showBars;
+  const showVotes = input.showVotes ?? defaults.showVotes;
+  const showPercentages = input.showPercentages ?? defaults.showPercentages;
   requireThat(typeof input.accent === 'string' && /^#[0-9a-f]{6}$/iu.test(input.accent), 'Некорректный цвет виджета.');
-  requireThat(['solid', 'glass'].includes(input.surface), 'Некорректный фон виджета.');
+  requireThat(['solid', 'glass', 'minimal'].includes(input.surface), 'Некорректный фон виджета.');
   requireThat(['comfortable', 'compact'].includes(input.density), 'Некорректная плотность виджета.');
+  requireThat(['small', 'medium', 'large'].includes(radius), 'Некорректное скругление виджета.');
+  requireThat(['small', 'medium', 'large'].includes(titleSize), 'Некорректный размер заголовка виджета.');
+  requireThat(['narrow', 'medium', 'wide'].includes(width), 'Некорректная ширина виджета.');
+  requireThat([70, 85, 100].includes(opacity), 'Некорректная прозрачность виджета.');
+  requireThat(['geist', 'system', 'mono'].includes(font), 'Некорректный шрифт виджета.');
+  requireThat(['rows', 'cards', 'outline'].includes(optionStyle), 'Некорректная форма вариантов виджета.');
+  requireThat(['small', 'medium', 'large'].includes(optionSize), 'Некорректный размер вариантов виджета.');
+  requireThat(['outline', 'filled', 'text'].includes(keywordStyle), 'Некорректный стиль ключевых слов виджета.');
+  requireThat(['thin', 'medium', 'thick'].includes(barSize), 'Некорректная толщина полос виджета.');
   requireThat(typeof input.showTimer === 'boolean' && typeof input.showKeywords === 'boolean', 'Некорректные элементы виджета.');
-  return { accent: input.accent.toLowerCase(), surface: input.surface, density: input.density, showTimer: input.showTimer, showKeywords: input.showKeywords };
+  requireThat(typeof showBars === 'boolean' && typeof showVotes === 'boolean' && typeof showPercentages === 'boolean', 'Некорректные результаты виджета.');
+  return { accent: input.accent.toLowerCase(), surface: input.surface, density: input.density, radius, titleSize, width, opacity, font, optionStyle, optionSize, keywordStyle, barSize, showTimer: input.showTimer, showKeywords: input.showKeywords, showBars, showVotes, showPercentages };
 }
 export function validateDraft(input) {
   requireThat(input && typeof input === 'object', 'Некорректный опрос.');
@@ -63,8 +86,8 @@ export function validateStoredState(state) {
   state.presets = state.presets.map(preset => {
     requireThat(preset && typeof preset.id === 'string' && !presetIds.has(preset.id), 'Повреждены идентификаторы шаблонов.');
     presetIds.add(preset.id);
-    return { id: preset.id, name: validatePresetName(preset.name), draft: validateDraft(preset.draft), createdAt: Number.isFinite(preset.createdAt) ? preset.createdAt : 0, updatedAt: Number.isFinite(preset.updatedAt) ? preset.updatedAt : 0 };
-  });
+    return { id: preset.id, name: validatePresetName(preset.name), draft: validateDraft(preset.draft), pinned: preset.pinned === true, createdAt: Number.isFinite(preset.createdAt) ? preset.createdAt : 0, updatedAt: Number.isFinite(preset.updatedAt) ? preset.updatedAt : 0 };
+  }).sort((a, b) => Number(b.pinned) - Number(a.pinned));
   state.widget = validateWidget(state.widget ?? defaultWidget());
   if (state.poll) {
     const p = state.poll;
@@ -133,7 +156,7 @@ export function applyCommand(state, command, now = Date.now()) {
     case 'preset-create': {
       requireThat(next.presets.length < 30, 'Можно сохранить не больше 30 шаблонов.');
       const draft = validateDraft(command.draft);
-      next.presets.push({ id: randomUUID(), name: validatePresetName(command.name), draft, createdAt: now, updatedAt: now });
+      next.presets.push({ id: randomUUID(), name: validatePresetName(command.name), draft, pinned: false, createdAt: now, updatedAt: now });
       changed = true;
       break;
     }
@@ -157,8 +180,33 @@ export function applyCommand(state, command, now = Date.now()) {
       const index = next.presets.findIndex(item => item.id === command.presetId);
       requireThat(index >= 0, 'Шаблон уже удалён.', 409);
       const target = index + command.direction;
-      if (target >= 0 && target < next.presets.length) {
+      if (target >= 0 && target < next.presets.length && next.presets[target].pinned === next.presets[index].pinned) {
         [next.presets[index], next.presets[target]] = [next.presets[target], next.presets[index]]; changed = true;
+      }
+      break;
+    }
+    case 'preset-toggle-pin': {
+      requireThat(typeof command.pinned === 'boolean', 'Некорректное закрепление шаблона.');
+      const index = next.presets.findIndex(item => item.id === command.presetId);
+      requireThat(index >= 0, 'Шаблон уже удалён.', 409);
+      const [preset] = next.presets.splice(index, 1);
+      preset.pinned = command.pinned;
+      const pinnedCount = next.presets.filter(item => item.pinned).length;
+      next.presets.splice(pinnedCount, 0, preset);
+      changed = true;
+      break;
+    }
+    case 'preset-reorder': {
+      requireThat(command.position === 'before' || command.position === 'after', 'Некорректное перемещение шаблона.');
+      const index = next.presets.findIndex(item => item.id === command.presetId);
+      const targetIndex = next.presets.findIndex(item => item.id === command.targetId);
+      requireThat(index >= 0 && targetIndex >= 0, 'Шаблон уже удалён.', 409);
+      requireThat(next.presets[index].pinned === next.presets[targetIndex].pinned, 'Закреплённые шаблоны перемещаются внутри своей группы.');
+      if (index !== targetIndex) {
+        const [preset] = next.presets.splice(index, 1);
+        const destination = next.presets.findIndex(item => item.id === command.targetId);
+        next.presets.splice(destination + (command.position === 'after' ? 1 : 0), 0, preset);
+        changed = true;
       }
       break;
     }
@@ -167,6 +215,7 @@ export function applyCommand(state, command, now = Date.now()) {
       requireThat(next.poll?.status !== 'running', 'Сначала завершите текущий опрос.', 409);
       const preset = next.presets.find(item => item.id === command.presetId);
       requireThat(preset, 'Шаблон уже удалён.', 409);
+      if (next.poll?.status === 'ended') next.poll = null;
       next.draft = structuredClone(preset.draft); next.draftRevision++; changed = true;
       break;
     }
@@ -193,6 +242,7 @@ export function applyCommand(state, command, now = Date.now()) {
         id: randomUUID(),
         name: validatePresetName(preset?.name),
         draft: validateDraft(preset?.draft),
+        pinned: preset?.pinned === true,
         createdAt: now,
         updatedAt: now,
       }));

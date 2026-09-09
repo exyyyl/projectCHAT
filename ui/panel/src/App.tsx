@@ -37,9 +37,9 @@ function AppContent() {
     selectedPreset,
     presetDialog,
     deletePreset,
-    twitchClient,
     poll,
     canEdit,
+    canApplyPreset,
     twitchWarning,
   } = controller
 
@@ -78,9 +78,9 @@ function AppContent() {
         onNavigate={setView}
         account={
           <TwitchAccount
-            placement="sidebar"
             state={twitch}
-            onCommand={(type) => void controller.twitchCommand(type)}
+            active={view === "settings"}
+            onClick={() => setView("settings")}
           />
         }
       />
@@ -108,7 +108,9 @@ function AppContent() {
           <PresetLibrary
             presets={state.presets}
             selectedId={selectedPreset}
-            canApply={canEdit}
+            dialog={presetDialog}
+            canApply={canApplyPreset}
+            applyBlocked={poll?.status === "running"}
             canManage={connected}
             canCreate={state.presets.length < 30}
             busy={busy}
@@ -121,13 +123,22 @@ function AppContent() {
             onEdit={(preset) =>
               controller.setPresetDialog({ mode: "edit", preset })
             }
-            onMove={(preset, direction) =>
-              void controller.run("preset-move", {
+            onTogglePin={(preset) =>
+              void controller.run("preset-toggle-pin", {
                 presetId: preset.id,
-                direction,
+                pinned: !preset.pinned,
+              })
+            }
+            onReorder={(preset, target, position) =>
+              void controller.run("preset-reorder", {
+                presetId: preset.id,
+                targetId: target.id,
+                position,
               })
             }
             onDelete={controller.setDeletePreset}
+            onSave={controller.savePreset}
+            onCloseEditor={() => controller.setPresetDialog(null)}
           />
         )}
 
@@ -139,9 +150,7 @@ function AppContent() {
             canImport={canEdit}
             busy={busy}
             twitch={twitch}
-            twitchClient={twitchClient}
             onImport={controller.importSettings}
-            onTwitchClientChange={controller.setTwitchClient}
             onTwitchCommand={(type) => void controller.twitchCommand(type)}
           />
         )}
@@ -163,11 +172,7 @@ function AppContent() {
       </main>
 
       <PresetDialogs
-        dialog={presetDialog}
         pendingDelete={deletePreset}
-        busy={busy}
-        onSave={controller.savePreset}
-        onClose={() => controller.setPresetDialog(null)}
         onDeleteChange={controller.setDeletePreset}
         onConfirmDelete={(preset) => {
           void controller.run("preset-delete", { presetId: preset.id })

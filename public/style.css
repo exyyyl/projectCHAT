@@ -61,7 +61,7 @@
 #poll-control .pc-stage[data-scene="chat"] .pc-landscape{background:radial-gradient(ellipse at 85% 30%,#66664766,transparent 45%),linear-gradient(130deg,#202c28,#101418)}
 #poll-control .pc-stage[data-scene="chat"] .pc-landscape::before{inset:0;background:repeating-linear-gradient(90deg,transparent 0 54px,#99a48d09 55px 56px);clip-path:none}
 #poll-control .pc-stage[data-scene="chat"] .pc-landscape::after{display:none}
-#poll-control .pc-overlay{width:min(300px,100%);padding:21px;background:#111519;border-radius:var(--pc-radius);box-shadow:0 16px 35px #0003;color:#f0f3ec;opacity:1;transform:translateY(0);transition:opacity .35s,transform .45s cubic-bezier(.2,.8,.2,1);overflow-wrap:anywhere}
+#poll-control .pc-overlay{width:min(300px,100%);padding:21px;background:rgb(17 21 25/var(--pc-opacity,1));border-radius:var(--pc-radius);box-shadow:0 16px 35px #0003;color:#f0f3ec;opacity:1;transform:translateY(0);transition:opacity .35s,transform .45s cubic-bezier(.2,.8,.2,1);overflow-wrap:anywhere}
 #poll-control .pc-stage[data-scene="chat"] .pc-overlay{width:min(370px,100%);padding:26px}
 #poll-control .pc-overlay.is-hidden{opacity:0;transform:translateY(15px);pointer-events:none}
 #poll-control .pc-overlay-head{display:flex;align-items:start;justify-content:space-between;gap:12px;margin-bottom:23px}
@@ -75,18 +75,34 @@
 #poll-control .pc-overlay-word{display:inline-flex;align-items:center;border:1px solid color-mix(in srgb,var(--pc-accent) 18%,transparent);border-radius:5px;background:color-mix(in srgb,var(--pc-accent) 7%,transparent);padding:2px 6px;font:11px ui-monospace,SFMono-Regular,Consolas,monospace;color:color-mix(in srgb,var(--pc-accent) 72%,#c3c9c2);line-height:1.35}
 #poll-control .pc-overlay-value{font:13px ui-monospace,monospace;white-space:nowrap}
 #poll-control .pc-track{height:4px;background:#2a322d;overflow:hidden}
-#poll-control .pc-fill{width:0;height:100%;background:#788777;transition:width .7s cubic-bezier(.22,1,.36,1),background .4s}
+#poll-control .pc-fill{width:100%;height:100%;background:#788777;transform:scaleX(0);transform-origin:left;transition:transform .7s cubic-bezier(.22,1,.36,1),background .4s}
 #poll-control .pc-leader .pc-fill{background:var(--pc-accent)}
 #poll-control .pc-ended.pc-has-votes .pc-overlay-option:not(.pc-leader){opacity:.35}
 #poll-control .pc-ended .pc-leader .pc-overlay-name,#poll-control .pc-ended .pc-leader .pc-overlay-value{color:var(--pc-accent)}
 #poll-control .pc-ended .pc-overlay-time{visibility:hidden}
 #poll-control .pc-enter:not(.is-hidden){animation:pc-enter .6s cubic-bezier(.2,.8,.2,1)}
-#poll-control .pc-overlay.pc-widget-glass{background:rgb(17 21 25/.72);border:1px solid rgb(255 255 255/.1);box-shadow:0 16px 40px #0004;backdrop-filter:blur(16px)}
+#poll-control .pc-overlay.pc-widget-glass{background:rgb(17 21 25/var(--pc-opacity,.85));border:1px solid rgb(255 255 255/.1);box-shadow:0 16px 40px #0004;backdrop-filter:blur(16px)}
+#poll-control .pc-overlay.pc-widget-minimal{background:transparent;border-color:transparent;box-shadow:none;backdrop-filter:none;text-shadow:0 2px 12px #000b}
 #poll-control .pc-overlay.pc-widget-compact{padding:18px}
 #poll-control .pc-overlay.pc-widget-compact .pc-overlay-head{margin-bottom:16px}
 #poll-control .pc-overlay.pc-widget-compact h3{font-size:26px}
 #poll-control .pc-overlay.pc-widget-compact .pc-overlay-option{margin-top:15px}
+#poll-control .pc-overlay.pc-font-system{font-family:"Segoe UI Variable","Segoe UI",sans-serif}
+#poll-control .pc-overlay.pc-font-mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+#poll-control .pc-overlay.pc-options-cards .pc-overlay-option{border-radius:12px;background:rgb(255 255 255/.045);padding:12px}
+#poll-control .pc-overlay.pc-options-outline .pc-overlay-option{border:1px solid rgb(255 255 255/.1);border-radius:12px;padding:12px}
+#poll-control .pc-overlay.pc-options-small .pc-overlay-name{font-size:15px}
+#poll-control .pc-overlay.pc-options-large .pc-overlay-name{font-size:20px}
+#poll-control .pc-overlay.pc-keywords-filled .pc-overlay-word{border-color:transparent;background:var(--pc-accent);color:#17200e}
+#poll-control .pc-overlay.pc-keywords-text .pc-overlay-word{border-color:transparent;background:transparent;padding-inline:0;color:var(--pc-accent)}
 #poll-control .pc-overlay.pc-hide-keywords .pc-overlay-word{display:none}
+#poll-control .pc-overlay.pc-hide-bars .pc-track{display:none}
+#poll-control .pc-overlay.pc-hide-bars .pc-overlay-option{margin-top:13px}
+#poll-control .pc-overlay.pc-hide-values .pc-overlay-value{display:none}
+#poll-control .pc-overlay.pc-bars-thin .pc-track{height:2px}
+#poll-control .pc-overlay.pc-bars-thick .pc-track{height:7px}
+#poll-control .pc-overlay.pc-radius-small{border-radius:8px}
+#poll-control .pc-overlay.pc-radius-large{border-radius:28px}
 @keyframes pc-enter{from{opacity:0;transform:translateY(15px)}to{opacity:1;transform:translateY(0)}}
 #poll-control .pc-under-preview{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:13px;min-height:29px}
 #poll-control .pc-tally{font-size:12px;color:#9ca5b1;font-variant-numeric:tabular-nums}
@@ -129,15 +145,21 @@ body{margin:0}
 #poll-control .pc-demo{font-size:12px}
 #poll-control .pc-overlay{will-change:opacity,transform}
 .overlay-page{background:transparent!important;overflow:hidden}
-.overlay-page #poll-control{border:0;border-radius:0;background:transparent;padding:24px;overflow:visible;max-width:480px}
+.overlay-page #poll-control{border:0;border-radius:0;background:transparent;padding:24px;overflow:visible;max-width:620px}
 .overlay-page #poll-control .pc-overlay{width:100%;max-width:432px;padding:26px;box-shadow:none}
+.overlay-page #poll-control .pc-overlay.pc-width-narrow{max-width:360px}
+.overlay-page #poll-control .pc-overlay.pc-width-wide{max-width:560px}
 .overlay-page #poll-control .pc-overlay.pc-widget-compact{padding:18px}
 .overlay-page #poll-control .pc-overlay h3{font-size:32px}
+.overlay-page #poll-control .pc-overlay.pc-title-small h3{font-size:26px}
+.overlay-page #poll-control .pc-overlay.pc-title-large h3{font-size:38px}
 .overlay-page #poll-control .pc-overlay-name{font-size:18px}
 .overlay-page #poll-control .pc-overlay-word,.overlay-page #poll-control .pc-overlay-time{font-size:14px}
 .overlay-page #poll-control .pc-overlay-value{font-size:18px}
 .overlay-page #poll-control .pc-overlay-option{margin-top:22px}
 .overlay-page #poll-control .pc-track{height:5px}
+.overlay-page #poll-control .pc-overlay.pc-bars-thin .pc-track{height:2px}
+.overlay-page #poll-control .pc-overlay.pc-bars-thick .pc-track{height:8px}
 @media(max-width:620px){.panel-page{padding:12px 10px}#poll-control .pc-demo{flex-wrap:wrap}#poll-control .pc-options-head{font-size:12px}.overlay-page #poll-control{padding:18px}.overlay-page #poll-control .pc-overlay{padding:22px}}
 
 #poll-control .pc-account{border:1px solid #363c45;background:#1b1f26;color:#c5cbd5;border-radius:8px;padding:8px 11px;font-size:12px}

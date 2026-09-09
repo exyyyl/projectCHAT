@@ -175,6 +175,17 @@
   background: color-mix(in srgb, var(--widget-accent) 7%, transparent);
   color: color-mix(in srgb, var(--widget-accent) 72%, #c3c9c2);
 }
+.widget-poll .widget-keyword-filled {
+  border-color: transparent;
+  background: var(--widget-accent);
+  color: #17200e;
+}
+.widget-poll .widget-keyword-text {
+  border-color: transparent;
+  background: transparent;
+  padding-inline: 0;
+  color: var(--widget-accent);
+}
 
 summary::-webkit-details-marker {
   display: none;

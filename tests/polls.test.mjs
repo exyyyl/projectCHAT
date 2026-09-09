@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { applyCommand, initialState, validateDraft, validateStoredState, publicState } from '../server/polls.mjs';
+import { applyCommand, defaultWidget, initialState, validateDraft, validateStoredState, publicState } from '../server/polls.mjs';
 import { createStore } from '../server/store.mjs';
 import { percentages } from '../public/shared.js';
 
@@ -136,6 +136,23 @@ test('presets can be created, applied, updated, reordered and deleted', () => {
   state = applyCommand(state, { type: 'preset-delete', presetId: pause.id }, 6000).state;
   assert.deepEqual(state.presets.map(item => item.id), [games.id]);
 });
+test('presets can be pinned, reordered inside their group and applied after a finished poll', () => {
+  let state = initialState();
+  state = applyCommand(state, { type: 'preset-create', name: 'Игры', draft: { ...state.draft, question: 'Во что играем?' } }, 1000).state;
+  state = applyCommand(state, { type: 'preset-create', name: 'Перерыв', draft: { ...state.draft, question: 'Когда перерыв?' } }, 2000).state;
+  state = applyCommand(state, { type: 'preset-create', name: 'Еда', draft: { ...state.draft, question: 'Что заказать?' } }, 3000).state;
+  const [games, pause, food] = state.presets;
+  state = applyCommand(state, { type: 'preset-toggle-pin', presetId: pause.id, pinned: true }, 4000).state;
+  assert.deepEqual(state.presets.map(item => [item.name, item.pinned]), [['Перерыв', true], ['Игры', false], ['Еда', false]]);
+  state = applyCommand(state, { type: 'preset-reorder', presetId: food.id, targetId: games.id, position: 'before' }, 5000).state;
+  assert.deepEqual(state.presets.map(item => item.name), ['Перерыв', 'Еда', 'Игры']);
+  assert.throws(() => applyCommand(state, { type: 'preset-reorder', presetId: pause.id, targetId: games.id, position: 'before' }), /своей группы/);
+  state = applyCommand(state, { type: 'start', draftRevision: 0, draft: state.draft }, 6000).state;
+  state = applyCommand(state, { type: 'finish', pollId: state.poll.id }, 7000).state;
+  state = applyCommand(state, { type: 'preset-apply', presetId: food.id, draftRevision: state.draftRevision }, 8000).state;
+  assert.equal(state.poll, null);
+  assert.equal(state.draft.question, 'Что заказать?');
+});
 test('preset validation rejects invalid names, stale ids and unsafe stored content', () => {
   const state = initialState();
   assert.throws(() => applyCommand(state, { type: 'preset-create', name: ' ', draft: state.draft }), /Название/);
@@ -161,6 +178,7 @@ test('settings import replaces the draft and presets without importing runtime s
   assert.equal(state.draft.question, 'Что запускаем?');
   assert.equal(state.presets.length, 1);
   assert.equal(state.presets[0].name, 'Игры');
+  assert.equal(state.presets[0].pinned, false);
   assert.equal(state.presets[0].createdAt, 5000);
   assert.equal(state.poll, null);
   assert.equal(state.draftRevision, 1);
@@ -171,14 +189,16 @@ test('settings import rejects active polls and malformed backups', () => {
   const running = start();
   assert.throws(() => applyCommand(running, { type: 'settings-import', draftRevision: 1, settings: { schema: 1, app: 'projectCHAT', draft: initial.draft, presets: [] } }), /закройте/);
 });
-test('widget settings are validated, persisted and included in imports', () => {
+test('widget settings are validated, migrated, persisted and included in imports', () => {
   const initial = initialState();
-  const widget = { accent: '#a970ff', surface: 'glass', density: 'compact', showTimer: false, showKeywords: false };
+  const widget = { accent: '#a970ff', surface: 'glass', density: 'compact', radius: 'large', titleSize: 'small', width: 'wide', opacity: 85, font: 'mono', optionStyle: 'cards', optionSize: 'large', keywordStyle: 'filled', barSize: 'thick', showTimer: false, showKeywords: false, showBars: false, showVotes: false, showPercentages: false };
   let state = applyCommand(initial, { type: 'widget-update', widget }).state;
   assert.deepEqual(state.widget, widget);
   assert.throws(() => applyCommand(state, { type: 'widget-update', widget: { ...widget, accent: 'purple' } }), /цвет/);
   state = applyCommand(initial, { type: 'settings-import', draftRevision: 0, settings: { schema: 1, app: 'projectCHAT', draft: initial.draft, presets: [], widget } }).state;
   assert.deepEqual(state.widget, widget);
+  const legacy = { accent: '#d3fb75', surface: 'solid', density: 'comfortable', showTimer: true, showKeywords: true };
+  assert.deepEqual(validateStoredState({ ...initialState(), widget: legacy }).widget, defaultWidget());
 });
 test('stale panel cannot replace a newer draft or mutate a different poll', () => {
   const original = initialState();

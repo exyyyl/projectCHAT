@@ -39,6 +39,7 @@ export type Preset = {
   id: string
   name: string
   draft: Draft
+  pinned: boolean
 }
 
 export type PresetDialogState =
@@ -46,10 +47,22 @@ export type PresetDialogState =
 
 export type WidgetSettings = {
   accent: string
-  surface: "solid" | "glass"
+  surface: "solid" | "glass" | "minimal"
   density: "comfortable" | "compact"
+  radius: "small" | "medium" | "large"
+  titleSize: "small" | "medium" | "large"
+  width: "narrow" | "medium" | "wide"
+  opacity: 70 | 85 | 100
+  font: "geist" | "system" | "mono"
+  optionStyle: "rows" | "cards" | "outline"
+  optionSize: "small" | "medium" | "large"
+  keywordStyle: "outline" | "filled" | "text"
+  barSize: "thin" | "medium" | "thick"
   showTimer: boolean
   showKeywords: boolean
+  showBars: boolean
+  showVotes: boolean
+  showPercentages: boolean
 }
 
 export type ServerState = {
@@ -68,7 +81,6 @@ export type TwitchState = {
   displayName?: string
   profileImageUrl?: string
   userId?: string
-  clientId?: string
   error?: string
   lastGapAt?: number | null
   device?: { code: string; url: string } | null

@@ -42,9 +42,29 @@ export function createOverlay(root) {
       offset = serverNow - Date.now();
       current = poll;
       root.style.setProperty('--pc-accent', widget.accent || '#d3fb75');
+      root.style.setProperty('--pc-opacity', String((widget.opacity || 100) / 100));
       root.classList.toggle('pc-widget-glass', widget.surface === 'glass');
+      root.classList.toggle('pc-widget-minimal', widget.surface === 'minimal');
       root.classList.toggle('pc-widget-compact', widget.density === 'compact');
+      root.classList.toggle('pc-radius-small', widget.radius === 'small');
+      root.classList.toggle('pc-radius-large', widget.radius === 'large');
+      root.classList.toggle('pc-title-small', widget.titleSize === 'small');
+      root.classList.toggle('pc-title-large', widget.titleSize === 'large');
+      root.classList.toggle('pc-width-narrow', widget.width === 'narrow');
+      root.classList.toggle('pc-width-wide', widget.width === 'wide');
+      root.classList.toggle('pc-font-system', widget.font === 'system');
+      root.classList.toggle('pc-font-mono', widget.font === 'mono');
+      root.classList.toggle('pc-options-cards', widget.optionStyle === 'cards');
+      root.classList.toggle('pc-options-outline', widget.optionStyle === 'outline');
+      root.classList.toggle('pc-options-small', widget.optionSize === 'small');
+      root.classList.toggle('pc-options-large', widget.optionSize === 'large');
+      root.classList.toggle('pc-keywords-filled', widget.keywordStyle === 'filled');
+      root.classList.toggle('pc-keywords-text', widget.keywordStyle === 'text');
+      root.classList.toggle('pc-bars-thin', widget.barSize === 'thin');
+      root.classList.toggle('pc-bars-thick', widget.barSize === 'thick');
       root.classList.toggle('pc-hide-keywords', widget.showKeywords === false);
+      root.classList.toggle('pc-hide-bars', widget.showBars === false);
+      root.classList.toggle('pc-hide-values', widget.showVotes === false && widget.showPercentages === false);
       timer.hidden = widget.showTimer === false;
       if (!poll) { root.classList.add('is-hidden'); root.setAttribute('aria-hidden', 'true'); return; }
       const visible = poll.visible !== false;
@@ -79,8 +99,11 @@ export function createOverlay(root) {
         row.classList.toggle('pc-leader', !secret && max > 0 && option.votes === max);
         row.querySelector('.pc-overlay-name').textContent = option.name || `Вариант ${i + 1}`;
         row.querySelector('.pc-overlay-word').textContent = option.word;
-        row.querySelector('.pc-overlay-value').textContent = secret ? '—' : `${pct[i]}%`;
-        row.querySelector('.pc-fill').style.width = `${secret ? 0 : pct[i]}%`;
+        const values = [];
+        if (widget.showVotes !== false) values.push(String(option.votes || 0));
+        if (widget.showPercentages !== false) values.push(`${pct[i]}%`);
+        row.querySelector('.pc-overlay-value').textContent = secret ? '—' : values.join(' · ');
+        row.querySelector('.pc-fill').style.transform = `scaleX(${(secret ? 0 : pct[i]) / 100})`;
       });
       tick();
     },

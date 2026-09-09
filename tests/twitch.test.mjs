@@ -30,7 +30,7 @@ async function fixture(t, customFetch, saved) {
     close() { this.closed = true; void this.emit('close'); }
   }
   const store = await createStore(join(filename, '../state.json'), { now: () => time });
-  const twitch = await createTwitch({ filename, store, now: () => time, Socket,
+  const twitch = await createTwitch({ filename, store, clientId, now: () => time, Socket,
     later(fn, delay) { const timer = { fn, delay }; timers.add(timer); return timer; }, cancel(timer) { timers.delete(timer); },
     async fetcher(url, options) {
       calls.push({ url, options });
@@ -46,13 +46,13 @@ async function fixture(t, customFetch, saved) {
   t.after(() => twitch.close());
   return { twitch, store, sockets, calls, timers, filename, now: () => time,
     async advance(delay) { const timer = [...timers].find(x => x.delay === delay); assert.ok(timer, `timer ${delay} exists`); timers.delete(timer); time += delay; await timer.fn(); },
-    async authorize() { await twitch.command({ type: 'connect', clientId }); await this.advance(5000); await sockets.at(-1).message(welcome('session1')); },
+    async authorize() { await twitch.command({ type: 'connect' }); await this.advance(5000); await sockets.at(-1).message(welcome('session1')); },
   };
 }
 test('device login requests only chat read scope; public status never contains tokens', async t => {
   let pending = true;
   const f = await fixture(t, url => url.endsWith('/token') && pending ? (pending = false, response({ message: 'authorization_pending' }, 400)) : null);
-  await f.twitch.command({ type: 'connect', clientId });
+  await f.twitch.command({ type: 'connect' });
   assert.equal(f.twitch.snapshot().phase, 'authorizing');
   assert.equal(f.twitch.snapshot().device.code, 'ABCD1234');
   await f.advance(5000); assert.equal(f.twitch.snapshot().phase, 'authorizing');
@@ -62,6 +62,7 @@ test('device login requests only chat read scope; public status never contains t
   assert.equal(f.twitch.snapshot().displayName, 'Streamer');
   assert.equal(f.twitch.snapshot().profileImageUrl, profile.data[0].profile_image_url);
   assert.doesNotMatch(JSON.stringify(f.twitch.snapshot()), /private-access|private-refresh|private-device/);
+  assert.equal('clientId' in f.twitch.snapshot(), false);
   const auth = f.calls.find(c => c.url.endsWith('/device'));
   assert.equal(auth.options.body.get('scopes'), 'user:read:chat');
   const sub = JSON.parse(f.calls.find(c => c.url.endsWith('/subscriptions')).options.body);
@@ -107,7 +108,7 @@ test('network loss resubscribes, reports gap, and disconnect cancels retries', a
   assert.equal(f.twitch.snapshot().phase, 'disconnected');
   assert.equal(f.timers.size, 0);
   for (const ws of f.sockets) assert.equal(ws.closed, true);
-  assert.deepEqual(JSON.parse(await readFile(f.filename, 'utf8')), { clientId });
+  assert.deepEqual(JSON.parse(await readFile(f.filename, 'utf8')), {});
 });
 test('expired token refreshes once without a client secret and saves rotated refresh token', async t => {
   let validations = 0;
@@ -124,7 +125,7 @@ test('revocation stops listening, and cancel removes pending device authorizatio
   const f = await fixture(t); await f.authorize();
   await f.sockets[0].message({ metadata: { message_type: 'revocation' }, payload: {} });
   assert.equal(f.twitch.snapshot().phase, 'error'); assert.equal(f.timers.size, 0);
-  await f.twitch.command({ type: 'connect', clientId });
+  await f.twitch.command({ type: 'connect' });
   await f.twitch.command({ type: 'disconnect' });
   assert.equal(f.timers.size, 0); assert.equal(f.twitch.snapshot().device, null);
 });

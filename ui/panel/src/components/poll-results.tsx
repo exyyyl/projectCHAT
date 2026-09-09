@@ -12,15 +12,19 @@ import {
 export function Keyword({
   children,
   custom = false,
+  appearance = "outline",
 }: {
   children: string
   custom?: boolean
+  appearance?: WidgetSettings["keywordStyle"]
 }) {
   return (
     <Badge
       variant="outline"
       className={`font-mono text-[11px] font-medium ${
-        custom ? "widget-keyword" : "border-brand/15 bg-brand/5 text-brand/70"
+        custom
+          ? `widget-keyword ${appearance === "filled" ? "widget-keyword-filled" : appearance === "text" ? "widget-keyword-text" : ""}`
+          : "border-brand/15 bg-brand/5 text-brand/70"
       }`}
     >
       {children}
@@ -73,21 +77,57 @@ export function PollResults({
   const maximum = Math.max(...options.map((option) => option.votes), 0)
   const secret = poll.secret && "status" in poll && poll.status !== "ended"
   const customized = compact && !!widget
+  const radius = {
+    small: "rounded-lg",
+    medium: "rounded-xl",
+    large: "rounded-3xl",
+  }[widget?.radius || "medium"]
+  const titleSize = {
+    small: "text-xl",
+    medium: "text-2xl",
+    large: "text-3xl",
+  }[widget?.titleSize || "medium"]
+  const barSize = {
+    thin: "h-0.5",
+    medium: "h-1",
+    thick: "h-1.5",
+  }[widget?.barSize || "medium"]
+  const showValues =
+    widget?.showVotes !== false || widget?.showPercentages !== false
+  const optionSize = {
+    small: "text-xs",
+    medium: "text-sm",
+    large: "text-base",
+  }[widget?.optionSize || "medium"]
+  const fontFamily = {
+    geist: '"Geist Variable", Geist, sans-serif',
+    system: '"Segoe UI Variable", "Segoe UI", sans-serif',
+    mono: "ui-monospace, SFMono-Regular, Consolas, monospace",
+  }[widget?.font || "geist"]
 
   return (
     <div
       className={
         compact
-          ? `widget-poll rounded-xl shadow-xl shadow-black/20 ${
+          ? `widget-poll ${radius} ${
               widget?.surface === "glass"
-                ? "border border-white/10 bg-[#0d1115]/75 backdrop-blur-md"
-                : "bg-preview"
-            } ${widget?.density === "compact" ? "p-4" : "p-6"}`
+                ? "border border-white/10 backdrop-blur-md"
+                : widget?.surface === "minimal"
+                  ? "bg-transparent drop-shadow-[0_2px_12px_rgb(0_0_0/0.55)]"
+                  : ""
+            } ${widget?.surface === "minimal" ? "shadow-none" : "shadow-xl shadow-black/20"} ${widget?.density === "compact" ? "p-4" : "p-6"}`
           : "space-y-7"
       }
       style={
         widget
-          ? ({ "--widget-accent": widget.accent } as React.CSSProperties)
+          ? ({
+              "--widget-accent": widget.accent,
+              fontFamily,
+              backgroundColor:
+                widget.surface === "minimal"
+                  ? undefined
+                  : `rgb(13 17 21 / ${widget.opacity / 100})`,
+            } as React.CSSProperties)
           : undefined
       }
     >
@@ -95,7 +135,7 @@ export function PollResults({
         <h3
           className={
             compact
-              ? "max-w-[80%] text-2xl leading-tight font-medium tracking-tight"
+              ? `max-w-[80%] ${titleSize} leading-tight font-medium tracking-tight`
               : "text-3xl font-medium tracking-tight"
           }
         >
@@ -117,36 +157,67 @@ export function PollResults({
         {options.map((option, index) => {
           const leading = !secret && maximum > 0 && option.votes === maximum
           return (
-            <div key={option.id} className="space-y-2.5">
+            <div
+              key={option.id}
+              className={`space-y-2.5 ${
+                widget?.optionStyle === "cards"
+                  ? "rounded-xl bg-white/[0.045] p-3"
+                  : widget?.optionStyle === "outline"
+                    ? "rounded-xl border border-white/10 p-3"
+                    : ""
+              }`}
+            >
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <span
                     className={
-                      compact ? "truncate text-sm" : "truncate text-[15px]"
+                      compact
+                        ? `truncate ${optionSize}`
+                        : "truncate text-[15px]"
                     }
                   >
                     {option.name}
                   </span>
                   {widget?.showKeywords !== false && (
-                    <Keyword custom={customized}>{option.word}</Keyword>
+                    <Keyword
+                      custom={customized}
+                      appearance={widget?.keywordStyle}
+                    >
+                      {option.word}
+                    </Keyword>
                   )}
                 </div>
-                <span
-                  className={`shrink-0 font-mono text-sm tabular-nums ${leading ? (customized ? "widget-accent" : "text-brand") : "text-muted-foreground"}`}
-                >
-                  {secret
-                    ? "—"
-                    : compact
-                      ? `${share[index]}%`
-                      : `${option.votes} · ${share[index]}%`}
-                </span>
+                {showValues && (
+                  <span
+                    className={`shrink-0 font-mono text-sm tabular-nums ${leading ? (customized ? "widget-accent" : "text-brand") : "text-muted-foreground"}`}
+                  >
+                    {secret
+                      ? "—"
+                      : [
+                          widget?.showVotes !== false
+                            ? String(option.votes)
+                            : null,
+                          widget?.showPercentages !== false
+                            ? `${share[index]}%`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                  </span>
+                )}
               </div>
-              <div className="h-1 overflow-hidden rounded-full bg-track">
+              {widget?.showBars !== false && (
                 <div
-                  className={`h-full rounded-full transition-[width] duration-500 ${leading ? (customized ? "widget-fill" : "bg-brand") : "bg-track-active"}`}
-                  style={{ width: `${secret ? 0 : share[index]}%` }}
-                />
-              </div>
+                  className={`${barSize} overflow-hidden rounded-full bg-track`}
+                >
+                  <div
+                    className={`h-full origin-left rounded-full transition-transform duration-500 ${leading ? (customized ? "widget-fill" : "bg-brand") : "bg-track-active"}`}
+                    style={{
+                      transform: `scaleX(${(secret ? 0 : share[index]) / 100})`,
+                    }}
+                  />
+                </div>
+              )}
             </div>
           )
         })}

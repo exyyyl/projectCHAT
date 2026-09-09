@@ -23,8 +23,9 @@ export function chatVote(message, poll, userId) {
   return { type: 'vote', source: 'twitch', pollId: poll.id, broadcasterId: userId, sentAt, viewerId: `twitch:${event.chatter_user_id}`, viewerName, eventId: event.message_id, message: event.message.text };
 }
 
-export async function createTwitch({ filename, store, fetcher = fetch, Socket = WebSocket, now = Date.now, later = setTimeout, cancel = clearTimeout }) {
-  let credentials = { clientId: '' }, status = { phase: 'disconnected', login: '', displayName: '', profileImageUrl: '', userId: '', error: '', device: null, lastGapAt: null };
+export async function createTwitch({ filename, store, clientId, fetcher = fetch, Socket = WebSocket, now = Date.now, later = setTimeout, cancel = clearTimeout }) {
+  if (typeof clientId !== 'string' || !/^[a-zA-Z0-9]{10,100}$/.test(clientId)) throw new Error('Не настроен Client ID приложения Twitch.');
+  let credentials = {}, status = { phase: 'disconnected', login: '', displayName: '', profileImageUrl: '', userId: '', error: '', device: null, lastGapAt: null };
   let epoch = 0, stopped = false, timer, maintenance, retry, retryCount = 0;
   let pending = null, currentSocket = null, work = Promise.resolve(), disk = Promise.resolve();
   const sockets = new Set(), listeners = new Set();
@@ -32,10 +33,15 @@ export async function createTwitch({ filename, store, fetcher = fetch, Socket = 
   let avatarTimer = null;
   try {
     const saved = JSON.parse(await readFile(filename, 'utf8'));
-    if (typeof saved.clientId !== 'string' || (saved.accessToken && (typeof saved.accessToken !== 'string' || typeof saved.refreshToken !== 'string'))) throw new Error('invalid');
-    credentials = saved;
+    if (saved.accessToken && (typeof saved.accessToken !== 'string' || typeof saved.refreshToken !== 'string')) throw new Error('invalid');
+    if (saved.clientId && saved.clientId !== clientId) {
+      status.error = 'Приложение Twitch обновилось. Подключите аккаунт заново.';
+    } else {
+      const { accessToken, refreshToken, expiresAt } = saved;
+      credentials = accessToken ? { accessToken, refreshToken, expiresAt } : {};
+    }
   } catch (error) { if (error.code !== 'ENOENT') status.error = 'Не удалось прочитать вход Twitch. Подключите аккаунт заново.'; }
-  const snapshot = () => ({ ...structuredClone(status), clientId: credentials.clientId });
+  const snapshot = () => structuredClone(status);
   const update = data => { status = { ...status, ...data }; for (const fn of listeners) { try { fn(snapshot()); } catch {} } };
   const persist = () => {
     const data = JSON.stringify(credentials, null, 2);
@@ -76,7 +82,7 @@ export async function createTwitch({ filename, store, fetcher = fetch, Socket = 
     for (const id of ids) avatarQueue.delete(id);
     try {
       const query = new URLSearchParams(ids.map(id => ['id', id]));
-      const users = await request(`https://api.twitch.tv/helix/users?${query}`, { headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': credentials.clientId } });
+      const users = await request(`https://api.twitch.tv/helix/users?${query}`, { headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': clientId } });
       if (!alive(version)) return;
       const profiles = new Map((Array.isArray(users.data) ? users.data : []).map(user => [user?.id, avatarUrl(user?.profile_image_url)]));
       for (const id of ids) {
@@ -112,7 +118,7 @@ export async function createTwitch({ filename, store, fetcher = fetch, Socket = 
     await persist(); ensure(version);
   }
   async function refresh(version) {
-    const tokens = await form('token', { client_id: credentials.clientId, grant_type: 'refresh_token', refresh_token: credentials.refreshToken });
+    const tokens = await form('token', { client_id: clientId, grant_type: 'refresh_token', refresh_token: credentials.refreshToken });
     await saveTokens(tokens, version);
   }
   async function validate(version) {
@@ -120,11 +126,11 @@ export async function createTwitch({ filename, store, fetcher = fetch, Socket = 
     try { account = await request(AUTH + 'validate', { headers: { Authorization: `OAuth ${credentials.accessToken}` } }); }
     catch (error) { ensure(version); if (error.remoteStatus !== 401) throw error; await refresh(version); account = await request(AUTH + 'validate', { headers: { Authorization: `OAuth ${credentials.accessToken}` } }); }
     ensure(version);
-    if (account.client_id !== credentials.clientId || !account.scopes?.includes(SCOPE) || !account.user_id || !account.login) throw new PollError('Нужен вход с доступом к чтению чата.', 401);
+    if (account.client_id !== clientId || !account.scopes?.includes(SCOPE) || !account.user_id || !account.login) throw new PollError('Нужен вход с доступом к чтению чата.', 401);
     let profile;
     try {
       const users = await request(`https://api.twitch.tv/helix/users?id=${encodeURIComponent(account.user_id)}`, {
-        headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': credentials.clientId },
+        headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': clientId },
       });
       ensure(version);
       profile = Array.isArray(users.data) ? users.data.find(user => user?.id === account.user_id) : null;
@@ -180,7 +186,7 @@ export async function createTwitch({ filename, store, fetcher = fetch, Socket = 
             entry.timeout = (session.keepalive_timeout_seconds || 30) * 1000 + 1000; watch();
             if (!previous) {
               await request('https://api.twitch.tv/helix/eventsub/subscriptions', {
-                method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': credentials.clientId, 'Content-Type': 'application/json' },
+                method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': clientId, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type: 'channel.chat.message', version: '1', condition: { broadcaster_user_id: status.userId, user_id: status.userId }, transport: { method: 'websocket', session_id: session.id } }),
               });
             }
@@ -209,7 +215,7 @@ export async function createTwitch({ filename, store, fetcher = fetch, Socket = 
     if (!alive(version) || !pending) return;
     if (now() >= pending.expiresAt) { pending = null; update({ phase: 'error', device: null, error: 'Код истёк. Повторите подключение.' }); return; }
     try {
-      const tokens = await form('token', { client_id: credentials.clientId, scopes: SCOPE, device_code: pending.code, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' });
+      const tokens = await form('token', { client_id: clientId, scopes: SCOPE, device_code: pending.code, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' });
       await saveTokens(tokens, version); pending = null;
       update({ phase: 'connecting', device: null, error: '' });
       await validate(version); ensure(version); openSocket(SOCKET, version);
@@ -230,13 +236,11 @@ export async function createTwitch({ filename, store, fetcher = fetch, Socket = 
     }); },
     command(command) { return serial(async () => {
       if (command.type === 'disconnect') {
-        reset(); credentials = { clientId: credentials.clientId }; await persist();
+        reset(); credentials = {}; await persist();
         update({ phase: 'disconnected', userId: '', login: '', displayName: '', profileImageUrl: '', device: null, error: '', lastGapAt: null });
       } else if (command.type === 'connect') {
-        const clientId = typeof command.clientId === 'string' ? command.clientId.trim() : '';
-        if (typeof clientId !== 'string' || !/^[a-zA-Z0-9]{10,100}$/.test(clientId)) throw new PollError('Введите Client ID приложения Twitch.');
         reset(); const version = epoch;
-        credentials = { clientId }; await persist();
+        credentials = {}; await persist();
         update({ phase: 'connecting', userId: '', login: '', displayName: '', profileImageUrl: '', device: null, error: '', lastGapAt: null });
         try {
           const device = await form('device', { client_id: clientId, scopes: SCOPE }); ensure(version);
