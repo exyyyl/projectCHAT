@@ -19,10 +19,14 @@ if (streamDockIcons.status !== 0) process.exit(streamDockIcons.status || 1)
 
 const panel = spawnSync('npm', ['run', 'build:panel'], { stdio: 'inherit' })
 if (panel.status !== 0) process.exit(panel.status || 1)
-const builder = process.platform === 'win32' ? 'node_modules/.bin/electron-builder.cmd' : 'node_modules/.bin/electron-builder'
 const args = platform === 'win'
   ? ['--config', 'electron-builder.config.cjs', '--win', 'nsis', '--x64', '--publish', 'never']
   : ['--config', 'electron-builder.config.cjs', '--mac', 'dmg', `--${process.arch}`, '--publish', 'never']
-const packaged = spawnSync(builder, args, { stdio: 'inherit', env: { ...process.env, STREAM_POLLS_UPDATE_URL: updateUrl || 'https://updates.invalid/projectchat' } })
+const packaged = spawnSync(
+  process.execPath,
+  ['node_modules/electron-builder/out/cli/cli.js', ...args],
+  { stdio: 'inherit', env: { ...process.env, STREAM_POLLS_UPDATE_URL: updateUrl || 'https://updates.invalid/projectchat' } },
+)
+if (packaged.error) throw packaged.error
 if (packaged.status !== 0) process.exit(packaged.status || 1)
 console.log(`Готово: release/ содержит ${platform === 'win' ? 'Windows-установщик' : 'macOS-сборку'}.`)
