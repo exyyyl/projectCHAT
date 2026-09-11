@@ -136,7 +136,7 @@ export function PresetLibrary({
 
   return (
     <section
-      className="grid h-full min-h-0 grid-cols-[18rem_minmax(0,1fr)] max-lg:grid-cols-[15rem_minmax(0,1fr)]"
+      className="grid h-full min-h-0 grid-cols-[18rem_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden max-lg:grid-cols-[15rem_minmax(0,1fr)]"
       aria-label="Шаблоны"
     >
       <div className="flex min-h-0 flex-col bg-[#0e1116] p-3">
@@ -216,7 +216,7 @@ export function PresetLibrary({
         </ScrollArea>
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-col">
+      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
         {dialog ? (
           <PresetEditor
             key={dialog.mode === "edit" ? dialog.preset.id : "new"}

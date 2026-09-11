@@ -1,7 +1,7 @@
 {
   "name": "projectchat",
   "productName": "projectCHAT",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "type": "module",
   "main": "desktop/main.mjs",
@@ -17,6 +17,7 @@
     "dev:panel": "npm --prefix ui/panel run dev",
     "test": "node --test tests/*.test.mjs",
     "check": "node scripts/check.mjs",
+    "clean": "node scripts/clean.mjs",
     "build": "node scripts/build.mjs",
     "desktop": "electron .",
     "pack:win": "node scripts/package-desktop.mjs --win",

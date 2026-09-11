@@ -13,15 +13,17 @@ export function Keyword({
   children,
   custom = false,
   appearance = "outline",
+  placeholder = false,
 }: {
   children: string
   custom?: boolean
   appearance?: WidgetSettings["keywordStyle"]
+  placeholder?: boolean
 }) {
   return (
     <Badge
       variant="outline"
-      className={`font-mono text-[11px] font-medium ${
+      className={`font-mono text-[11px] font-medium ${placeholder ? "border-dashed opacity-45" : ""} ${
         custom
           ? `widget-keyword ${appearance === "filled" ? "widget-keyword-filled" : appearance === "text" ? "widget-keyword-text" : ""}`
           : "border-brand/15 bg-brand/5 text-brand/70"
@@ -139,7 +141,7 @@ export function PollResults({
               : "text-3xl font-medium tracking-tight"
           }
         >
-          {poll.question}
+          {poll.question.trim() || "Вопрос опроса"}
         </h3>
         {compact && widget?.showTimer !== false && (
           <PollTimer poll={poll} custom={customized} />
@@ -156,6 +158,8 @@ export function PollResults({
       >
         {options.map((option, index) => {
           const leading = !secret && maximum > 0 && option.votes === maximum
+          const emptyName = !option.name.trim()
+          const emptyWord = !option.word.trim()
           return (
             <div
               key={option.id}
@@ -170,20 +174,17 @@ export function PollResults({
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <span
-                    className={
-                      compact
-                        ? `truncate ${optionSize}`
-                        : "truncate text-[15px]"
-                    }
+                    className={`${compact ? `truncate ${optionSize}` : "truncate text-[15px]"} ${emptyName ? "text-muted-foreground/55" : ""}`}
                   >
-                    {option.name}
+                    {emptyName ? `Вариант ${index + 1}` : option.name}
                   </span>
                   {widget?.showKeywords !== false && (
                     <Keyword
                       custom={customized}
                       appearance={widget?.keywordStyle}
+                      placeholder={emptyWord}
                     >
-                      {option.word}
+                      {emptyWord ? "слово" : option.word}
                     </Keyword>
                   )}
                 </div>

@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { X } from "lucide-react"
+import { Check, Info, TriangleAlert, X, XCircle } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -27,11 +27,20 @@ type ToastContextValue = {
 
 const ToastContext = createContext<ToastContextValue | null>(null)
 
-const toneClasses: Record<ToastTone, string> = {
-  default: "border-border-strong",
-  success: "border-brand/25",
-  warning: "border-amber-300/25",
-  error: "border-destructive/30",
+const toneStyles: Record<
+  ToastTone,
+  { icon: typeof Info; iconClassName: string }
+> = {
+  default: { icon: Info, iconClassName: "bg-white/7 text-foreground/75" },
+  success: { icon: Check, iconClassName: "bg-brand/12 text-brand" },
+  warning: {
+    icon: TriangleAlert,
+    iconClassName: "bg-amber-300/12 text-amber-200",
+  },
+  error: {
+    icon: XCircle,
+    iconClassName: "bg-destructive/12 text-destructive",
+  },
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -70,35 +79,36 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ showToast }}>
       {children}
       <div
-        className="pointer-events-none fixed right-5 bottom-5 z-100 flex w-[min(23rem,calc(100vw-2.5rem))] flex-col gap-2"
+        className="pointer-events-none fixed top-4 right-4 z-100 flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2"
         aria-live="polite"
         aria-atomic="false"
       >
         {toasts.map((toast) => {
           const tone = toast.tone ?? "default"
+          const style = toneStyles[tone]
+          const StatusIcon = style.icon
           return (
             <div
               key={toast.id}
               role={tone === "error" ? "alert" : "status"}
               className={cn(
-                "pointer-events-auto flex animate-in items-start gap-3 rounded-xl border bg-popover/95 px-4 py-3 text-sm text-popover-foreground shadow-2xl shadow-black/30 backdrop-blur-xl fade-in slide-in-from-bottom-2",
-                toneClasses[tone]
+                "pointer-events-auto flex animate-in items-center gap-3 rounded-xl bg-[#1b1f25]/96 p-2.5 pr-2 text-sm text-popover-foreground shadow-[0_12px_36px_rgb(0_0_0/0.38)] ring-1 ring-white/9 backdrop-blur-xl fade-in slide-in-from-top-2 zoom-in-95 duration-200 motion-reduce:animate-none"
               )}
             >
               <span
                 className={cn(
-                  "mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground",
-                  tone === "success" && "bg-brand",
-                  tone === "warning" && "bg-amber-300",
-                  tone === "error" && "bg-destructive"
+                  "flex size-8 shrink-0 items-center justify-center rounded-lg",
+                  style.iconClassName
                 )}
-              />
-              <span className="min-w-0 flex-1 leading-relaxed">
+              >
+                <StatusIcon className="size-4" strokeWidth={2} />
+              </span>
+              <span className="min-w-0 flex-1 leading-snug text-foreground/90">
                 {toast.message}
               </span>
               <button
                 type="button"
-                className="-mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/6 hover:text-foreground"
+                className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground/65 transition-colors hover:bg-white/6 hover:text-foreground"
                 aria-label="Закрыть уведомление"
                 onClick={() => dismiss(toast.id)}
               >

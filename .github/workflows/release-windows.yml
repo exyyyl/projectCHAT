@@ -1,0 +1,104 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      STREAM_POLLS_UPDATE_URL: https://github.com/${{ github.repository }}/releases/latest/download
+
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ui/panel/package-lock.json
+
+      - name: Verify tag and package version
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $expectedTag = "v$version"
+          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
+            throw "Tag $env:GITHUB_REF_NAME does not match package version $version. Expected $expectedTag."
+          }
+          "APP_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix ui/panel
+
+      - name: Verify source
+        run: |
+          npm --prefix ui/panel run typecheck
+          npm --prefix ui/panel run lint
+          npm test
+          npm run check
+
+      - name: Build Windows release
+        run: npm run release:win
+
+      - name: Verify release files
+        shell: pwsh
+        run: |
+          $files = @(
+            "release/projectCHAT-Setup-$env:APP_VERSION.exe",
+            "release/projectCHAT-Setup-$env:APP_VERSION.exe.blockmap",
+            "release/latest.yml"
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path $file)) {
+              throw "Missing release file: $file"
+            }
+          }
+          $metadata = Get-Content "release/latest.yml" -Raw
+          if ($metadata -notmatch "version:\s+$([regex]::Escape($env:APP_VERSION))") {
+            throw "latest.yml does not contain version $env:APP_VERSION"
+          }
+
+      - name: Keep installer as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: projectCHAT-${{ env.APP_VERSION }}-windows
+          path: |
+            release/projectCHAT-Setup-${{ env.APP_VERSION }}.exe
+            release/projectCHAT-Setup-${{ env.APP_VERSION }}.exe.blockmap
+            release/latest.yml
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(
+            "release/projectCHAT-Setup-$env:APP_VERSION.exe",
+            "release/projectCHAT-Setup-$env:APP_VERSION.exe.blockmap",
+            "release/latest.yml"
+          )
+          gh release create $env:GITHUB_REF_NAME @assets `
+            --verify-tag `
+            --title "projectCHAT $env:APP_VERSION" `
+            --generate-notes `
+            --latest
