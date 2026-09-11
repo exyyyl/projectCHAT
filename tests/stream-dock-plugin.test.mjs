@@ -28,3 +28,10 @@ test('bundled Stream Dock plugin exposes the five projectCHAT controls and compl
   assert.match(source, /ClientWebSocket/u)
   assert.match(source, /127\.0\.0\.1:4317\/api\/stream-dock/u)
 })
+
+test('Stream Dock controls are available in packaged UI', async () => {
+  const app = await readFile(join(root, '..', 'ui', 'panel', 'src', 'App.tsx'), 'utf8')
+  const page = await readFile(join(root, '..', 'ui', 'panel', 'src', 'components', 'stream-dock-page.tsx'), 'utf8')
+  assert.doesNotMatch(app, /streamDockComingSoon/u)
+  assert.doesNotMatch(page, /StreamDockComingSoon|releasePreview/u)
+})

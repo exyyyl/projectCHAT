@@ -26,7 +26,6 @@ function AppContent() {
   const controller = usePollController()
   const showToast = useToast()
   const [view, setView] = useState<AppView>("polls")
-  const [desktopDevelopment, setDesktopDevelopment] = useState<boolean>()
   const {
     state,
     draft,
@@ -52,16 +51,6 @@ function AppContent() {
       showToast({ message: twitchWarning, tone: "warning", duration: 6500 })
   }, [showToast, twitchWarning])
 
-  useEffect(() => {
-    let active = true
-    void window.streamPollsDesktop
-      ?.getInfo()
-      .then((info) => active && setDesktopDevelopment(info.development))
-    return () => {
-      active = false
-    }
-  }, [])
-
   if (!state || !draft)
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
@@ -74,7 +63,6 @@ function AppContent() {
       <AppSidebar
         view={view}
         connected={connected}
-        streamDockComingSoon={desktopDevelopment === false}
         onNavigate={setView}
         account={
           <TwitchAccount

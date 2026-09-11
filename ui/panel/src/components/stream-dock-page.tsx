@@ -7,7 +7,6 @@ import {
   FilePlus2,
   FolderOpen,
   Images,
-  Keyboard,
   Layers3,
   LoaderCircle,
   PackagePlus,
@@ -92,7 +91,6 @@ export function StreamDockPage() {
   const [notice, setNotice] = useState("")
   const [error, setError] = useState("")
   const [pending, setPending] = useState<PendingAction>()
-  const [releasePreview, setReleasePreview] = useState(false)
 
   useEffect(() => {
     if (notice) showToast({ message: notice, tone: "success" })
@@ -128,16 +126,10 @@ export function StreamDockPage() {
   }
 
   useEffect(() => {
-    if (!api || !desktop) return
+    if (!api) return
     let active = true
     void (async () => {
       try {
-        const info = await desktop.getInfo()
-        if (!active) return
-        if (!info.development) {
-          setReleasePreview(true)
-          return
-        }
         const nextStatus = await api.getStatus()
         if (!active) return
         setStatus(nextStatus)
@@ -157,7 +149,7 @@ export function StreamDockPage() {
     return () => {
       active = false
     }
-  }, [api, desktop])
+  }, [api])
 
   useEffect(() => {
     if (tab !== "icons" || !api || !status?.supported || icons.length) return
@@ -193,7 +185,6 @@ export function StreamDockPage() {
   }
 
   if (!api) return <UnavailableState />
-  if (releasePreview) return <StreamDockComingSoon />
   if (loading && !status) return <StreamDockLoading />
 
   const canManage = Boolean(status?.supported && status.ajazzFound)
@@ -421,25 +412,6 @@ function StreamDockLoading() {
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
         <div className="h-52 animate-pulse rounded-xl bg-white/[0.035]" />
         <div className="h-52 animate-pulse rounded-xl bg-white/[0.035]" />
-      </div>
-    </section>
-  )
-}
-
-function StreamDockComingSoon() {
-  return (
-    <section
-      className="flex min-h-full items-center justify-center p-8"
-      aria-label="Stream Dock — скоро"
-    >
-      <div className="max-w-md text-center">
-        <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-brand/8 text-brand">
-          <Keyboard className="size-5" />
-        </div>
-        <div className="mt-5 text-[11px] font-medium tracking-[0.14em] text-brand uppercase">
-          Скоро
-        </div>
-        <h2 className="mt-2 text-xl font-medium">Раздел в разработке</h2>
       </div>
     </section>
   )

@@ -20,7 +20,6 @@ export type AppView =
 type AppSidebarProps = {
   view: AppView
   connected: boolean
-  streamDockComingSoon: boolean
   account: ReactNode
   onNavigate: (view: AppView) => void
 }
@@ -34,7 +33,6 @@ const pollNavigation = [
 export function AppSidebar({
   view,
   connected,
-  streamDockComingSoon,
   account,
   onNavigate,
 }: AppSidebarProps) {
@@ -76,11 +74,6 @@ export function AppSidebar({
         >
           <Keyboard className={view === "stream-dock" ? "text-brand" : ""} />
           Stream Dock
-          {streamDockComingSoon && (
-            <span className="ml-auto rounded-full bg-white/5 px-2 py-0.5 text-[9px] font-medium tracking-wide text-muted-foreground uppercase">
-              Скоро
-            </span>
-          )}
         </Button>
       </nav>
 
