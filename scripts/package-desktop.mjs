@@ -14,10 +14,14 @@ await writeFile('build/update-config.json', JSON.stringify({ url: updateUrl }, n
 await sharp('build/icon-source.png').resize(512, 512).png().toFile('build/icon.png')
 await sharp('build/icon-source.png').resize(64, 64).png().toFile('public/favicon.png')
 
-const streamDockIcons = spawnSync('node', ['scripts/generate-stream-dock-icons.mjs'], { stdio: 'inherit' })
+const streamDockIcons = spawnSync(process.execPath, ['scripts/generate-stream-dock-icons.mjs'], { stdio: 'inherit' })
+if (streamDockIcons.error) throw streamDockIcons.error
 if (streamDockIcons.status !== 0) process.exit(streamDockIcons.status || 1)
 
-const panel = spawnSync('npm', ['run', 'build:panel'], { stdio: 'inherit' })
+const npmCli = process.env.npm_execpath
+if (!npmCli) throw new Error('Не удалось найти npm CLI. Запустите упаковку через npm run.')
+const panel = spawnSync(process.execPath, [npmCli, 'run', 'build:panel'], { stdio: 'inherit' })
+if (panel.error) throw panel.error
 if (panel.status !== 0) process.exit(panel.status || 1)
 const args = platform === 'win'
   ? ['--config', 'electron-builder.config.cjs', '--win', 'nsis', '--x64', '--publish', 'never']
