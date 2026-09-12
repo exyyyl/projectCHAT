@@ -26,6 +26,10 @@ test('one viewer cannot inflate counts or change choice by default', () => {
   assert.equal(publicState(state).poll.voters, undefined);
   assert.equal(state.poll.options.reduce((s, o) => s + o.votes, 0), 1);
 });
+test('named demo votes appear in the activity feed', () => {
+  const state = vote(start(), { viewerName: 'PixelFox', sentAt: 1500 }).state;
+  assert.deepEqual(state.poll.activity, [{ id: 'event-1', viewerId: 'viewer-1', viewerName: 'PixelFox', avatarUrl: '', optionId: '1', at: 1500 }]);
+});
 test('optional re-voting transfers one vote and prevents replay', () => {
   let state = vote(start({ allowChange: true })).state;
   state = vote(state, { eventId: 'event-2', message: 'вало' }).state;

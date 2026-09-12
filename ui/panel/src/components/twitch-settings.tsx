@@ -22,10 +22,10 @@ export function TwitchSettings({
   if (loading) {
     return (
       <div className="flex h-18 animate-pulse items-center gap-3 rounded-xl bg-surface-subtle px-4">
-        <div className="size-10 rounded-full bg-white/[0.07]" />
+        <div className="size-10 rounded-full bg-surface-raised" />
         <div className="space-y-2">
-          <div className="h-3 w-28 rounded bg-white/[0.07]" />
-          <div className="h-2.5 w-20 rounded bg-white/[0.045]" />
+          <div className="h-3 w-28 rounded bg-surface-raised" />
+          <div className="h-2.5 w-20 rounded bg-surface-subtle" />
         </div>
       </div>
     )

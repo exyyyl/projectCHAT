@@ -1,17 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../server/app.mjs';
 import { request as httpRequest } from 'node:http';
 
 test('HTTP commands, independent SSE clients, reconnect, and static routes', async t => {
-  const app = await createApp({ dataDir: await mkdtemp(join(tmpdir(), 'stream-polls-http-')) });
+  const dataDir = await mkdtemp(join(tmpdir(), 'stream-polls-http-'));
+  const panelDir = join(dataDir, 'panel');
+  await mkdir(join(panelDir, 'assets'), { recursive: true });
+  await Promise.all([
+    writeFile(join(panelDir, 'index.html'), '<link href="/assets/app.css"><script src="/assets/app.js"></script>'),
+    writeFile(join(panelDir, 'assets', 'app.css'), 'body{}'),
+    writeFile(join(panelDir, 'assets', 'app.js'), ''),
+  ]);
+  const app = await createApp({ dataDir, panelDir });
   const url = await app.listen(0);
   t.after(() => app.close());
   const request = (body, headers = {}) => fetch(url + '/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Poll-Client': 'panel', ...headers }, body: JSON.stringify(body) });
-  const control = (action, headers = {}) => fetch(url + '/api/stream-dock', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-projectCHAT-Control': 'stream-dock-v1', ...headers }, body: JSON.stringify({ action }) });
+  const control = (action, data = {}, headers = {}) => fetch(url + '/api/stream-dock', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-projectCHAT-Control': 'stream-dock-v1', ...headers }, body: JSON.stringify({ action, ...data }) });
   for (const path of ['/', '/overlay', '/shared.js', '/style.css', '/fonts/geist-cyrillic.woff2', '/fonts/geist-latin.woff2']) assert.equal((await fetch(url + path)).status, 200);
   const panelResponse = await fetch(url + '/');
   assert.match(panelResponse.headers.get('content-security-policy'), /https:\/\/static-cdn\.jtvnw\.net/);
@@ -47,17 +55,23 @@ test('HTTP commands, independent SSE clients, reconnect, and static routes', asy
   const restored = decoder.decode((await stream.body.getReader().read()).value);
   assert.match(restored, /"votes":1/);
   reconnect.abort();
+  assert.equal((await (await control('toggle-poll')).json()).state.poll.status, 'ended');
+  assert.equal((await (await control('toggle-poll')).json()).state.poll.status, 'running');
   assert.equal((await request({ type: 'unknown' })).status, 400);
   assert.equal((await fetch(url + '/api/twitch')).status, 200);
   assert.equal((await fetch(url + '/data/twitch.json')).status, 404);
   assert.equal((await fetch(url + '/api/twitch', { method: 'POST', body: '{}' })).status, 415);
   assert.equal((await request({ type: 'start', draftRevision: result.state.draftRevision, draft: { ...initial.draft, source: 'twitch' } })).status, 409);
-  await app.store.command({ type: 'finish', pollId: started.state.poll.id });
-  const live = await app.store.command({ type: 'start', draftRevision: result.state.draftRevision, broadcasterId: '123', draft: { ...initial.draft, source: 'twitch', showOverlay: false } });
+  await app.store.command({ type: 'finish', pollId: app.store.snapshot().poll.id });
+  const live = await app.store.command({ type: 'start', draftRevision: app.store.snapshot().draftRevision, broadcasterId: '123', draft: { ...initial.draft, source: 'twitch', showOverlay: false } });
   const injected = await (await request({ type: 'vote', source: 'twitch', broadcasterId: '123', sentAt: Date.now(), pollId: live.state.poll.id, viewerId: 'fake', eventId: 'fake', message: 'майн' })).json();
   assert.equal(injected.outcome, 'wrong-source');
   assert.equal(injected.state.poll.options[0].votes, 0);
   assert.equal((await (await control('extend')).json()).message, 'Добавлено 30 секунд');
   assert.equal((await (await control('toggle-output')).json()).state.poll.visible, true);
   assert.equal((await (await control('finish')).json()).state.poll.status, 'ended');
+  const preset = await app.store.command({ type: 'preset-create', name: 'Быстрый выбор', draft: initial.draft });
+  const selected = await (await control('select-preset', { presetId: preset.state.presets[0].id })).json();
+  assert.equal(selected.message, 'Выбран шаблон «Быстрый выбор»');
+  assert.equal(selected.state.draft.question, initial.draft.question);
 });

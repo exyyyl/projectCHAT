@@ -3,6 +3,7 @@ import { rm } from 'node:fs/promises'
 const generatedPaths = [
   'dist',
   'release',
+  'public/panel-build',
   'build/icon.png',
   'build/update-config.json',
 ]

@@ -12,7 +12,7 @@ import { loadDesktopPreferences, saveDesktopPreferences } from './preferences.mj
 
 const { autoUpdater } = updaterModule
 const preload = fileURLToPath(new URL('./preload.cjs', import.meta.url))
-const developmentIcon = fileURLToPath(new URL('../build/icon.png', import.meta.url))
+const developmentIcon = fileURLToPath(new URL('../build/icon-source.png', import.meta.url))
 let serverApp
 let mainWindow
 let streamDock
@@ -46,6 +46,7 @@ else {
   const start = async () => {
   trace('ready')
   if (!app.isPackaged && app.dock) app.dock.setIcon(developmentIcon)
+  const developmentPanelUrl = !app.isPackaged ? process.env.STREAM_POLLS_PANEL_URL?.trim() : ''
   const preferencesPath = join(app.getPath('userData'), 'desktop-preferences.json')
   desktopPreferences = await loadDesktopPreferences(preferencesPath)
 
@@ -98,9 +99,13 @@ else {
 
   try {
     trace('starting local server')
-    serverApp = await createApp({ dataDir: join(app.getPath('userData'), 'app-data') })
+    serverApp = await createApp({
+      dataDir: join(app.getPath('userData'), 'app-data'),
+      allowedOrigins: developmentPanelUrl ? [new URL(developmentPanelUrl).origin] : [],
+    })
     const port = Number(process.env.PORT || 4317)
     const url = await serverApp.listen(port)
+    const panelUrl = developmentPanelUrl || url
     trace(`server listening at ${url}`)
     mainWindow = new BrowserWindow({
       width: 1280,
@@ -238,12 +243,12 @@ else {
       return { action: 'deny' }
     })
     mainWindow.webContents.on('will-navigate', (event, target) => {
-      if (target.startsWith(url)) return
+      if (target.startsWith(url) || target.startsWith(panelUrl)) return
       event.preventDefault()
       if (/^https?:\/\//u.test(target)) void shell.openExternal(target)
     })
     mainWindow.once('ready-to-show', () => mainWindow.show())
-    await mainWindow.loadURL(url)
+    await mainWindow.loadURL(panelUrl)
     trace('window loaded')
     if (!app.isPackaged && process.env.STREAM_POLLS_SCREENSHOT) {
       await new Promise(resolve => setTimeout(resolve, 800))

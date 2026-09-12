@@ -68,6 +68,7 @@ export function PresetLibrary({
   const [dropPosition, setDropPosition] = useState<"before" | "after">("before")
   const itemRefs = useRef(new Map<string, HTMLDivElement>())
   const positions = useRef(new Map<string, number>())
+  const animatedOrder = useRef("")
 
   if (selectedId !== previousSelectedId) {
     setPreviousSelectedId(selectedId)
@@ -78,6 +79,12 @@ export function PresetLibrary({
     presets.find((preset) => preset.id === activeId) || presets[0]
 
   useLayoutEffect(() => {
+    const order = presets
+      .map((preset) => `${preset.id}:${preset.pinned ? "pinned" : "regular"}`)
+      .join("|")
+    if (order === animatedOrder.current) return
+    animatedOrder.current = order
+
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches
@@ -99,7 +106,7 @@ export function PresetLibrary({
         )
     }
     positions.current = nextPositions
-  }, [presets])
+  })
 
   const startDrag = (event: DragEvent<HTMLDivElement>, preset: Preset) => {
     if (!canManage || busy || dialog) return event.preventDefault()
@@ -139,7 +146,7 @@ export function PresetLibrary({
       className="grid h-full min-h-0 grid-cols-[18rem_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden max-lg:grid-cols-[15rem_minmax(0,1fr)]"
       aria-label="Шаблоны"
     >
-      <div className="flex min-h-0 flex-col bg-[#0e1116] p-3">
+      <div className="flex min-h-0 flex-col bg-sidebar p-3 transition-colors">
         <Button
           variant="secondary"
           className="h-11 w-full justify-start gap-3 px-3"
@@ -185,10 +192,10 @@ export function PresetLibrary({
                   }}
                 >
                   <button
-                    className={`w-full rounded-xl py-3 pr-3 pl-9 text-left transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 focus-visible:outline-none ${
+                    className={`w-full rounded-xl py-3 pr-3 pl-9 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset ${
                       active
                         ? "bg-surface-raised text-foreground"
-                        : "text-muted-foreground hover:bg-white/[0.025] hover:text-foreground"
+                        : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground"
                     }`}
                     aria-current={active ? "true" : undefined}
                     onClick={() => setActiveId(preset.id)}
@@ -219,7 +226,7 @@ export function PresetLibrary({
       <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
         {dialog ? (
           <PresetEditor
-            key={dialog.mode === "edit" ? dialog.preset.id : "new"}
+            key={dialog.mode === "edit" ? dialog.preset.id : dialog.editorId}
             dialog={dialog}
             busy={busy}
             onSave={onSave}
@@ -341,7 +348,7 @@ function PresetDetails({
                 key={option.id}
                 className="group flex min-h-14 items-center gap-4 rounded-xl bg-surface-subtle px-4 transition-colors hover:bg-surface-raised"
               >
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-white/[0.045] text-xs font-medium text-muted-foreground">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-surface-raised text-xs font-medium text-muted-foreground">
                   {optionIndex + 1}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">
@@ -356,7 +363,7 @@ function PresetDetails({
         </div>
       </div>
 
-      <div className="flex min-h-17 shrink-0 items-center justify-between gap-4 bg-white/[0.018] px-6 py-3 lg:px-8">
+      <div className="flex min-h-17 shrink-0 items-center justify-between gap-4 bg-panel-muted px-6 py-3 transition-colors lg:px-8">
         <Button
           variant="ghost"
           className="text-destructive hover:bg-destructive/10 hover:text-destructive"
@@ -394,7 +401,7 @@ function PresetDetails({
 
 function MetaBadge({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-white/[0.035] px-2.5 text-xs text-muted-foreground [&_svg]:size-3.5">
+    <span className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-surface-subtle px-2.5 text-xs text-muted-foreground [&_svg]:size-3.5">
       {children}
     </span>
   )

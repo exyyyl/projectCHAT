@@ -12,6 +12,18 @@ import {
   validateDraft,
 } from "@/domain/polls"
 
+const DEMO_VIEWERS = [
+  "PixelFox",
+  "NightOwl",
+  "LimeCat",
+  "NoScope",
+  "MoonByte",
+  "Kira",
+] as const
+
+const randomDemoViewer = () =>
+  DEMO_VIEWERS[Math.floor(Math.random() * DEMO_VIEWERS.length)]
+
 export function usePollController() {
   const [state, setState] = useState<ServerState | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -32,6 +44,7 @@ export function usePollController() {
   const generationRef = useRef(0)
   const draftRevisionRef = useRef(0)
   const queueRef = useRef<Promise<unknown>>(Promise.resolve())
+  const automaticDemoRef = useRef<string | null>(null)
 
   useEffect(() => {
     stateRef.current = state
@@ -176,6 +189,54 @@ export function usePollController() {
             ? "Был разрыв связи с Twitch. Часть голосов могла не поступить."
             : ""
       : ""
+  const pollId = poll?.id
+  const pollSource = poll?.source
+  const pollStatus = poll?.status
+
+  useEffect(() => {
+    if (
+      !pollId ||
+      pollStatus !== "running" ||
+      pollSource !== "test" ||
+      automaticDemoRef.current === pollId
+    )
+      return
+
+    automaticDemoRef.current = pollId
+    const timer = window.setInterval(() => {
+      const latest = stateRef.current?.poll
+      if (
+        !latest ||
+        latest.id !== pollId ||
+        latest.status !== "running" ||
+        latest.source !== "test"
+      ) {
+        window.clearInterval(timer)
+        return
+      }
+
+      const viewerName = randomDemoViewer()
+      const option =
+        latest.options[
+          Math.random() < 0.45
+            ? 0
+            : Math.floor(Math.random() * latest.options.length)
+        ]
+      const changingVote = latest.allowChange && Math.random() < 0.3
+      void send("vote", {
+        pollId: latest.id,
+        viewerId: changingVote
+          ? `demo-repeat:${viewerName}`
+          : `demo-live:${crypto.randomUUID()}`,
+        eventId: crypto.randomUUID(),
+        message: option.word,
+        viewerName,
+        sentAt: Date.now(),
+      })
+    }, 1100)
+
+    return () => window.clearInterval(timer)
+  }, [pollId, pollSource, pollStatus, send])
 
   const start = async () => {
     if (!draft) return
@@ -256,6 +317,8 @@ export function usePollController() {
         viewerId: `demo:${crypto.randomUUID()}`,
         eventId: crypto.randomUUID(),
         message: option.word,
+        viewerName: randomDemoViewer(),
+        sentAt: Date.now(),
       })
   }
   const simulate = () => {
@@ -282,6 +345,8 @@ export function usePollController() {
         viewerId: `demo:${crypto.randomUUID()}`,
         eventId: crypto.randomUUID(),
         message: option.word,
+        viewerName: randomDemoViewer(),
+        sentAt: Date.now(),
       })
     }, 420)
   }

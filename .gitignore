@@ -2,6 +2,7 @@ data/
 dist/
 node_modules/
 release/
+public/panel-build/
 build/icon.png
 build/update-config.json
 .DS_Store

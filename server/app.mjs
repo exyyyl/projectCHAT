@@ -8,15 +8,17 @@ import { PollError } from './polls.mjs';
 import { TWITCH_CLIENT_ID } from './config.mjs';
 
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
-const panelDir = join(publicDir, 'panel-build');
-const files = { '/': [join(panelDir, 'index.html'), 'text/html', true], '/overlay': ['overlay.html', 'text/html'], '/overlay.js': ['overlay.js', 'text/javascript'], '/shared.js': ['shared.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/favicon.png': ['favicon.png', 'image/png'], '/fonts/geist-cyrillic.woff2': ['fonts/geist-cyrillic.woff2', 'font/woff2'], '/fonts/geist-latin.woff2': ['fonts/geist-latin.woff2', 'font/woff2'] };
-const assetTypes = { '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.svg': 'image/svg+xml' };
+const productionPanelDir = join(publicDir, 'panel-build');
+const staticFiles = panelDir => ({ '/': [join(panelDir, 'index.html'), 'text/html', true], '/overlay': ['overlay.html', 'text/html'], '/overlay.js': ['overlay.js', 'text/javascript'], '/shared.js': ['shared.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/favicon.png': ['favicon.png', 'image/png'], '/fonts/geist-cyrillic.woff2': ['fonts/geist-cyrillic.woff2', 'font/woff2'], '/fonts/geist-latin.woff2': ['fonts/geist-latin.woff2', 'font/woff2'] });
+const assetTypes = { '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png' };
 const requireThat = (condition, message, status) => { if (!condition) throw new PollError(message, status); };
-export async function createApp({ dataDir, now = Date.now, twitchOptions = {} } = {}) {
+export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, allowedOrigins = [], panelDir = productionPanelDir } = {}) {
   const store = await createStore(join(dataDir, 'state.json'), { now });
   const twitch = await createTwitch({ filename: join(dataDir, 'twitch.json'), store, now, clientId: TWITCH_CLIENT_ID, ...twitchOptions });
   const streams = new Set();
   let allowedHosts;
+  const trustedOrigins = new Set(allowedOrigins);
+  const files = staticFiles(panelDir);
   const json = (response, status, data) => { response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(data)); };
   const server = createServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -25,7 +27,7 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {} } 
     try {
       const host = request.headers.host;
       if (!allowedHosts.has(host)) return json(response, 403, { error: 'Недопустимый адрес сервера.' });
-      if (request.headers.origin && request.headers.origin !== `http://${host}`) return json(response, 403, { error: 'Запрос с другого сайта отклонён.' });
+      if (request.headers.origin && request.headers.origin !== `http://${host}` && !trustedOrigins.has(request.headers.origin)) return json(response, 403, { error: 'Запрос с другого сайта отклонён.' });
       const path = new URL(request.url, `http://${host}`).pathname;
       if (request.method === 'GET' && path === '/api/state') return json(response, 200, store.snapshot());
       if (request.method === 'GET' && path === '/api/twitch') return json(response, 200, twitch.snapshot());
@@ -54,7 +56,7 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {} } 
         try { input = JSON.parse(text); } catch { return json(response, 400, { error: 'Некорректный JSON.' }); }
         const state = store.snapshot();
         let command, message;
-        if (input?.action === 'start') {
+        if (input?.action === 'start' || (input?.action === 'toggle-poll' && state.poll?.status !== 'running')) {
           requireThat(!state.poll || state.poll.status !== 'running', 'Опрос уже запущен.', 409);
           let broadcasterId;
           if (state.draft.source === 'twitch') {
@@ -64,7 +66,7 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {} } 
           }
           command = { type: 'start', draftRevision: state.draftRevision, draft: state.draft, broadcasterId };
           message = 'Опрос запущен';
-        } else if (input?.action === 'finish') {
+        } else if (input?.action === 'finish' || input?.action === 'toggle-poll') {
           requireThat(state.poll?.status === 'running', 'Сейчас нет активного опроса.', 409);
           command = { type: 'finish', pollId: state.poll.id };
           message = 'Опрос завершён';
@@ -78,6 +80,9 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {} } 
           message = 'Добавлено 30 секунд';
         } else if (input?.action === 'next-preset') {
           command = { type: 'preset-next' };
+        } else if (input?.action === 'select-preset') {
+          requireThat(typeof input.presetId === 'string' && input.presetId.length > 0, 'Выберите шаблон в настройках кнопки.', 400);
+          command = { type: 'preset-apply', presetId: input.presetId, draftRevision: state.draftRevision };
         } else {
           throw new PollError('Неизвестное действие Stream Dock.');
         }

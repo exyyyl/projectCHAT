@@ -67,10 +67,10 @@ export function TwitchAccount({ state, active, onClick }: TwitchAccountProps) {
     >
       {loading ? (
         <>
-          <span className="size-8 shrink-0 animate-pulse rounded-full bg-[#a970ff]/16" />
+          <span className="size-8 shrink-0 animate-pulse rounded-full bg-surface-raised" />
           <span className="min-w-0 flex-1 space-y-1.5">
-            <span className="block h-2.5 w-18 animate-pulse rounded-full bg-white/10" />
-            <span className="block h-2 w-12 animate-pulse rounded-full bg-white/6" />
+            <span className="block h-2.5 w-18 animate-pulse rounded-full bg-surface-raised" />
+            <span className="block h-2 w-12 animate-pulse rounded-full bg-surface-subtle" />
           </span>
         </>
       ) : (
@@ -79,7 +79,7 @@ export function TwitchAccount({ state, active, onClick }: TwitchAccountProps) {
             <TwitchAvatar state={state} />
             {connected && (
               <span
-                className={`absolute right-0 bottom-0 size-1.5 rounded-full ring-2 ring-[#111419] ${state.phase === "connected" ? "bg-brand" : "bg-amber-300"}`}
+                className={`absolute right-0 bottom-0 size-1.5 rounded-full ring-2 ring-sidebar ${state.phase === "connected" ? "bg-brand" : "bg-amber-300"}`}
               />
             )}
           </span>

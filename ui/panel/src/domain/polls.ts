@@ -43,7 +43,8 @@ export type Preset = {
 }
 
 export type PresetDialogState =
-  { mode: "create" } | { mode: "edit"; preset: Preset }
+  | { mode: "create"; editorId: string; draft?: Draft; name?: string }
+  | { mode: "edit"; preset: Preset }
 
 export type WidgetSettings = {
   accent: string

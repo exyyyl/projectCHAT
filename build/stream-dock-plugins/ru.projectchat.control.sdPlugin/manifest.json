@@ -3,19 +3,14 @@
   "Actions": [
     {
       "Icon": "images/start",
-      "Name": "Запустить опрос",
-      "States": [{ "Image": "images/start", "ShowTitle": false }],
+      "Name": "Запустить или завершить опрос",
+      "States": [
+        { "Image": "images/start", "ShowTitle": false },
+        { "Image": "images/finish", "ShowTitle": false }
+      ],
       "SupportedInMultiActions": true,
-      "Tooltip": "Запустить текущий черновик projectCHAT",
-      "UUID": "ru.projectchat.control.start"
-    },
-    {
-      "Icon": "images/finish",
-      "Name": "Завершить опрос",
-      "States": [{ "Image": "images/finish", "ShowTitle": false }],
-      "SupportedInMultiActions": true,
-      "Tooltip": "Завершить активный опрос",
-      "UUID": "ru.projectchat.control.finish"
+      "Tooltip": "Запустить подготовленный опрос или завершить активный",
+      "UUID": "ru.projectchat.control.toggle-poll"
     },
     {
       "Icon": "images/visibility",
@@ -35,11 +30,12 @@
     },
     {
       "Icon": "images/preset",
-      "Name": "Следующий шаблон",
-      "States": [{ "Image": "images/preset", "ShowTitle": false }],
+      "Name": "Выбрать шаблон",
+      "PropertyInspectorPath": "property-inspector/preset.html",
+      "States": [{ "Image": "images/preset", "ShowTitle": true }],
       "SupportedInMultiActions": true,
-      "Tooltip": "Выбрать следующий шаблон projectCHAT",
-      "UUID": "ru.projectchat.control.next-preset"
+      "Tooltip": "Применить выбранный шаблон projectCHAT",
+      "UUID": "ru.projectchat.control.select-preset"
     }
   ],
   "Author": "projectCHAT",
@@ -55,5 +51,5 @@
   "Software": { "MinimumVersion": "6.4" },
   "URL": "https://github.com/exyyyl/projectCHAT",
   "UUID": "ru.projectchat.control",
-  "Version": "0.1.0.0"
+  "Version": "0.5.0"
 }

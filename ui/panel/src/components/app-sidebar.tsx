@@ -37,9 +37,9 @@ export function AppSidebar({
   onNavigate,
 }: AppSidebarProps) {
   return (
-    <aside className="flex h-screen w-55 shrink-0 flex-col border-r border-border-subtle bg-[#0d1014] p-3">
+    <aside className="flex h-screen w-55 shrink-0 flex-col border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground transition-colors">
       <nav className="pt-2" aria-label="Разделы приложения">
-        <div className="space-y-0.5 rounded-xl bg-white/[0.025] p-1">
+        <div className="space-y-0.5 rounded-xl bg-sidebar-accent/55 p-1">
           {pollNavigation.map((item) => {
             const Icon = item.icon
             const active = view === item.id
@@ -91,7 +91,7 @@ export function AppSidebar({
         </Tooltip>
       )}
 
-      <div className="mt-auto rounded-xl bg-white/[0.025] p-1">{account}</div>
+      <div className="mt-auto rounded-xl bg-sidebar-accent/55 p-1">{account}</div>
     </aside>
   )
 }

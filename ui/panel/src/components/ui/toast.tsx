@@ -31,7 +31,7 @@ const toneStyles: Record<
   ToastTone,
   { icon: typeof Info; iconClassName: string }
 > = {
-  default: { icon: Info, iconClassName: "bg-white/7 text-foreground/75" },
+  default: { icon: Info, iconClassName: "bg-surface-raised text-foreground/75" },
   success: { icon: Check, iconClassName: "bg-brand/12 text-brand" },
   warning: {
     icon: TriangleAlert,
@@ -92,7 +92,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               key={toast.id}
               role={tone === "error" ? "alert" : "status"}
               className={cn(
-                "pointer-events-auto flex animate-in items-center gap-3 rounded-xl bg-[#1b1f25]/96 p-2.5 pr-2 text-sm text-popover-foreground shadow-[0_12px_36px_rgb(0_0_0/0.38)] ring-1 ring-white/9 backdrop-blur-xl fade-in slide-in-from-top-2 zoom-in-95 duration-200 motion-reduce:animate-none"
+                "pointer-events-auto flex animate-in items-center gap-3 rounded-xl bg-popover/96 p-2.5 pr-2 text-sm text-popover-foreground shadow-[0_12px_36px_rgb(0_0_0/0.38)] ring-1 ring-border-strong backdrop-blur-xl duration-200 zoom-in-95 fade-in slide-in-from-top-2 motion-reduce:animate-none"
               )}
             >
               <span
@@ -108,7 +108,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               </span>
               <button
                 type="button"
-                className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground/65 transition-colors hover:bg-white/6 hover:text-foreground"
+                className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground/65 transition-colors hover:bg-surface-raised hover:text-foreground"
                 aria-label="Закрыть уведомление"
                 onClick={() => dismiss(toast.id)}
               >

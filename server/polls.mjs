@@ -217,6 +217,7 @@ export function applyCommand(state, command, now = Date.now()) {
       requireThat(preset, 'Шаблон уже удалён.', 409);
       if (next.poll?.status === 'ended') next.poll = null;
       next.draft = structuredClone(preset.draft); next.draftRevision++; changed = true;
+      outcome = preset.name;
       break;
     }
     case 'preset-next': {
@@ -299,10 +300,12 @@ export function applyCommand(state, command, now = Date.now()) {
         if (existing) { p.options.find(o => o.id === existing[1]).votes--; existing[1] = option.id; }
         else p.voters.push([command.viewerId, option.id]);
         option.votes++; outcome = existing ? 'changed' : 'counted';
-        if (p.source === 'twitch') {
+        const activityName = typeof command.viewerName === 'string' && command.viewerName.length > 0 && command.viewerName.length <= 50 ? command.viewerName : '';
+        const activityAt = Number.isFinite(command.sentAt) ? command.sentAt : now;
+        if (p.source === 'twitch' || activityName) {
           const previousEntry = p.activity.find(entry => entry.viewerId === command.viewerId);
           if (previousEntry) p.activity.splice(p.activity.indexOf(previousEntry), 1);
-          p.activity.push({ id: command.eventId, viewerId: command.viewerId, viewerName: command.viewerName, avatarUrl: previousEntry?.avatarUrl || '', optionId: option.id, ...(existing ? { previousOptionId } : {}), at: command.sentAt });
+          p.activity.push({ id: command.eventId, viewerId: command.viewerId, viewerName: activityName, avatarUrl: previousEntry?.avatarUrl || '', optionId: option.id, ...(existing ? { previousOptionId } : {}), at: activityAt });
           if (p.activity.length > 50) p.activity.splice(0, p.activity.length - 50);
         }
       }

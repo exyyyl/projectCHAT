@@ -89,10 +89,23 @@ function AppContent() {
             onRun={controller.run}
             onVote={(option) => void controller.vote(option)}
             onSimulate={controller.simulate}
+            canCreatePreset={state.presets.length < 30}
+            onSaveAsPreset={(presetDraft) => {
+              controller.setPresetDialog({
+                mode: "create",
+                editorId: crypto.randomUUID(),
+                draft: structuredClone(presetDraft),
+                name: presetDraft.question.trim().slice(0, 50),
+              })
+              setView("presets")
+            }}
           />
         )}
 
-        {view === "presets" && (
+        <div
+          className={view === "presets" ? "h-full" : "hidden"}
+          aria-hidden={view === "presets" ? undefined : true}
+        >
           <PresetLibrary
             presets={state.presets}
             selectedId={selectedPreset}
@@ -102,7 +115,12 @@ function AppContent() {
             canManage={connected}
             canCreate={state.presets.length < 30}
             busy={busy}
-            onCreate={() => controller.setPresetDialog({ mode: "create" })}
+            onCreate={() =>
+              controller.setPresetDialog({
+                mode: "create",
+                editorId: crypto.randomUUID(),
+              })
+            }
             onApply={(preset) => {
               void controller.applyPreset(preset).then((applied) => {
                 if (applied) setView("polls")
@@ -128,7 +146,7 @@ function AppContent() {
             onSave={controller.savePreset}
             onCloseEditor={() => controller.setPresetDialog(null)}
           />
-        )}
+        </div>
 
         {view === "settings" && (
           <SettingsPage

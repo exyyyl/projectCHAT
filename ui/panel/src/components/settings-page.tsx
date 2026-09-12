@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react"
-import { Download, FileUp } from "lucide-react"
+import { Check, Download, FileUp } from "lucide-react"
 
+import { type AppTheme, useTheme } from "@/components/theme-provider"
 import { TwitchSettings } from "@/components/twitch-settings"
 import { UpdateSettings } from "@/components/update-control"
 import { Button } from "@/components/ui/button"
@@ -150,6 +151,10 @@ export function SettingsPage({
           />
         </SettingsPanel>
 
+        <SettingsPanel title="Тема">
+          <ThemeSettings />
+        </SettingsPanel>
+
         <SettingsPanel title="Приложение">
           <div className="space-y-1 rounded-xl bg-surface-subtle p-1">
             <PreferenceRow
@@ -226,6 +231,75 @@ export function SettingsPage({
   )
 }
 
+const themes: Array<{
+  id: AppTheme
+  label: string
+  background: string
+  surface: string
+  accent: string
+}> = [
+  {
+    id: "lime",
+    label: "Лайм",
+    background: "#0d1014",
+    surface: "#1a1e24",
+    accent: "#d3fb75",
+  },
+  {
+    id: "violet",
+    label: "Пичи",
+    background: "#0f0d14",
+    surface: "#201b28",
+    accent: "#b89aff",
+  },
+  {
+    id: "ice",
+    label: "Лёд",
+    background: "#0a1116",
+    surface: "#17242b",
+    accent: "#7ddcff",
+  },
+]
+
+function ThemeSettings() {
+  const { theme, setTheme } = useTheme()
+
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {themes.map((option) => {
+        const selected = theme === option.id
+        return (
+          <button
+            key={option.id}
+            type="button"
+            aria-pressed={selected}
+            className={`rounded-xl p-2 text-left ring-1 transition-colors ring-inset focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${selected ? "bg-surface-raised ring-brand/35" : "bg-surface-subtle ring-border-subtle hover:bg-surface-raised"}`}
+            onClick={() => setTheme(option.id)}
+          >
+            <span
+              className="flex h-12 items-end rounded-lg p-2"
+              style={{ background: option.background }}
+            >
+              <span
+                className="h-3 flex-1 rounded-full"
+                style={{ background: option.surface }}
+              />
+              <span
+                className="ml-1.5 size-3 rounded-full"
+                style={{ background: option.accent }}
+              />
+            </span>
+            <span className="mt-2 flex items-center justify-between gap-2 px-1 pb-0.5 text-sm font-medium">
+              {option.label}
+              {selected && <Check className="size-3.5 text-brand" />}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function SettingsPanel({
   title,
   children,
@@ -257,7 +331,7 @@ function PreferenceRow({
   onCheckedChange: (checked: boolean) => void
 }) {
   return (
-    <label className="flex min-h-13 items-center justify-between gap-5 rounded-lg px-3.5 py-2.5 hover:bg-white/[0.025]">
+    <label className="flex min-h-13 items-center justify-between gap-5 rounded-lg px-3.5 py-2.5 hover:bg-surface-raised">
       <span className="min-w-0 text-sm font-medium">
         {label}
         {unavailable && (

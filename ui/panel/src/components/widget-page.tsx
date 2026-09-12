@@ -59,7 +59,10 @@ export function WidgetPage({
   const widget = { ...defaults, ...savedWidget }
   const current = poll || draft
   const visible = poll ? poll.visible : draft.showOverlay
-  const overlayUrl = `${location.origin}/overlay`
+  const overlayOrigin = import.meta.env.DEV
+    ? "http://127.0.0.1:4317"
+    : location.origin
+  const overlayUrl = `${overlayOrigin}/overlay`
   const overlaySize = widget.width === "wide" ? "640 × 640" : "480 × 640"
   const previewWidth = {
     narrow: "max-w-sm",
@@ -120,7 +123,7 @@ export function WidgetPage({
             </div>
           </div>
           <Button variant="ghost" asChild>
-            <a href="/overlay" target="_blank" rel="noreferrer">
+            <a href={overlayUrl} target="_blank" rel="noreferrer">
               Открыть
             </a>
           </Button>
@@ -130,7 +133,7 @@ export function WidgetPage({
         </div>
       </div>
 
-      <aside className="bg-[#0e1116] px-5 py-6 xl:min-h-0 xl:overflow-y-auto">
+      <aside className="bg-sidebar px-5 py-6 transition-colors xl:min-h-0 xl:overflow-y-auto">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold tracking-[-0.02em]">
             Оформление
@@ -146,22 +149,22 @@ export function WidgetPage({
         </div>
 
         <Tabs defaultValue="style" className="mt-5">
-          <TabsList className="grid h-10 grid-cols-3 rounded-xl border-0 bg-white/[0.025] p-1">
+          <TabsList className="grid h-10 grid-cols-3 rounded-xl border-0 bg-surface-subtle p-1">
             <TabsTrigger
               value="style"
-              className="rounded-lg after:hidden data-[state=active]:bg-white/[0.055]"
+              className="rounded-lg after:hidden data-[state=active]:bg-surface-raised"
             >
               Стиль
             </TabsTrigger>
             <TabsTrigger
               value="options"
-              className="rounded-lg after:hidden data-[state=active]:bg-white/[0.055]"
+              className="rounded-lg after:hidden data-[state=active]:bg-surface-raised"
             >
               Варианты
             </TabsTrigger>
             <TabsTrigger
               value="content"
-              className="rounded-lg after:hidden data-[state=active]:bg-white/[0.055]"
+              className="rounded-lg after:hidden data-[state=active]:bg-surface-raised"
             >
               Видимость
             </TabsTrigger>
@@ -175,7 +178,7 @@ export function WidgetPage({
                     key={color.value}
                     className={`flex size-8 items-center justify-center rounded-lg transition-[background,transform] hover:scale-105 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
                       widget.accent === color.value
-                        ? "bg-white/10"
+                        ? "bg-surface-raised"
                         : "bg-transparent"
                     }`}
                     aria-label={color.label}
@@ -190,7 +193,7 @@ export function WidgetPage({
                   </button>
                 ))}
                 <label
-                  className="relative flex size-8 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-white/[0.045] focus-within:ring-2 focus-within:ring-ring/50"
+                  className="relative flex size-8 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-surface-raised focus-within:ring-2 focus-within:ring-ring/50"
                   title="Свой цвет"
                 >
                   <span
@@ -200,7 +203,7 @@ export function WidgetPage({
                         "conic-gradient(#ff6b8a, #f8c86b, #d3fb75, #6ee7f2, #a970ff, #ff6b8a)",
                     }}
                   >
-                    <span className="size-2 rounded-full bg-[#171a1f]" />
+                    <span className="size-2 rounded-full bg-panel" />
                   </span>
                   <input
                     type="color"
@@ -401,7 +404,7 @@ export function WidgetPage({
           </TabsContent>
 
           <TabsContent value="content" className="mt-6">
-            <div className="space-y-1 rounded-xl bg-white/[0.025] p-1">
+            <div className="space-y-1 rounded-xl bg-surface-subtle p-1">
               <ContentSwitch
                 label="Таймер"
                 checked={widget.showTimer}
@@ -478,7 +481,7 @@ function Segmented({
       value={value}
       disabled={disabled}
       onValueChange={(next) => next && onChange(next)}
-      className={`grid rounded-xl bg-white/[0.025] p-1 ${
+      className={`grid rounded-xl bg-surface-subtle p-1 ${
         columns === 3 ? "grid-cols-3" : "grid-cols-2"
       }`}
     >
@@ -503,7 +506,7 @@ function ContentSwitch({
   onCheckedChange: (checked: boolean) => void
 }) {
   return (
-    <label className="flex min-h-10 items-center justify-between gap-4 rounded-lg px-3 py-2 hover:bg-white/[0.025]">
+    <label className="flex min-h-10 items-center justify-between gap-4 rounded-lg px-3 py-2 hover:bg-surface-raised">
       <span className="text-sm">{label}</span>
       <Switch
         checked={checked}

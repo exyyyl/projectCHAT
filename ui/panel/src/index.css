@@ -109,32 +109,117 @@
   --accent: #292e36;
   --accent-foreground: #eef0f3;
   --destructive: oklch(0.704 0.191 22.216);
-  --border: rgb(255 255 255 / 10%);
-  --input: rgb(255 255 255 / 13%);
-  --ring: oklch(0.556 0 0);
+  --border: rgb(238 240 243 / 10%);
+  --input: rgb(238 240 243 / 13%);
+  --ring: #9ebc5b;
   --panel: #101318;
   --panel-muted: #14171c;
-  --surface-subtle: rgb(255 255 255 / 2.5%);
-  --surface-raised: rgb(255 255 255 / 5%);
-  --border-subtle: rgb(255 255 255 / 8%);
-  --border-strong: rgb(255 255 255 / 13%);
+  --surface-subtle: rgb(238 240 243 / 3%);
+  --surface-raised: rgb(238 240 243 / 6%);
+  --border-subtle: rgb(238 240 243 / 8%);
+  --border-strong: rgb(238 240 243 / 14%);
   --brand: #d3fb75;
   --preview: #0d1115;
   --track: rgb(255 255 255 / 8%);
   --track-active: #687367;
+  --preview-glow: rgb(109 137 112 / 25%);
+  --preview-deep: #202e2b;
+  --preview-base: #10171a;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: #0d1014;
+  --sidebar-foreground: #eef0f3;
+  --sidebar-primary: #d3fb75;
+  --sidebar-primary-foreground: #17200e;
+  --sidebar-accent: #1a1e24;
+  --sidebar-accent-foreground: #eef0f3;
+  --sidebar-border: rgb(238 240 243 / 8%);
+  --sidebar-ring: #9ebc5b;
+}
+
+.dark.theme-violet {
+  --background: #0d0b12;
+  --foreground: #f1eef7;
+  --card: #191620;
+  --card-foreground: #f1eef7;
+  --popover: #1c1824;
+  --popover-foreground: #f1eef7;
+  --primary: #b89aff;
+  --primary-foreground: #1c102f;
+  --secondary: #292431;
+  --secondary-foreground: #f1eef7;
+  --muted: #24202b;
+  --muted-foreground: #aaa3b4;
+  --accent: #30283a;
+  --accent-foreground: #f1eef7;
+  --border: rgb(214 198 235 / 12%);
+  --input: rgb(214 198 235 / 16%);
+  --ring: #a98ce8;
+  --panel: #121017;
+  --panel-muted: #17131e;
+  --surface-subtle: rgb(184 154 255 / 4%);
+  --surface-raised: rgb(184 154 255 / 9%);
+  --border-subtle: rgb(214 198 235 / 9%);
+  --border-strong: rgb(214 198 235 / 16%);
+  --brand: #b89aff;
+  --preview: #110e16;
+  --track: rgb(214 198 235 / 10%);
+  --track-active: #7a6c91;
+  --preview-glow: rgb(132 97 171 / 29%);
+  --preview-deep: #2b2035;
+  --preview-base: #15111b;
+  --sidebar: #0f0d14;
+  --sidebar-foreground: #f1eef7;
+  --sidebar-primary: #b89aff;
+  --sidebar-primary-foreground: #1c102f;
+  --sidebar-accent: #201b28;
+  --sidebar-accent-foreground: #f1eef7;
+  --sidebar-border: rgb(214 198 235 / 9%);
+  --sidebar-ring: #a98ce8;
+}
+
+.dark.theme-ice {
+  --background: #081014;
+  --foreground: #edf5f7;
+  --card: #141d23;
+  --card-foreground: #edf5f7;
+  --popover: #162027;
+  --popover-foreground: #edf5f7;
+  --primary: #7ddcff;
+  --primary-foreground: #071c25;
+  --secondary: #20303a;
+  --secondary-foreground: #edf5f7;
+  --muted: #1b282f;
+  --muted-foreground: #98aab2;
+  --accent: #24353f;
+  --accent-foreground: #edf5f7;
+  --border: rgb(185 221 232 / 12%);
+  --input: rgb(185 221 232 / 16%);
+  --ring: #6fc8e8;
+  --panel: #0d1419;
+  --panel-muted: #111a20;
+  --surface-subtle: rgb(125 220 255 / 4%);
+  --surface-raised: rgb(125 220 255 / 9%);
+  --border-subtle: rgb(185 221 232 / 9%);
+  --border-strong: rgb(185 221 232 / 16%);
+  --brand: #7ddcff;
+  --preview: #091419;
+  --track: rgb(185 221 232 / 10%);
+  --track-active: #5f7b86;
+  --preview-glow: rgb(75 151 177 / 28%);
+  --preview-deep: #18313a;
+  --preview-base: #0c181d;
+  --sidebar: #0a1116;
+  --sidebar-foreground: #edf5f7;
+  --sidebar-primary: #7ddcff;
+  --sidebar-primary-foreground: #071c25;
+  --sidebar-accent: #17242b;
+  --sidebar-accent-foreground: #edf5f7;
+  --sidebar-border: rgb(185 221 232 / 9%);
+  --sidebar-ring: #6fc8e8;
 }
 
 @layer base {
@@ -144,6 +229,7 @@
   body {
     @apply bg-background text-foreground;
     margin: 0;
+    transition: background-color 160ms ease, color 160ms ease;
   }
   button:not(:disabled),
   [role="button"]:not(:disabled) {
@@ -158,10 +244,10 @@
   background:
     radial-gradient(
       ellipse at 84% 18%,
-      rgb(109 137 112 / 25%),
+      var(--preview-glow),
       transparent 48%
     ),
-    linear-gradient(145deg, #202e2b, #10171a);
+    linear-gradient(145deg, var(--preview-deep), var(--preview-base));
 }
 
 .widget-poll .widget-accent {

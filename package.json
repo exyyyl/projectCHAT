@@ -1,7 +1,7 @@
 {
   "name": "projectchat",
   "productName": "projectCHAT",
-  "version": "0.7.1",
+  "version": "0.7.5",
   "private": true,
   "type": "module",
   "main": "desktop/main.mjs",
@@ -13,6 +13,7 @@
   "scripts": {
     "start": "node server/index.mjs",
     "dev": "node --watch server/index.mjs",
+    "dev:desktop": "node scripts/dev-desktop.mjs",
     "build:panel": "npm --prefix ui/panel run build",
     "dev:panel": "npm --prefix ui/panel run dev",
     "test": "node --test tests/*.test.mjs",
