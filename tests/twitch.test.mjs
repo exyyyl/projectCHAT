@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createTwitch, chatVote } from '../server/twitch.mjs';
+import { createTwitch, chatMessage, chatVote } from '../server/twitch.mjs';
 import { createStore } from '../server/store.mjs';
 
 const clientId = 'testclient12345';
@@ -86,6 +86,19 @@ test('real chat counts while hidden, deduplicates and excludes shared-channel an
   assert.deepEqual(f.store.snapshot().poll.activity, [{ id: 'message1', viewerName: 'Viewer', avatarUrl: viewerProfile.data[0].profile_image_url, optionId: '1', at: voteAt }]);
   assert.doesNotMatch(JSON.stringify(f.store.snapshot()), /twitch:456/);
   assert.equal(chatVote(notification(f.now()), { ...f.store.snapshot().poll, source: 'test' }, '123'), null);
+});
+test('generic chat messages are normalized with audience roles for other Twitch tools', () => {
+  const message = chatMessage(notification(1000, {
+    message: { text: 'участвую' },
+    badges: [{ set_id: 'subscriber' }, { set_id: 'vip' }],
+  }), '123');
+  assert.equal(message.viewerName, 'Viewer');
+  assert.equal(message.viewerLogin, 'Viewer');
+  assert.equal(message.text, 'участвую');
+  assert.deepEqual(message.roles, ['subscriber', 'vip']);
+  assert.equal(message.broadcasterId, '123');
+  assert.deepEqual(chatMessage(notification(1000), '123').roles, ['viewer']);
+  assert.equal(chatMessage(notification(1000, { source_broadcaster_user_id: '999' }), '123'), null);
 });
 test('Twitch session migration keeps old connection until welcome without resubscribing', async t => {
   const f = await fixture(t); await f.authorize(); const old = f.sockets[0];

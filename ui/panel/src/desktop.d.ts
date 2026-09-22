@@ -14,6 +14,8 @@ type DesktopUpdateState = {
   currentVersion: string
   availableVersion: string | null
   progress: number
+  releaseNotes: string[]
+  channel: "stable" | "beta"
   message: string
 }
 
@@ -27,6 +29,7 @@ type DesktopInfo = {
 type DesktopPreferences = {
   openAtLogin: boolean
   runInBackground: boolean
+  updateChannel: "stable" | "beta"
   openAtLoginSupported: boolean
   runInBackgroundSupported: boolean
 }
@@ -99,7 +102,10 @@ interface Window {
     getPreferences(): Promise<DesktopPreferences>
     setPreferences(
       preferences: Partial<
-        Pick<DesktopPreferences, "openAtLogin" | "runInBackground">
+        Pick<
+          DesktopPreferences,
+          "openAtLogin" | "runInBackground" | "updateChannel"
+        >
       >
     ): Promise<DesktopPreferences>
     streamDock: {

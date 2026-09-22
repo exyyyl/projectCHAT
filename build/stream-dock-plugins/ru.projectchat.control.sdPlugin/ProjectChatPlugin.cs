@@ -12,6 +12,8 @@ using System.Web.Script.Serialization;
 internal static class ProjectChatPlugin
 {
     private static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
+    private static readonly Dictionary<string, string> PresetIdsByContext = new Dictionary<string, string>();
+    private static readonly Dictionary<string, string> PresetNamesByContext = new Dictionary<string, string>();
     private static readonly Dictionary<string, string> Actions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         { "ru.projectchat.control.toggle-poll", "toggle-poll" },
@@ -84,6 +86,7 @@ internal static class ProjectChatPlugin
                     if (!Actions.TryGetValue(actionUuid, out action) || String.IsNullOrEmpty(context)) continue;
                     Dictionary<string, object> settings = SettingsFrom(message);
                     string presetId = StringValue(settings, "presetId");
+                    if (String.IsNullOrEmpty(presetId)) PresetIdsByContext.TryGetValue(context, out presetId);
                     if (action == "select-preset" && String.IsNullOrEmpty(presetId))
                     {
                         await Feedback(socket, context, false);
@@ -104,16 +107,30 @@ internal static class ProjectChatPlugin
                     }
                     else if (actionUuid == "ru.projectchat.control.select-preset" && !String.IsNullOrEmpty(context))
                     {
-                        await SetTitle(socket, context, StringValue(SettingsFrom(message), "presetName"));
+                        CachePreset(context, SettingsFrom(message));
+                        string presetName;
+                        PresetNamesByContext.TryGetValue(context, out presetName);
+                        await SetTitle(socket, context, presetName);
                     }
                 }
                 else if (eventName == "didReceiveSettings" && actionUuid == "ru.projectchat.control.select-preset")
                 {
-                    if (!String.IsNullOrEmpty(context))
-                        await SetTitle(socket, context, StringValue(SettingsFrom(message), "presetName"));
+                    if (!String.IsNullOrEmpty(context)) {
+                        CachePreset(context, SettingsFrom(message));
+                        string presetName;
+                        PresetNamesByContext.TryGetValue(context, out presetName);
+                        await SetTitle(socket, context, presetName);
+                    }
                 }
                 else if (eventName == "sendToPlugin" && actionUuid == "ru.projectchat.control.select-preset")
                 {
+                    Dictionary<string, object> payload = DictionaryValue(message, "payload") ?? new Dictionary<string, object>();
+                    if (StringValue(payload, "event") == "presetSelected")
+                    {
+                        CachePreset(context, payload);
+                        await SetTitle(socket, context, StringValue(payload, "presetName"));
+                        continue;
+                    }
                     Dictionary<string, object> state = await Task.Run(() => ReadState());
                     await Send(socket, new Dictionary<string, object>
                     {
@@ -172,6 +189,17 @@ internal static class ProjectChatPlugin
     private static Dictionary<string, object> SettingsFrom(Dictionary<string, object> message)
     {
         return DictionaryValue(DictionaryValue(message, "payload"), "settings") ?? new Dictionary<string, object>();
+    }
+
+    private static void CachePreset(string context, Dictionary<string, object> settings)
+    {
+        if (String.IsNullOrEmpty(context)) return;
+        string presetId = StringValue(settings, "presetId");
+        string presetName = StringValue(settings, "presetName");
+        if (String.IsNullOrEmpty(presetId)) PresetIdsByContext.Remove(context);
+        else PresetIdsByContext[context] = presetId;
+        if (String.IsNullOrEmpty(presetName)) PresetNamesByContext.Remove(context);
+        else PresetNamesByContext[context] = presetName;
     }
 
     private static ProjectChatResult InvokeProjectChat(string action, string presetId)

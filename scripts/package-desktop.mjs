@@ -1,6 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
-import sharp from 'sharp'
 
 const flags = new Set(process.argv.slice(2))
 const platform = flags.has('--win') ? 'win' : flags.has('--mac') ? 'mac' : null
@@ -11,12 +10,20 @@ if (release && !updateUrl) throw new Error('Для релизной сборки
 
 await mkdir('build', { recursive: true })
 await writeFile('build/update-config.json', JSON.stringify({ url: updateUrl }, null, 2) + '\n')
-await sharp('build/icon-source.png').resize(512, 512).png().toFile('build/icon.png')
-await sharp('build/icon-source.png').resize(64, 64).png().toFile('public/favicon.png')
+
+const appIcons = spawnSync(process.execPath, ['scripts/generate-app-icons.mjs'], { stdio: 'inherit' })
+if (appIcons.error) throw appIcons.error
+if (appIcons.status !== 0) process.exit(appIcons.status || 1)
 
 const streamDockIcons = spawnSync(process.execPath, ['scripts/generate-stream-dock-icons.mjs'], { stdio: 'inherit' })
 if (streamDockIcons.error) throw streamDockIcons.error
 if (streamDockIcons.status !== 0) process.exit(streamDockIcons.status || 1)
+
+if (platform === 'win') {
+  const inputCapture = spawnSync(process.execPath, ['scripts/build-input-capture.mjs'], { stdio: 'inherit' })
+  if (inputCapture.error) throw inputCapture.error
+  if (inputCapture.status !== 0) process.exit(inputCapture.status || 1)
+}
 
 const npmCli = process.env.npm_execpath
 if (!npmCli) throw new Error('Не удалось найти npm CLI. Запустите упаковку через npm run.')

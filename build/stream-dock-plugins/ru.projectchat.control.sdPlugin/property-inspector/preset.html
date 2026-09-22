@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Шаблон projectCHAT</title>
+    <title>Шаблон Cue</title>
     <style>
       :root {
         color-scheme: dark;
@@ -34,7 +34,7 @@
   <body>
     <label for="preset">Шаблон</label>
     <select id="preset" disabled>
-      <option value="">Подключение к projectCHAT…</option>
+      <option value="">Подключение к Cue…</option>
     </select>
     <p id="status"></p>
 
@@ -68,7 +68,7 @@
 
         select.value = presets.some((preset) => preset.id === selectedId) ? selectedId : ""
         select.disabled = presets.length === 0
-        status.textContent = presets.length ? "" : "Создайте шаблон в projectCHAT."
+        status.textContent = presets.length ? "" : "Создайте шаблон в Cue."
       }
 
       select.addEventListener("change", () => {
@@ -78,6 +78,8 @@
           presetName: select.value ? option.textContent : "",
         }
         send("setSettings", settings)
+        send("sendToPlugin", { event: "presetSelected", ...settings })
+        status.textContent = settings.presetName ? `Выбран: ${settings.presetName}` : ""
       })
 
       window.connectElgatoStreamDeckSocket = function (port, uuid, registerEvent, info, actionInfo) {
@@ -98,7 +100,7 @@
         })
         socket.addEventListener("close", () => {
           select.disabled = true
-          status.textContent = "projectCHAT недоступен."
+          status.textContent = "Cue недоступна."
         })
       }
     </script>

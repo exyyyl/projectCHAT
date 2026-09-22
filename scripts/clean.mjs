@@ -6,6 +6,7 @@ const generatedPaths = [
   'public/panel-build',
   'build/icon.png',
   'build/update-config.json',
+  'build/input-capture',
 ]
 
 await Promise.all(generatedPaths.map((path) => rm(path, { recursive: true, force: true })))

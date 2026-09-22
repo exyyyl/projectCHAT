@@ -23,7 +23,32 @@ export function chatVote(message, poll, userId) {
   return { type: 'vote', source: 'twitch', pollId: poll.id, broadcasterId: userId, sentAt, viewerId: `twitch:${event.chatter_user_id}`, viewerName, eventId: event.message_id, message: event.message.text };
 }
 
-export async function createTwitch({ filename, store, clientId, fetcher = fetch, Socket = WebSocket, now = Date.now, later = setTimeout, cancel = clearTimeout }) {
+export function chatMessage(message, userId) {
+  const event = message?.payload?.event;
+  if (message?.metadata?.message_type !== 'notification' || message.payload?.subscription?.type !== 'channel.chat.message' || !event) return null;
+  if (event.broadcaster_user_id !== userId) return null;
+  if (event.source_broadcaster_user_id && event.source_broadcaster_user_id !== userId) return null;
+  const sentAt = Date.parse(message.metadata.message_timestamp);
+  if (!Number.isFinite(sentAt) || typeof event.chatter_user_id !== 'string' || typeof event.message_id !== 'string' || typeof event.message?.text !== 'string') return null;
+  const rawName = typeof event.chatter_user_name === 'string' ? event.chatter_user_name : event.chatter_user_login;
+  if (typeof rawName !== 'string') return null;
+  const viewerName = rawName.normalize('NFKC').replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, 50);
+  if (!viewerName) return null;
+  const viewerLogin = typeof event.chatter_user_login === 'string'
+    ? event.chatter_user_login.normalize('NFKC').replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, 50)
+    : viewerName;
+  const badges = new Set((Array.isArray(event.badges) ? event.badges : [])
+    .map(badge => badge?.set_id)
+    .filter(value => typeof value === 'string'));
+  const roles = [];
+  if (badges.has('subscriber') || badges.has('founder')) roles.push('subscriber');
+  if (badges.has('vip')) roles.push('vip');
+  if (badges.has('moderator') || badges.has('broadcaster')) roles.push('moderator');
+  if (!roles.length) roles.push('viewer');
+  return { broadcasterId: userId, viewerId: `twitch:${event.chatter_user_id}`, viewerName, viewerLogin, roles, eventId: event.message_id, text: event.message.text, sentAt };
+}
+
+export async function createTwitch({ filename, store, clientId, onChatMessage, fetcher = fetch, Socket = WebSocket, now = Date.now, later = setTimeout, cancel = clearTimeout }) {
   if (typeof clientId !== 'string' || !/^[a-zA-Z0-9]{10,100}$/.test(clientId)) throw new Error('Не настроен Client ID приложения Twitch.');
   let credentials = {}, status = { phase: 'disconnected', login: '', displayName: '', profileImageUrl: '', userId: '', error: '', device: null, lastGapAt: null };
   let epoch = 0, stopped = false, timer, maintenance, retry, retryCount = 0;
@@ -196,6 +221,10 @@ export async function createTwitch({ filename, store, clientId, fetcher = fetch,
             retryCount = 0; update({ phase: 'connected', error: '', device: null }); break;
           }
           case 'notification': {
+            const chat = chatMessage(message, status.userId);
+            if (chat && onChatMessage) {
+              try { await onChatMessage(chat); } catch { /* other chat tools must not interrupt Twitch */ }
+            }
             const vote = chatVote(message, store.snapshot().poll, status.userId);
             if (vote) {
               const result = await store.command(vote);

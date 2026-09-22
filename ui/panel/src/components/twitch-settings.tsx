@@ -21,7 +21,7 @@ export function TwitchSettings({
 
   if (loading) {
     return (
-      <div className="flex h-18 animate-pulse items-center gap-3 rounded-xl bg-surface-subtle px-4">
+      <div className="flex h-18 animate-pulse items-center gap-3 rounded-xl border border-border-subtle bg-surface-subtle px-4">
         <div className="size-10 rounded-full bg-surface-raised" />
         <div className="space-y-2">
           <div className="h-3 w-28 rounded bg-surface-raised" />
@@ -32,8 +32,8 @@ export function TwitchSettings({
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex min-h-18 items-center gap-3 rounded-xl bg-surface-subtle px-4 py-3">
+    <div className="space-y-3">
+      <div className="flex min-h-18 items-center gap-3 rounded-xl border border-border-subtle bg-surface-subtle px-4 py-3">
         <TwitchAvatar state={state} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold">
@@ -49,7 +49,7 @@ export function TwitchSettings({
                 connected
                   ? "bg-brand"
                   : authorizing
-                    ? "bg-[#a970ff]"
+                    ? "bg-twitch"
                     : "bg-muted-foreground/35"
               }`}
             />
@@ -74,8 +74,8 @@ export function TwitchSettings({
       </div>
 
       {state.device && (
-        <div className="flex items-center justify-between gap-4 rounded-xl bg-[#a970ff]/8 px-4 py-3">
-          <span className="font-mono text-lg tracking-[.16em] text-[#c49cff]">
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-twitch/20 bg-twitch/8 px-4 py-3">
+          <span className="font-mono text-lg tracking-[.16em] text-twitch">
             {state.device.code}
           </span>
           <Button asChild>
@@ -100,7 +100,7 @@ function TwitchAvatar({ state }: { state: TwitchState }) {
     )
 
   return (
-    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#a970ff]/16 text-[#bc91ff]">
+    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-twitch/16 text-twitch">
       <UserRound className="size-5" />
     </span>
   )

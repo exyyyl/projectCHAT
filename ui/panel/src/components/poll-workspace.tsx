@@ -1,20 +1,30 @@
-import { ArrowRight, BookmarkPlus, Eye, EyeOff } from "lucide-react"
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { ArrowRight, BookmarkPlus, Plus, X } from "lucide-react"
+import { useEffect, useId, useRef, useState } from "react"
 
 import { PollDraftFields } from "@/components/poll-draft-fields"
-import { PollResults, PollTimer } from "@/components/poll-results"
+import { PollTimer, Keyword } from "@/components/poll-results"
+import {
+  SplitWorkspace,
+  WorkspaceContent,
+  WorkspacePane,
+} from "@/components/page-layout"
 import { Button } from "@/components/ui/button"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Input } from "@/components/ui/input"
+import {
+  FormActions,
+  FormSegmented,
+  FormSwitch,
+} from "@/components/form-controls"
 import { useToast } from "@/components/ui/toast"
+import { useDemoMode } from "@/hooks/use-demo-mode"
 import type {
   CommandResult,
   Draft,
   Poll,
   PollOption,
   VoteActivity,
-  WidgetSettings,
 } from "@/domain/polls"
-import { pluralVotes, validateDraft } from "@/domain/polls"
+import { percentages, pluralVotes, validateDraft } from "@/domain/polls"
 
 type PollWorkspaceProps = {
   poll: Poll | null
@@ -22,7 +32,6 @@ type PollWorkspaceProps = {
   connected: boolean
   busy: boolean
   twitchPhase: string
-  widget: WidgetSettings
   onChangeDraft: (update: (current: Draft) => Draft) => void
   onStart: () => void
   onClear: () => void
@@ -43,7 +52,6 @@ export function PollWorkspace({
   connected,
   busy,
   twitchPhase,
-  widget,
   onChangeDraft,
   onStart,
   onClear,
@@ -54,13 +62,20 @@ export function PollWorkspace({
   onSaveAsPreset,
   canCreatePreset,
 }: PollWorkspaceProps) {
-  const current = poll || draft
-  const onStream = poll ? poll.visible : draft.showOverlay
+  const showChat =
+    !!poll && (poll.source === "twitch" || poll.status === "running")
 
   return (
-    <div className="grid min-h-full lg:grid-cols-[minmax(390px,.86fr)_minmax(420px,1.14fr)]">
-      <section className="min-w-0 p-6 lg:p-8">
-        <div className="mx-auto max-w-160">
+    <SplitWorkspace
+      aria-label="Опросы"
+      className={
+        showChat
+          ? "lg:grid-cols-[minmax(0,1fr)_minmax(300px,.65fr)]"
+          : "lg:grid-cols-1"
+      }
+    >
+      <WorkspacePane>
+        <WorkspaceContent className={poll ? "max-w-3xl" : "max-w-5xl"}>
           {poll ? (
             <ActivePoll
               poll={poll}
@@ -86,11 +101,17 @@ export function PollWorkspace({
               canCreatePreset={canCreatePreset}
             />
           )}
-        </div>
-      </section>
+        </WorkspaceContent>
+      </WorkspacePane>
 
-      <PreviewPane current={current} onStream={onStream} widget={widget} />
-    </div>
+      {showChat && (
+        <WorkspacePane className="bg-sidebar">
+          <WorkspaceContent>
+            <ChatVoteFeed current={poll} />
+          </WorkspaceContent>
+        </WorkspacePane>
+      )}
+    </SplitWorkspace>
   )
 }
 
@@ -115,8 +136,10 @@ function PollComposer({
   onSaveAsPreset: (draft: Draft) => void
   canCreatePreset: boolean
 }) {
+  const { enabled: demoEnabled } = useDemoMode()
   const showToast = useToast()
   const [showValidation, setShowValidation] = useState(false)
+  const composerRef = useRef<HTMLDivElement>(null)
   const draftError = validateDraft(draft)
   const twitchUnavailable =
     draft.source === "twitch" && twitchPhase !== "connected"
@@ -129,87 +152,90 @@ function PollComposer({
         : ""
 
   return (
-    <div className="space-y-7">
-      <div className="grid gap-5 sm:grid-cols-2">
-        <SegmentedSetting label="Голоса">
-          <ToggleGroup
-            type="single"
-            value={draft.source}
-            disabled={busy}
-            onValueChange={(value) =>
-              value &&
-              onChange((item) => ({
-                ...item,
-                source: value as Draft["source"],
-              }))
-            }
-            className="grid w-full grid-cols-2 rounded-xl border border-border-subtle bg-surface-subtle p-1"
-          >
-            <ToggleGroupItem value="twitch">Twitch</ToggleGroupItem>
-            <ToggleGroupItem value="test">Демо</ToggleGroupItem>
-          </ToggleGroup>
-        </SegmentedSetting>
-
-        <SegmentedSetting label="Виджет в OBS">
-          <ToggleGroup
-            type="single"
-            value={draft.showOverlay ? "stream" : "panel"}
-            disabled={busy}
-            onValueChange={(value) => value && onSetOutput(value === "stream")}
-            className="grid w-full grid-cols-2 rounded-xl border border-border-subtle bg-surface-subtle p-1"
-          >
-            <ToggleGroupItem value="stream">Включён</ToggleGroupItem>
-            <ToggleGroupItem value="panel">Скрыт</ToggleGroupItem>
-          </ToggleGroup>
-        </SegmentedSetting>
-      </div>
-
+    <div ref={composerRef} className="space-y-7">
       <PollDraftFields
         draft={draft}
         idPrefix="poll"
         showValidation={showValidation}
         onChange={onChange}
-      />
+        extraSettings={
+          <div className="grid gap-5">
+            {demoEnabled && (
+              <FormSegmented
+                label="Голоса"
+                value={draft.source}
+                options={[
+                  ["twitch", "Twitch"],
+                  ["test", "Демо"],
+                ]}
+                disabled={busy}
+                onChange={(source) =>
+                  onChange((item) => ({
+                    ...item,
+                    source: source as Draft["source"],
+                  }))
+                }
+              />
+            )}
 
-      <div className="grid gap-2 pt-1 sm:grid-cols-[auto_minmax(0,1fr)]">
-        <Button
-          variant="secondary"
-          size="icon"
-          className="size-11"
-          disabled={busy || !canCreatePreset}
-          aria-label="Сохранить как шаблон"
-          onClick={() => onSaveAsPreset(structuredClone(draft))}
-        >
-          <BookmarkPlus />
-        </Button>
-        <Button
-          className="h-11 w-full text-[15px]"
-          disabled={busy}
-          onClick={() => {
-            if (draftError) {
-              setShowValidation(true)
-              requestAnimationFrame(() => {
-                document
-                  .querySelector<HTMLElement>('[aria-invalid="true"]')
-                  ?.focus()
-              })
-              showToast({ message: draftError, tone: "error" })
-              return
+            <FormSegmented
+              label="Виджет в OBS"
+              value={draft.showOverlay ? "stream" : "panel"}
+              options={[
+                ["stream", "Включён"],
+                ["panel", "Скрыт"],
+              ]}
+              disabled={busy}
+              onChange={(value) => onSetOutput(value === "stream")}
+            />
+          </div>
+        }
+        actions={
+          <FormActions
+            secondary={
+              <Button
+                variant="secondary"
+                size="icon"
+                className="size-11"
+                disabled={busy || !canCreatePreset}
+                aria-label="Сохранить как шаблон"
+                onClick={() => onSaveAsPreset(structuredClone(draft))}
+              >
+                <BookmarkPlus />
+              </Button>
             }
-            if (startIssue) {
-              showToast({
-                message: startIssue,
-                tone: twitchUnavailable ? "warning" : "error",
-              })
-              return
+            primary={
+              <Button
+                className="h-11 w-full text-[15px]"
+                disabled={busy}
+                onClick={() => {
+                  if (draftError) {
+                    setShowValidation(true)
+                    requestAnimationFrame(() => {
+                      composerRef.current
+                        ?.querySelector<HTMLElement>('[aria-invalid="true"]')
+                        ?.focus()
+                    })
+                    showToast({ message: draftError, tone: "error" })
+                    return
+                  }
+                  if (startIssue) {
+                    showToast({
+                      message: startIssue,
+                      tone: twitchUnavailable ? "warning" : "error",
+                    })
+                    return
+                  }
+                  setShowValidation(false)
+                  onStart()
+                }}
+              >
+                {busy ? "Запуск…" : "Запустить опрос"}
+              </Button>
             }
-            setShowValidation(false)
-            onStart()
-          }}
-        >
-          {busy ? "Запуск…" : "Запустить опрос"}
-        </Button>
-      </div>
+          />
+        }
+      />
     </div>
   )
 }
@@ -236,7 +262,49 @@ function ActivePoll({
   canCreatePreset: boolean
 }) {
   const running = poll.status === "running"
+  const instanceId = useId()
   const total = poll.options.reduce((sum, option) => sum + option.votes, 0)
+  const hiddenResults = poll.secret && running
+  const share = percentages(poll.options)
+  const maximum = Math.max(0, ...poll.options.map((option) => option.votes))
+  const showToast = useToast()
+  const [addingOption, setAddingOption] = useState(false)
+  const [optionName, setOptionName] = useState("")
+  const [optionWord, setOptionWord] = useState("")
+  const [showOptionValidation, setShowOptionValidation] = useState(false)
+  const normalizedWord = optionWord
+    .normalize("NFKC")
+    .trim()
+    .toLocaleLowerCase("ru")
+  const optionIssue = !optionName.trim()
+    ? "Добавьте название варианта."
+    : !normalizedWord || /\s/u.test(normalizedWord)
+      ? "Ключевое слово должно быть без пробелов."
+      : poll.options.some((option) => option.word === normalizedWord)
+        ? "Такое ключевое слово уже используется."
+        : ""
+
+  const addOption = async () => {
+    if (optionIssue) {
+      setShowOptionValidation(true)
+      showToast({ message: optionIssue, tone: "error" })
+      return
+    }
+    const result = await onRun("option-add", {
+      pollId: poll.id,
+      name: optionName,
+      word: optionWord,
+    })
+    if (!result) return
+    setOptionName("")
+    setOptionWord("")
+    setShowOptionValidation(false)
+    setAddingOption(false)
+    showToast({
+      message: "Вариант добавлен · переголосование включено · минимум 30 сек",
+      tone: "success",
+    })
+  }
 
   return (
     <div>
@@ -279,24 +347,113 @@ function ActivePoll({
         </div>
       </div>
 
-      <PollResults poll={poll} />
-      <div className="mt-4 text-xs text-muted-foreground">
-        {pluralVotes(total)}
+      <h2 className="mb-6 text-2xl leading-snug font-semibold tracking-tight text-balance">
+        {poll.question}
+      </h2>
+      <div className="space-y-2.5">
+        {poll.options.map((option, index) => (
+          <div
+            key={option.id}
+            className="relative isolate overflow-hidden rounded-xl bg-surface-subtle"
+          >
+            <div
+              className="absolute inset-y-0 left-0 -z-10 bg-brand/8 transition-[width] duration-300 motion-reduce:transition-none"
+              style={{ width: `${hiddenResults ? 0 : share[index]}%` }}
+            />
+            <div className="flex min-h-16 items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">
+                  {option.name}
+                </div>
+                <div className="mt-1">
+                  <Keyword>{option.word}</Keyword>
+                </div>
+              </div>
+              <div
+                className={`text-right tabular-nums ${!hiddenResults && maximum > 0 && option.votes === maximum ? "text-brand" : "text-muted-foreground"}`}
+              >
+                <div className="text-base font-semibold">
+                  {hiddenResults ? "—" : `${share[index]}%`}
+                </div>
+                <div className="text-xs">
+                  {hiddenResults ? "" : pluralVotes(option.votes)}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex min-h-8 items-center justify-between gap-3">
+        <span className="text-xs text-muted-foreground">
+          {pluralVotes(total)}
+        </span>
+        {running && poll.options.length < 6 && !addingOption && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs text-muted-foreground"
+            disabled={busy}
+            onClick={() => setAddingOption(true)}
+          >
+            <Plus />
+            Добавить вариант
+          </Button>
+        )}
       </div>
 
-      <div className="mt-7 space-y-2">
-        <div className="text-xs text-muted-foreground">Виджет в OBS</div>
-        <ToggleGroup
-          type="single"
-          value={poll.visible ? "stream" : "panel"}
-          disabled={busy}
-          onValueChange={(value) => value && onSetOutput(value === "stream")}
-          className="grid w-full grid-cols-2 rounded-xl border border-border-subtle bg-surface-subtle p-1"
-        >
-          <ToggleGroupItem value="stream">Включён</ToggleGroupItem>
-          <ToggleGroupItem value="panel">Скрыт</ToggleGroupItem>
-        </ToggleGroup>
-      </div>
+      {running && addingOption && (
+        <div className="mt-3 animate-in rounded-xl bg-surface-subtle p-2.5 duration-200 fade-in slide-in-from-top-1">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1.25fr)_minmax(0,.9fr)_auto_auto]">
+            <Input
+              autoFocus
+              value={optionName}
+              maxLength={40}
+              placeholder="Новый вариант"
+              aria-label="Название нового варианта"
+              aria-invalid={
+                showOptionValidation && !optionName.trim() ? true : undefined
+              }
+              onChange={(event) => setOptionName(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && void addOption()}
+            />
+            <Input
+              value={optionWord}
+              maxLength={24}
+              placeholder="слово"
+              aria-label="Ключевое слово нового варианта"
+              aria-invalid={
+                showOptionValidation && !!optionIssue && !!optionName.trim()
+                  ? true
+                  : undefined
+              }
+              className="font-mono text-xs"
+              onChange={(event) => setOptionWord(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && void addOption()}
+            />
+            <Button
+              size="sm"
+              className="h-8 px-3"
+              disabled={busy}
+              onClick={() => void addOption()}
+            >
+              Добавить
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              disabled={busy}
+              aria-label="Отменить добавление варианта"
+              onClick={() => {
+                setAddingOption(false)
+                setShowOptionValidation(false)
+              }}
+            >
+              <X />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="mt-5 flex gap-2">
         {running ? (
@@ -323,6 +480,43 @@ function ActivePoll({
             Изменить и запустить снова
           </Button>
         )}
+      </div>
+
+      <div className="mt-6 space-y-2 rounded-xl bg-surface-subtle p-4">
+        <div className="text-xs text-muted-foreground">Правила</div>
+        <div>
+          <FormSwitch
+            id={`${instanceId}-secret`}
+            label="Скрывать результаты до финала"
+            checked={poll.secret}
+            disabled={busy || !running}
+            onCheckedChange={(secret) =>
+              void onRun("poll-rules", { pollId: poll.id, secret })
+            }
+          />
+          <FormSwitch
+            id={`${instanceId}-allow-change`}
+            label="Разрешить переголосование"
+            checked={poll.allowChange}
+            disabled={busy || !running}
+            onCheckedChange={(allowChange) =>
+              void onRun("poll-rules", { pollId: poll.id, allowChange })
+            }
+          />
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <FormSegmented
+          label="Виджет в OBS"
+          value={poll.visible ? "stream" : "panel"}
+          options={[
+            ["stream", "Включён"],
+            ["panel", "Скрыт"],
+          ]}
+          disabled={busy}
+          onChange={(value) => onSetOutput(value === "stream")}
+        />
       </div>
 
       {running && poll.source === "test" && (
@@ -362,70 +556,14 @@ function ActivePoll({
   )
 }
 
-function SegmentedSetting({
-  label,
-  children,
-}: {
-  label: string
-  children: ReactNode
-}) {
-  return (
-    <div className="space-y-2">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      {children}
-    </div>
-  )
-}
-
 function SourceChip({ source }: { source: Draft["source"] }) {
   const twitch = source === "twitch"
   return (
     <span
-      className={`inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-medium ring-1 ring-inset ${twitch ? "bg-[#9146ff]/10 text-[#c7a7ff] ring-[#9146ff]/20" : "bg-brand/9 text-brand ring-brand/15"}`}
+      className={`inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-medium ring-1 ring-inset ${twitch ? "bg-twitch/10 text-twitch ring-twitch/20" : "bg-brand/9 text-brand ring-brand/15"}`}
     >
       {twitch ? "Twitch" : "Демо"}
     </span>
-  )
-}
-
-function PreviewPane({
-  current,
-  onStream,
-  widget,
-}: {
-  current: Draft | Poll
-  onStream: boolean
-  widget: WidgetSettings
-}) {
-  return (
-    <section className="min-w-0 bg-panel-muted p-6 lg:p-8">
-      <div className="lg:sticky lg:top-8">
-        <div>
-          <div className="mb-4 flex items-center justify-between gap-4">
-            <span className="text-xs font-medium text-muted-foreground">
-              Предпросмотр
-            </span>
-            <span
-              className={`flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium ring-1 ring-inset ${onStream ? "bg-brand/9 text-brand ring-brand/15" : "bg-surface-subtle text-muted-foreground ring-border-subtle"}`}
-            >
-              {onStream ? (
-                <Eye className="size-3.5" />
-              ) : (
-                <EyeOff className="size-3.5" />
-              )}
-              {onStream ? "Виджет включён" : "Виджет скрыт"}
-            </span>
-          </div>
-          <div className="preview-stage min-h-80 rounded-2xl p-6">
-            <div className="max-w-82.5">
-              <PollResults poll={current} compact widget={widget} />
-            </div>
-          </div>
-        </div>
-
-        <ChatVoteFeed current={current} />
-      </div>
-    </section>
   )
 }
 
@@ -460,7 +598,7 @@ function ChatVoteFeed({ current }: { current: Draft | Poll }) {
         id: `demo-feed:${activeDemoId}:${sequence++}`,
         viewerName,
         optionId: option.id,
-        at: sequence,
+        at: Date.now(),
       }
       setDemoFallback((feed) => ({
         pollId: activeDemoId,
@@ -485,17 +623,15 @@ function ChatVoteFeed({ current }: { current: Draft | Poll }) {
   if (current.source === "test" && poll?.status !== "running") return null
 
   return (
-    <div className="mt-6">
-      <div className="mb-3 flex items-center gap-2">
-        <span className="text-xs font-medium text-muted-foreground">
-          Голоса из чата
-        </span>
+    <div>
+      <div className="mb-5 flex items-center justify-between gap-2">
+        <span className="text-sm font-medium">Голоса из чата</span>
         <SourceChip source={current.source} />
       </div>
 
       {entries.length ? (
         <div
-          className="max-h-64 space-y-1 overflow-y-auto rounded-xl bg-surface-subtle p-1"
+          className="space-y-1"
           aria-live="polite"
           aria-label={
             current.source === "twitch"
@@ -527,6 +663,17 @@ function ChatVoteFeed({ current }: { current: Draft | Poll }) {
                         изменил(а) голос
                       </span>
                     )}
+                    <time
+                      dateTime={new Date(entry.at).toISOString()}
+                      className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground/70 tabular-nums"
+                      title={new Date(entry.at).toLocaleString("ru-RU")}
+                    >
+                      {new Date(entry.at).toLocaleTimeString("ru-RU", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                      })}
+                    </time>
                   </div>
                   <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs">
                     {previousOption && (

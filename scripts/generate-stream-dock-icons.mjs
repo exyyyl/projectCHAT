@@ -1,22 +1,34 @@
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import sharp from 'sharp'
 
-const output = 'build/stream-dock-plugins/ru.projectchat.control.sdPlugin/images'
-await mkdir(output, { recursive: true })
+const pluginOutput = 'build/stream-dock-plugins/ru.projectchat.control.sdPlugin/images'
+const previewOutput = 'ui/panel/src/assets/stream-dock'
+await Promise.all([pluginOutput, previewOutput].map(output => mkdir(output, { recursive: true })))
 
-const symbols = {
-  plugin: '<path d="M39 42h66a13 13 0 0 1 13 13v43a13 13 0 0 1-13 13H67l-18 13v-13H39a13 13 0 0 1-13-13V55a13 13 0 0 1 13-13Z"/><path d="M55 87V73M72 87V64M89 87V56"/>',
-  start: '<path fill="#d3fb75" stroke="none" d="m55 43 48 29-48 29Z"/>',
-  finish: '<rect x="48" y="48" width="48" height="48" rx="8" fill="#d3fb75" stroke="none"/>',
-  visibility: '<path d="M24 72s17-29 48-29 48 29 48 29-17 29-48 29S24 72 24 72Z"/><circle cx="72" cy="72" r="15"/>',
-  extend: '<path d="M72 28a44 44 0 1 0 41 28"/><path d="M97 27h20v20"/><path d="M72 51v42M51 72h42"/>',
-  preset: '<rect x="29" y="35" width="63" height="48" rx="8"/><path d="m76 101 18-18-18-18M94 83H51"/>',
+// These paths mirror the Lucide icons used in the panel so the physical keys
+// and their on-screen preview share one visual language.
+const lucideSymbols = {
+  start: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>',
+  finish: '<circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6" rx="1"/>',
+  visibility: '<path d="m9 10 3-3 3 3"/><path d="M12 13V7"/><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M12 17v4"/><path d="M8 21h8"/>',
+  extend: '<path d="M10 2h4"/><path d="M12 14v-4"/><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/><path d="M9 17H4v5"/>',
+  preset: '<rect width="18" height="7" x="3" y="3" rx="1"/><rect width="9" height="7" x="3" y="14" rx="1"/><rect width="5" height="7" x="16" y="14" rx="1"/>',
 }
 
-for (const [name, symbol] of Object.entries(symbols)) {
+const appIcon = await readFile('build/icon-source.png')
+await Promise.all([
+  sharp(appIcon).resize(144, 144).png().toFile(`${pluginOutput}/plugin.png`),
+  sharp(appIcon).resize(144, 144).png().toFile(`${previewOutput}/projectchat.png`),
+])
+
+for (const [name, symbol] of Object.entries(lucideSymbols)) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">
-    <rect width="144" height="144" rx="28" fill="#111419"/>
-    <g fill="none" stroke="#d3fb75" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">${symbol}</g>
+    <rect x="1" y="1" width="142" height="142" rx="28" fill="#090a0c" stroke="#292c32" stroke-width="2"/>
+    <g transform="translate(36 36) scale(3)" fill="none" stroke="#f4f4f5" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">${symbol}</g>
   </svg>`
-  await sharp(Buffer.from(svg)).png().toFile(`${output}/${name}.png`)
+  const source = Buffer.from(svg)
+  await Promise.all([
+    sharp(source).png().toFile(`${pluginOutput}/${name}.png`),
+    sharp(source).png().toFile(`${previewOutput}/projectchat-${name}.png`),
+  ])
 }

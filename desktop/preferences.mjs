@@ -1,11 +1,15 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
-const defaults = Object.freeze({ runInBackground: false })
+const defaults = Object.freeze({
+  runInBackground: false,
+  updateChannel: 'stable',
+})
 
 export function normalizeDesktopPreferences(value) {
   return {
     runInBackground: value?.runInBackground === true,
+    updateChannel: value?.updateChannel === 'beta' ? 'beta' : 'stable',
   }
 }
 

@@ -1,14 +1,32 @@
 import { useState } from "react"
+import { Gift, ListChecks, MousePointer2 } from "lucide-react"
+
+import {
+  FormColor,
+  FormSelect,
+  FormSwitch,
+  VisibilityButton,
+} from "@/components/form-controls"
+import type { Contest } from "@/domain/contest"
 
 import { PollResults } from "@/components/poll-results"
+import { InputOverlayPage } from "@/components/input-overlay-page"
+import {
+  StudioRail,
+  StudioStage,
+  StudioWorkspace,
+} from "@/components/page-layout"
 import { Button } from "@/components/ui/button"
-import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useToast } from "@/components/ui/toast"
 import type { Draft, Poll, WidgetSettings } from "@/domain/polls"
+import {
+  SHOW_CONTEST_WIDGET,
+  SHOW_INPUT_OVERLAY,
+} from "@/domain/release-features"
 
 type WidgetPageProps = {
+  contest?: Contest | null
   poll: Poll | null
   draft: Draft
   widget: WidgetSettings
@@ -46,474 +64,348 @@ const defaults: WidgetSettings = {
   showPercentages: true,
 }
 
-export function WidgetPage({
+const widgetKinds = [
+  { id: "polls", label: "Опросы", icon: ListChecks },
+  ...(SHOW_CONTEST_WIDGET
+    ? [{ id: "contests" as const, label: "Конкурсы", icon: Gift }]
+    : []),
+  ...(SHOW_INPUT_OVERLAY
+    ? [
+        {
+          id: "input-overlay" as const,
+          label: "Клавиши и мышь",
+          icon: MousePointer2,
+        },
+      ]
+    : []),
+] as const
+
+export function WidgetPage(props: WidgetPageProps) {
+  const [selected, setSelected] =
+    useState<(typeof widgetKinds)[number]["id"]>("polls")
+  const visible = props.poll ? props.poll.visible : props.draft.showOverlay
+  return (
+    <section
+      className="flex h-full min-h-0 flex-col overflow-hidden"
+      aria-label="Виджеты"
+    >
+      <div
+        className="flex min-h-14 shrink-0 flex-wrap items-center gap-1 px-5 py-2"
+        role="group"
+        aria-label="Выбор виджета"
+      >
+        {widgetKinds.map(({ id, label, icon: Icon }) => (
+          <Button
+            key={id}
+            variant={selected === id ? "secondary" : "ghost"}
+            className="h-8 gap-2 rounded-md px-2.5 text-xs"
+            aria-pressed={selected === id}
+            onClick={() => setSelected(id)}
+          >
+            <Icon className="size-4" />
+            {label}
+          </Button>
+        ))}
+        {selected === "polls" && (
+          <div className="ml-auto">
+            <VisibilityButton
+              visible={visible}
+              disabled={props.busy}
+              onChange={props.onSetOutput}
+            />
+          </div>
+        )}
+      </div>
+      <div className={selected === "polls" ? "min-h-0 flex-1" : "hidden"}>
+        <PollWidgetEditor {...props} />
+      </div>
+      {SHOW_CONTEST_WIDGET && selected === "contests" && (
+        <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-8">
+          <div className="max-w-sm text-center">
+            <Gift className="mx-auto mb-4 size-7 text-muted-foreground" />
+            <h2 className="text-lg font-medium">
+              Виджет конкурса ещё в разработке
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Рулетка и победитель доступны в разделе «Конкурсы». Отдельного
+              источника для OBS пока нет.
+            </p>
+            {props.contest && (
+              <div className="mt-5 rounded-xl bg-surface-subtle px-4 py-3 text-sm">
+                {props.contest.participants.length} участников
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {SHOW_INPUT_OVERLAY && selected === "input-overlay" && (
+        <div className="min-h-0 flex-1">
+          <InputOverlayPage />
+        </div>
+      )}
+    </section>
+  )
+}
+
+function PollWidgetEditor({
   poll,
   draft,
   widget: savedWidget,
   busy,
   onUpdate,
-  onSetOutput,
 }: WidgetPageProps) {
-  const [copied, setCopied] = useState(false)
   const showToast = useToast()
   const widget = { ...defaults, ...savedWidget }
-  const current = poll || draft
-  const visible = poll ? poll.visible : draft.showOverlay
   const overlayOrigin = import.meta.env.DEV
     ? "http://127.0.0.1:4317"
     : location.origin
   const overlayUrl = `${overlayOrigin}/overlay`
   const overlaySize = widget.width === "wide" ? "640 × 640" : "480 × 640"
-  const previewWidth = {
-    narrow: "max-w-sm",
-    medium: "max-w-md",
-    wide: "max-w-xl",
-  }[widget.width]
   const update = (patch: Partial<WidgetSettings>) =>
     onUpdate({ ...widget, ...patch })
-
-  const copyOverlayUrl = async () => {
-    await navigator.clipboard.writeText(overlayUrl)
-    setCopied(true)
-    showToast({ message: "Ссылка на виджет скопирована", tone: "success" })
-    setTimeout(() => setCopied(false), 1800)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(overlayUrl)
+      showToast({ message: "Ссылка скопирована", tone: "success" })
+    } catch {
+      showToast({ message: "Не удалось скопировать ссылку", tone: "error" })
+    }
   }
-
   return (
-    <section
-      className="grid min-h-full xl:h-full xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_21.5rem]"
-      aria-label="Виджет"
+    <StudioWorkspace
+      aria-label="Виджет опроса"
+      className="xl:grid-cols-[minmax(0,1fr)_21rem]"
     >
-      <div className="flex min-w-0 flex-col p-5 lg:p-6 xl:min-h-0">
-        <div className="mb-4 flex shrink-0 items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-sm">
-            <span
-              className={`size-2 rounded-full ${visible ? "bg-brand" : "bg-muted-foreground/35"}`}
-            />
-            {poll
-              ? visible
-                ? "Виджет в OBS"
-                : "Виджет скрыт"
-              : visible
-                ? "Покажется с опросом"
-                : "Запустится скрытым"}
-          </div>
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={() => onSetOutput(!visible)}
+      <StudioStage className="preview-stage bg-panel-muted px-6 py-5 lg:px-6 xl:overflow-y-auto">
+        <div className="mb-6 flex justify-end text-xs text-muted-foreground">
+          <span>{overlaySize} px</span>
+        </div>
+        <div className="flex min-h-96 flex-1 items-center justify-center py-6">
+          <div
+            className={`w-full ${widget.width === "wide" ? "max-w-xl" : widget.width === "narrow" ? "max-w-sm" : "max-w-md"}`}
           >
-            {visible ? "Скрыть со стрима" : "Показать на стриме"}
-          </Button>
-        </div>
-
-        <div className="preview-stage flex min-h-96 flex-1 items-start justify-center overflow-hidden rounded-2xl p-8 pt-12 lg:p-12 lg:pt-16">
-          <div className={`w-full ${previewWidth}`}>
-            <PollResults poll={current} compact widget={widget} />
+            <PollResults poll={poll || draft} compact widget={widget} />
           </div>
         </div>
-
-        <div className="mt-3 flex shrink-0 items-center gap-3 rounded-xl bg-surface-subtle p-2 pl-4">
-          <div className="min-w-0 flex-1">
-            <div className="text-xs font-medium">OBS Browser Source</div>
-            <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-              <span className="truncate font-mono">{overlayUrl}</span>
-              <span className="shrink-0 text-muted-foreground/45">·</span>
-              <span className="shrink-0">Размер {overlaySize} px</span>
-            </div>
-          </div>
-          <Button variant="ghost" asChild>
-            <a href={overlayUrl} target="_blank" rel="noreferrer">
-              Открыть
-            </a>
-          </Button>
-          <Button variant="secondary" onClick={() => void copyOverlayUrl()}>
-            {copied ? "Скопировано" : "Копировать ссылку"}
-          </Button>
-        </div>
-      </div>
-
-      <aside className="bg-sidebar px-5 py-6 transition-colors xl:min-h-0 xl:overflow-y-auto">
-        <div className="flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold tracking-[-0.02em]">
-            Оформление
-          </h2>
+      </StudioStage>
+      <StudioRail className="flex flex-col bg-panel px-5 py-5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-medium">Оформление</h2>
           <Button
             variant="ghost"
             size="sm"
+            className="h-7 text-xs text-muted-foreground"
             disabled={busy}
             onClick={() => onUpdate(defaults)}
           >
             Сбросить
           </Button>
         </div>
-
-        <Tabs defaultValue="style" className="mt-5">
-          <TabsList className="grid h-10 grid-cols-3 rounded-xl border-0 bg-surface-subtle p-1">
-            <TabsTrigger
-              value="style"
-              className="rounded-lg after:hidden data-[state=active]:bg-surface-raised"
-            >
+        <Tabs defaultValue="style" className="mt-4">
+          <TabsList className="widget-editor-tabs grid h-9 grid-cols-3 border-0 bg-surface-subtle p-1">
+            <TabsTrigger value="style" className="rounded-md px-1">
               Стиль
             </TabsTrigger>
-            <TabsTrigger
-              value="options"
-              className="rounded-lg after:hidden data-[state=active]:bg-surface-raised"
-            >
+            <TabsTrigger value="options" className="rounded-md px-1">
               Варианты
             </TabsTrigger>
-            <TabsTrigger
-              value="content"
-              className="rounded-lg after:hidden data-[state=active]:bg-surface-raised"
-            >
-              Видимость
+            <TabsTrigger value="content" className="rounded-md px-1">
+              Состав
             </TabsTrigger>
           </TabsList>
-
-          <TabsContent value="style" className="mt-6 space-y-7">
-            <ControlGroup label="Акцент">
-              <div className="flex flex-wrap gap-2">
-                {colors.map((color) => (
-                  <button
-                    key={color.value}
-                    className={`flex size-8 items-center justify-center rounded-lg transition-[background,transform] hover:scale-105 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
-                      widget.accent === color.value
-                        ? "bg-surface-raised"
-                        : "bg-transparent"
-                    }`}
-                    aria-label={color.label}
-                    aria-pressed={widget.accent === color.value}
-                    disabled={busy}
-                    onClick={() => update({ accent: color.value })}
-                  >
-                    <span
-                      className="size-5 rounded-full"
-                      style={{ backgroundColor: color.value }}
-                    />
-                  </button>
-                ))}
-                <label
-                  className="relative flex size-8 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-surface-raised focus-within:ring-2 focus-within:ring-ring/50"
-                  title="Свой цвет"
-                >
-                  <span
-                    className="flex size-5 items-center justify-center rounded-full"
-                    style={{
-                      background:
-                        "conic-gradient(#ff6b8a, #f8c86b, #d3fb75, #6ee7f2, #a970ff, #ff6b8a)",
-                    }}
-                  >
-                    <span className="size-2 rounded-full bg-panel" />
-                  </span>
-                  <input
-                    type="color"
-                    value={widget.accent}
-                    disabled={busy}
-                    aria-label="Свой цвет акцента"
-                    className="absolute inset-0 cursor-pointer opacity-0"
-                    onChange={(event) => update({ accent: event.target.value })}
-                  />
-                </label>
-              </div>
-            </ControlGroup>
-
-            <ControlGroup label="Фон">
-              <Segmented
-                value={widget.surface}
+          <TabsContent value="style" className="mt-5">
+            <div className="mb-5">
+              <FormColor
+                value={widget.accent}
+                colors={colors}
                 disabled={busy}
-                columns={3}
-                options={[
-                  ["solid", "Обычный"],
-                  ["glass", "Стекло"],
-                  ["minimal", "Без фона"],
-                ]}
-                onChange={(value) =>
-                  update({ surface: value as WidgetSettings["surface"] })
-                }
-              />
-            </ControlGroup>
-
-            <ControlGroup label="Ширина">
-              <Segmented
-                value={widget.width}
-                disabled={busy}
-                columns={3}
-                options={[
-                  ["narrow", "Узкая"],
-                  ["medium", "Средняя"],
-                  ["wide", "Широкая"],
-                ]}
-                onChange={(value) =>
-                  update({ width: value as WidgetSettings["width"] })
-                }
-              />
-            </ControlGroup>
-
-            <ControlGroup label="Шрифт">
-              <Segmented
-                value={widget.font}
-                disabled={busy}
-                columns={3}
-                options={[
-                  ["geist", "Geist"],
-                  ["system", "Системный"],
-                  ["mono", "Моно"],
-                ]}
-                onChange={(value) =>
-                  update({ font: value as WidgetSettings["font"] })
-                }
-              />
-            </ControlGroup>
-
-            <ControlGroup label="Прозрачность">
-              <Segmented
-                value={String(widget.opacity)}
-                disabled={busy || widget.surface === "minimal"}
-                columns={3}
-                options={[
-                  ["70", "70%"],
-                  ["85", "85%"],
-                  ["100", "100%"],
-                ]}
-                onChange={(value) =>
-                  update({
-                    opacity: Number(value) as WidgetSettings["opacity"],
-                  })
-                }
-              />
-            </ControlGroup>
-
-            <ControlGroup label="Плотность">
-              <Segmented
-                value={widget.density}
-                disabled={busy}
-                columns={2}
-                options={[
-                  ["comfortable", "Обычная"],
-                  ["compact", "Компактная"],
-                ]}
-                onChange={(value) =>
-                  update({ density: value as WidgetSettings["density"] })
-                }
-              />
-            </ControlGroup>
-
-            <ControlGroup label="Скругление">
-              <Segmented
-                value={widget.radius}
-                disabled={busy}
-                columns={3}
-                options={[
-                  ["small", "Малое"],
-                  ["medium", "Среднее"],
-                  ["large", "Большое"],
-                ]}
-                onChange={(value) =>
-                  update({ radius: value as WidgetSettings["radius"] })
-                }
-              />
-            </ControlGroup>
-
-            <ControlGroup label="Заголовок">
-              <Segmented
-                value={widget.titleSize}
-                disabled={busy}
-                columns={3}
-                options={[
-                  ["small", "Меньше"],
-                  ["medium", "Обычно"],
-                  ["large", "Крупнее"],
-                ]}
-                onChange={(value) =>
-                  update({ titleSize: value as WidgetSettings["titleSize"] })
-                }
-              />
-            </ControlGroup>
-          </TabsContent>
-
-          <TabsContent value="options" className="mt-6 space-y-7">
-            <ControlGroup label="Форма">
-              <Segmented
-                value={widget.optionStyle}
-                disabled={busy}
-                columns={3}
-                options={[
-                  ["rows", "Строки"],
-                  ["cards", "Карточки"],
-                  ["outline", "Контур"],
-                ]}
-                onChange={(value) =>
-                  update({
-                    optionStyle: value as WidgetSettings["optionStyle"],
-                  })
-                }
-              />
-            </ControlGroup>
-
-            <ControlGroup label="Размер текста">
-              <Segmented
-                value={widget.optionSize}
-                disabled={busy}
-                columns={3}
-                options={[
-                  ["small", "Меньше"],
-                  ["medium", "Обычно"],
-                  ["large", "Крупнее"],
-                ]}
-                onChange={(value) =>
-                  update({
-                    optionSize: value as WidgetSettings["optionSize"],
-                  })
-                }
-              />
-            </ControlGroup>
-
-            <ControlGroup label="Ключевые слова">
-              <Segmented
-                value={widget.keywordStyle}
-                disabled={busy}
-                columns={3}
-                options={[
-                  ["outline", "Контур"],
-                  ["filled", "Заливка"],
-                  ["text", "Текст"],
-                ]}
-                onChange={(value) =>
-                  update({
-                    keywordStyle: value as WidgetSettings["keywordStyle"],
-                  })
-                }
-              />
-            </ControlGroup>
-
-            <ControlGroup label="Полосы">
-              <Segmented
-                value={widget.barSize}
-                disabled={busy}
-                columns={3}
-                options={[
-                  ["thin", "Тонкие"],
-                  ["medium", "Средние"],
-                  ["thick", "Толстые"],
-                ]}
-                onChange={(value) =>
-                  update({ barSize: value as WidgetSettings["barSize"] })
-                }
-              />
-            </ControlGroup>
-          </TabsContent>
-
-          <TabsContent value="content" className="mt-6">
-            <div className="space-y-1 rounded-xl bg-surface-subtle p-1">
-              <ContentSwitch
-                label="Таймер"
-                checked={widget.showTimer}
-                disabled={busy}
-                onCheckedChange={(showTimer) => update({ showTimer })}
-              />
-              <ContentSwitch
-                label="Ключевые слова"
-                checked={widget.showKeywords}
-                disabled={busy}
-                onCheckedChange={(showKeywords) => update({ showKeywords })}
-              />
-              <ContentSwitch
-                label="Количество голосов"
-                checked={widget.showVotes}
-                disabled={busy}
-                onCheckedChange={(showVotes) => update({ showVotes })}
-              />
-              <ContentSwitch
-                label="Проценты"
-                checked={widget.showPercentages}
-                disabled={busy}
-                onCheckedChange={(showPercentages) =>
-                  update({ showPercentages })
-                }
-              />
-              <ContentSwitch
-                label="Полосы результатов"
-                checked={widget.showBars}
-                disabled={busy}
-                onCheckedChange={(showBars) => update({ showBars })}
+                onChange={(accent) => update({ accent })}
               />
             </div>
+            {styleChoices.map((field) => (
+              <FormSelect
+                key={field.key}
+                label={field.label}
+                value={String(widget[field.key])}
+                options={field.options.map(([value, label]) => [
+                  String(value),
+                  label,
+                ])}
+                disabled={
+                  busy ||
+                  (field.key === "opacity" && widget.surface === "minimal")
+                }
+                onChange={(value) => {
+                  const option = field.options.find(
+                    (option) => String(option[0]) === value
+                  )
+                  if (option) update({ [field.key]: option[0] })
+                }}
+              />
+            ))}
+          </TabsContent>
+          <TabsContent value="options" className="mt-5">
+            {optionChoices.map((field) => (
+              <FormSelect
+                key={field.key}
+                label={field.label}
+                value={String(widget[field.key])}
+                options={field.options.map(([value, label]) => [value, label])}
+                disabled={busy}
+                onChange={(value) => {
+                  const option = field.options.find(
+                    (option) => option[0] === value
+                  )
+                  if (option) update({ [field.key]: option[0] })
+                }}
+              />
+            ))}
+          </TabsContent>
+          <TabsContent value="content" className="mt-5">
+            {contentFields.map(([key, label]) => (
+              <FormSwitch
+                key={key}
+                label={label}
+                checked={widget[key]}
+                disabled={busy}
+                onCheckedChange={(checked) => update({ [key]: checked })}
+              />
+            ))}
           </TabsContent>
         </Tabs>
-      </aside>
-    </section>
+        <div className="mt-auto pt-8">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-medium">Источник OBS</span>
+            <span className="text-muted-foreground">{overlaySize} px</span>
+          </div>
+          <div
+            className="mt-2 truncate rounded-md bg-surface-subtle px-2.5 py-2 font-mono text-[11px] text-muted-foreground"
+            title={overlayUrl}
+          >
+            {overlayUrl}
+          </div>
+          <div className="mt-2 grid grid-cols-[auto_1fr] gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <a href={overlayUrl} target="_blank" rel="noreferrer">
+                Открыть
+              </a>
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => void copy()}>
+              Копировать ссылку
+            </Button>
+          </div>
+        </div>
+      </StudioRail>
+    </StudioWorkspace>
   )
 }
 
-function ControlGroup({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <div>
-      <div className="mb-2.5 text-xs font-medium text-muted-foreground">
-        {label}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-function Segmented({
-  value,
-  disabled,
-  columns,
-  options,
-  onChange,
-}: {
-  value: string
-  disabled: boolean
-  columns: 2 | 3
-  options: Array<readonly [string, string]>
-  onChange: (value: string) => void
-}) {
-  return (
-    <ToggleGroup
-      type="single"
-      value={value}
-      disabled={disabled}
-      onValueChange={(next) => next && onChange(next)}
-      className={`grid rounded-xl bg-surface-subtle p-1 ${
-        columns === 3 ? "grid-cols-3" : "grid-cols-2"
-      }`}
-    >
-      {options.map(([option, label]) => (
-        <ToggleGroupItem key={option} value={option} className="px-2">
-          {label}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
-  )
-}
-
-function ContentSwitch({
-  label,
-  checked,
-  disabled,
-  onCheckedChange,
-}: {
-  label: string
-  checked: boolean
-  disabled: boolean
-  onCheckedChange: (checked: boolean) => void
-}) {
-  return (
-    <label className="flex min-h-10 items-center justify-between gap-4 rounded-lg px-3 py-2 hover:bg-surface-raised">
-      <span className="text-sm">{label}</span>
-      <Switch
-        checked={checked}
-        disabled={disabled}
-        aria-label={label}
-        onCheckedChange={onCheckedChange}
-      />
-    </label>
-  )
-}
+const styleChoices = [
+  {
+    key: "surface",
+    label: "Фон",
+    options: [
+      ["solid", "Обычный"],
+      ["accent", "Акцентный"],
+      ["minimal", "Без фона"],
+    ],
+  },
+  {
+    key: "width",
+    label: "Ширина",
+    options: [
+      ["narrow", "Узкая"],
+      ["medium", "Средняя"],
+      ["wide", "Широкая"],
+    ],
+  },
+  {
+    key: "font",
+    label: "Шрифт",
+    options: [
+      ["geist", "Geist"],
+      ["system", "Системный"],
+      ["mono", "Моно"],
+    ],
+  },
+  {
+    key: "opacity",
+    label: "Прозрачность",
+    options: [
+      [70, "70%"],
+      [85, "85%"],
+      [100, "100%"],
+    ],
+  },
+  {
+    key: "density",
+    label: "Плотность",
+    options: [
+      ["comfortable", "Обычная"],
+      ["compact", "Компактная"],
+    ],
+  },
+  {
+    key: "radius",
+    label: "Скругление",
+    options: [
+      ["small", "Малое"],
+      ["medium", "Среднее"],
+      ["large", "Большое"],
+    ],
+  },
+  {
+    key: "titleSize",
+    label: "Заголовок",
+    options: [
+      ["small", "Меньше"],
+      ["medium", "Обычно"],
+      ["large", "Крупнее"],
+    ],
+  },
+] as const
+const optionChoices = [
+  {
+    key: "optionStyle",
+    label: "Форма",
+    options: [
+      ["rows", "Строки"],
+      ["cards", "Карточки"],
+      ["outline", "Контур"],
+    ],
+  },
+  {
+    key: "optionSize",
+    label: "Размер текста",
+    options: [
+      ["small", "Меньше"],
+      ["medium", "Обычно"],
+      ["large", "Крупнее"],
+    ],
+  },
+  {
+    key: "keywordStyle",
+    label: "Ключевые слова",
+    options: [
+      ["outline", "Контур"],
+      ["filled", "Заливка"],
+      ["text", "Текст"],
+    ],
+  },
+  {
+    key: "barSize",
+    label: "Полосы",
+    options: [
+      ["thin", "Тонкие"],
+      ["medium", "Средние"],
+      ["thick", "Толстые"],
+    ],
+  },
+] as const
+const contentFields = [
+  ["showTimer", "Таймер"],
+  ["showKeywords", "Ключевые слова"],
+  ["showVotes", "Количество голосов"],
+  ["showPercentages", "Проценты"],
+  ["showBars", "Полосы результатов"],
+] as const

@@ -213,7 +213,7 @@ export function createStreamDockManager({
   now = Date.now,
   processes,
   compileProjectChatPlugin = async () => {
-    throw new Error('Сборка плагина projectCHAT не настроена.')
+    throw new Error('Сборка плагина Cue не настроена.')
   },
 }) {
   const supported = platform === 'win32'
@@ -354,9 +354,9 @@ export function createStreamDockManager({
       await addPluginSource(result, paths.elgatoPlugins, false, 'Elgato Stream Deck')
       for (const folder of await pluginFolders(paths.ajazzPlugins)) {
         const key = basename(folder).toLowerCase()
+        let plugin = result.get(key)
         try {
           const manifest = await readManifest(folder)
-          let plugin = result.get(key)
           if (!plugin) {
             plugin = publicPlugin(folder, manifest, false, 'Установлен в AJAZZ')
             plugin.compatibility = 'installed-only'
@@ -365,6 +365,10 @@ export function createStreamDockManager({
           plugin.isInstalled = true
           plugin.installedVersion = manifest.version
         } catch (error) {
+          if (plugin) {
+            plugin.isInstalled = true
+            plugin.installedVersion = 'неизвестно'
+          }
           await log(`Пропущен установленный пакет ${folder}: ${error.message}`)
         }
       }

@@ -20,7 +20,11 @@ test('HTTP commands, independent SSE clients, reconnect, and static routes', asy
   t.after(() => app.close());
   const request = (body, headers = {}) => fetch(url + '/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Poll-Client': 'panel', ...headers }, body: JSON.stringify(body) });
   const control = (action, data = {}, headers = {}) => fetch(url + '/api/stream-dock', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-projectCHAT-Control': 'stream-dock-v1', ...headers }, body: JSON.stringify({ action, ...data }) });
-  for (const path of ['/', '/overlay', '/shared.js', '/style.css', '/fonts/geist-cyrillic.woff2', '/fonts/geist-latin.woff2']) assert.equal((await fetch(url + path)).status, 200);
+  for (const path of ['/', '/overlay', '/overlay.js', '/shared.js', '/style.css', '/input-overlay', '/input-overlay.js', '/input-overlay.css', '/fonts/geist-cyrillic.woff2', '/fonts/geist-latin.woff2']) {
+    const response = await fetch(url + path);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+  }
   const panelResponse = await fetch(url + '/');
   assert.match(panelResponse.headers.get('content-security-policy'), /https:\/\/static-cdn\.jtvnw\.net/);
   const panelHtml = await panelResponse.text();
@@ -59,8 +63,17 @@ test('HTTP commands, independent SSE clients, reconnect, and static routes', asy
   assert.equal((await (await control('toggle-poll')).json()).state.poll.status, 'running');
   assert.equal((await request({ type: 'unknown' })).status, 400);
   assert.equal((await fetch(url + '/api/twitch')).status, 200);
+  assert.equal((await fetch(url + '/api/contest')).status, 200);
   assert.equal((await fetch(url + '/data/twitch.json')).status, 404);
+  assert.equal((await fetch(url + '/data/input-overlay.json')).status, 404);
   assert.equal((await fetch(url + '/api/twitch', { method: 'POST', body: '{}' })).status, 415);
+  assert.equal((await fetch(url + '/api/contest', { method: 'POST', body: '{}' })).status, 415);
+  const contestWithoutTwitch = await fetch(url + '/api/contest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Poll-Client': 'panel' },
+    body: JSON.stringify({ type: 'start', setup: { title: 'Приз', keyword: 'участвую', duration: 30 } }),
+  });
+  assert.equal(contestWithoutTwitch.status, 409);
   assert.equal((await request({ type: 'start', draftRevision: result.state.draftRevision, draft: { ...initial.draft, source: 'twitch' } })).status, 409);
   await app.store.command({ type: 'finish', pollId: app.store.snapshot().poll.id });
   const live = await app.store.command({ type: 'start', draftRevision: app.store.snapshot().draftRevision, broadcasterId: '123', draft: { ...initial.draft, source: 'twitch', showOverlay: false } });
@@ -74,4 +87,13 @@ test('HTTP commands, independent SSE clients, reconnect, and static routes', asy
   const selected = await (await control('select-preset', { presetId: preset.state.presets[0].id })).json();
   assert.equal(selected.message, 'Выбран шаблон «Быстрый выбор»');
   assert.equal(selected.state.draft.question, initial.draft.question);
+  const inputState = await (await fetch(url + '/api/input-overlay')).json();
+  const inputResponse = await fetch(url + '/api/input-overlay', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Poll-Client': 'panel' },
+    body: JSON.stringify({ type: 'update', config: { ...inputState.config, layout: 'compact' } }),
+  });
+  assert.equal(inputResponse.status, 200);
+  assert.equal((await inputResponse.json()).config.layout, 'compact');
+  assert.equal((await fetch(url + '/api/input-overlay', { method: 'POST', body: '{}' })).status, 415);
 });

@@ -20,6 +20,7 @@ export function defaultWidget() {
 export function validateWidget(input) {
   requireThat(input && typeof input === 'object', 'Некорректные настройки виджета.');
   const defaults = defaultWidget();
+  const surface = input.surface === 'glass' ? 'accent' : input.surface;
   const radius = input.radius ?? defaults.radius;
   const titleSize = input.titleSize ?? defaults.titleSize;
   const width = input.width ?? defaults.width;
@@ -33,7 +34,7 @@ export function validateWidget(input) {
   const showVotes = input.showVotes ?? defaults.showVotes;
   const showPercentages = input.showPercentages ?? defaults.showPercentages;
   requireThat(typeof input.accent === 'string' && /^#[0-9a-f]{6}$/iu.test(input.accent), 'Некорректный цвет виджета.');
-  requireThat(['solid', 'glass', 'minimal'].includes(input.surface), 'Некорректный фон виджета.');
+  requireThat(['solid', 'accent', 'minimal'].includes(surface), 'Некорректный фон виджета.');
   requireThat(['comfortable', 'compact'].includes(input.density), 'Некорректная плотность виджета.');
   requireThat(['small', 'medium', 'large'].includes(radius), 'Некорректное скругление виджета.');
   requireThat(['small', 'medium', 'large'].includes(titleSize), 'Некорректный размер заголовка виджета.');
@@ -46,7 +47,7 @@ export function validateWidget(input) {
   requireThat(['thin', 'medium', 'thick'].includes(barSize), 'Некорректная толщина полос виджета.');
   requireThat(typeof input.showTimer === 'boolean' && typeof input.showKeywords === 'boolean', 'Некорректные элементы виджета.');
   requireThat(typeof showBars === 'boolean' && typeof showVotes === 'boolean' && typeof showPercentages === 'boolean', 'Некорректные результаты виджета.');
-  return { accent: input.accent.toLowerCase(), surface: input.surface, density: input.density, radius, titleSize, width, opacity, font, optionStyle, optionSize, keywordStyle, barSize, showTimer: input.showTimer, showKeywords: input.showKeywords, showBars, showVotes, showPercentages };
+  return { accent: input.accent.toLowerCase(), surface, density: input.density, radius, titleSize, width, opacity, font, optionStyle, optionSize, keywordStyle, barSize, showTimer: input.showTimer, showKeywords: input.showKeywords, showBars, showVotes, showPercentages };
 }
 export function validateDraft(input) {
   requireThat(input && typeof input === 'object', 'Некорректный опрос.');
@@ -135,8 +136,16 @@ export function applyCommand(state, command, now = Date.now()) {
   let changed = false;
   let outcome = 'ok';
   const p = next.poll;
+  const queuedTwitchVote = command.type === 'vote'
+    && p?.status === 'running'
+    && p.source === 'twitch'
+    && command.source === 'twitch'
+    && Number.isFinite(command.sentAt)
+    && command.sentAt < p.deadline;
   // Deadline is authoritative, including commands arriving between timer ticks.
-  if (p?.status === 'running' && now >= p.deadline) { p.status = 'ended'; p.endedAt = p.deadline; changed = true; }
+  // A Twitch message can already be in our durable queue when processing crosses
+  // the deadline. Its EventSub timestamp remains authoritative for eligibility.
+  if (p?.status === 'running' && now >= p.deadline && !queuedTwitchVote) { p.status = 'ended'; p.endedAt = p.deadline; changed = true; }
   switch (command.type) {
     case 'tick': break;
     case 'save-draft':
@@ -236,7 +245,7 @@ export function applyCommand(state, command, now = Date.now()) {
       requireThat(command.draftRevision === next.draftRevision, 'Опрос изменён в другой панели. Загрузите актуальную версию.', 409);
       requireThat(!next.poll, 'Сначала закройте текущий опрос.', 409);
       const settings = command.settings;
-      requireThat(settings && typeof settings === 'object' && settings.schema === 1 && settings.app === 'projectCHAT', 'Этот файл настроек не поддерживается.');
+      requireThat(settings && typeof settings === 'object' && settings.schema === 1 && ['projectCHAT', 'Vela', 'Cue'].includes(settings.app), 'Этот файл настроек не поддерживается.');
       requireThat(Array.isArray(settings.presets) && settings.presets.length <= 30, 'В файле должно быть не больше 30 шаблонов.');
       next.draft = validateDraft(settings.draft);
       next.presets = settings.presets.map(preset => ({
@@ -266,6 +275,8 @@ export function applyCommand(state, command, now = Date.now()) {
     }
     case 'finish':
     case 'extend':
+    case 'poll-rules':
+    case 'option-add':
     case 'visibility':
     case 'vote':
     case 'clear': {
@@ -283,6 +294,31 @@ export function applyCommand(state, command, now = Date.now()) {
         requireThat(p.status === 'running', 'Опрос уже завершён.', 409);
         requireThat(p.deadline + 30000 - p.startedAt <= 7200000, 'Максимальная длительность с продлениями — 2 часа.');
         p.deadline += 30000; changed = true;
+      } else if (command.type === 'poll-rules') {
+        requireThat(p.status === 'running', 'Опрос уже завершён.', 409);
+        requireThat(command.secret !== undefined || command.allowChange !== undefined, 'Нет изменений правил.');
+        if (command.secret !== undefined) {
+          requireThat(typeof command.secret === 'boolean', 'Некорректное правило отображения результатов.');
+          changed ||= p.secret !== command.secret;
+          p.secret = command.secret;
+        }
+        if (command.allowChange !== undefined) {
+          requireThat(typeof command.allowChange === 'boolean', 'Некорректное правило переголосования.');
+          changed ||= p.allowChange !== command.allowChange;
+          p.allowChange = command.allowChange;
+        }
+      } else if (command.type === 'option-add') {
+        requireThat(p.status === 'running', 'Опрос уже завершён.', 409);
+        requireThat(p.options.length < 6, 'В опросе уже максимальное число вариантов.');
+        requireThat(typeof command.name === 'string' && command.name.trim().length > 0 && command.name.trim().length <= 40, 'Название варианта должно содержать от 1 до 40 символов.');
+        requireThat(typeof command.word === 'string', 'Добавьте ключевое слово.');
+        const word = normalize(command.word);
+        requireThat(word.length > 0 && word.length <= 24 && !/\s/u.test(word), 'Ключевое слово: до 24 символов, без пробелов.');
+        requireThat(!p.options.some(option => option.word === word), 'Такое ключевое слово уже используется.');
+        p.options.push({ id: randomUUID(), name: command.name.trim(), word, votes: 0 });
+        p.allowChange = true;
+        p.deadline = Math.min(p.startedAt + 7200000, Math.max(p.deadline, now + 30000));
+        changed = true;
       } else {
         if (p.status !== 'running') { outcome = 'closed'; break; }
         if ((command.source ?? 'test') !== (p.source ?? 'test')) { outcome = 'wrong-source'; break; }
@@ -312,6 +348,11 @@ export function applyCommand(state, command, now = Date.now()) {
       break;
     }
     default: throw new PollError('Неизвестная команда.');
+  }
+  if (next.poll?.status === 'running' && now >= next.poll.deadline) {
+    next.poll.status = 'ended';
+    next.poll.endedAt = next.poll.deadline;
+    changed = true;
   }
   if (changed) next.revision++;
   return { state: changed ? next : state, changed, outcome };

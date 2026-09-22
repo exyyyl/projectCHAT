@@ -9,15 +9,21 @@ import { createProjectChatPluginCompiler } from './stream-dock/compiler.mjs'
 import { createStreamDockProcessAdapter } from './stream-dock/processes.mjs'
 import { createUpdateController } from './updater.mjs'
 import { loadDesktopPreferences, saveDesktopPreferences } from './preferences.mjs'
+import { createInputCapture } from './input-capture.mjs'
+import { loginItemQuery, loginItemUpdate, wasLaunchedAtLogin } from './startup.mjs'
 
 const { autoUpdater } = updaterModule
 const preload = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 const developmentIcon = fileURLToPath(new URL('../build/icon-source.png', import.meta.url))
+const trayIconPath = fileURLToPath(new URL(process.platform === 'darwin' ? '../build/tray-icon-template.png' : '../build/tray-icon.png', import.meta.url))
 let serverApp
 let mainWindow
 let streamDock
+let inputCapture
+let unsubscribeInputOverlay
 let tray
 let isQuitting = false
+let revealMainWindow
 let desktopPreferences = { runInBackground: false }
 const trace = message => { if (!app.isPackaged) console.log(`[desktop] ${message}`) }
 
@@ -36,12 +42,9 @@ if (!app.requestSingleInstanceLock()) { trace('another instance owns the lock');
 else {
   app.setAppUserModelId('ru.projectchat.app')
   app.on('second-instance', () => {
-    if (!mainWindow) return
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.setSkipTaskbar(false)
-    mainWindow.show()
-    mainWindow.focus()
+    revealMainWindow?.()
   })
+  app.on('activate', () => revealMainWindow?.())
 
   const start = async () => {
   trace('ready')
@@ -49,6 +52,15 @@ else {
   const developmentPanelUrl = !app.isPackaged ? process.env.STREAM_POLLS_PANEL_URL?.trim() : ''
   const preferencesPath = join(app.getPath('userData'), 'desktop-preferences.json')
   desktopPreferences = await loadDesktopPreferences(preferencesPath)
+  const loginSettings = app.getLoginItemSettings(loginItemQuery(process.platform))
+  const launchedAtLogin = wasLaunchedAtLogin({
+    platform: process.platform,
+    argv: process.argv,
+    settings: loginSettings,
+    packaged: app.isPackaged,
+  })
+  let startupTrayActive = launchedAtLogin
+  if (startupTrayActive && app.dock) app.dock.hide()
 
   const packagedPlugins = app.isPackaged
     ? join(process.resourcesPath, 'stream-dock-plugins')
@@ -81,16 +93,25 @@ else {
   })
 
   let configuredUrl = ''
+  let currentReleaseNotes = ''
   try {
     const configFile = app.isPackaged ? join(process.resourcesPath, 'update-config.json') : new URL('./update-config.json', import.meta.url)
     const config = JSON.parse(await readFile(configFile, 'utf8'))
     configuredUrl = typeof config.url === 'string' ? config.url.trim().replace(/\/$/u, '') : ''
   } catch { /* the UI will report that the release source is not configured */ }
+  try {
+    currentReleaseNotes = await readFile(
+      app.isPackaged
+        ? join(app.getAppPath(), 'build', 'release-notes.md')
+        : new URL('../build/release-notes.md', import.meta.url),
+      'utf8',
+    )
+  } catch { /* release notes are optional for local development */ }
   const updateUrl = process.env.STREAM_POLLS_UPDATE_URL?.trim().replace(/\/$/u, '') || configuredUrl
   const sendUpdate = state => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('updates:state', state)
   }
-  const updates = createUpdateController({ autoUpdater, currentVersion: app.getVersion(), isPackaged: app.isPackaged, updateUrl, emit: sendUpdate })
+  const updates = createUpdateController({ autoUpdater, currentVersion: app.getVersion(), currentReleaseNotes, channel: desktopPreferences.updateChannel, isPackaged: app.isPackaged, updateUrl, emit: sendUpdate })
 
   ipcMain.handle('desktop:get-info', () => ({ version: app.getVersion(), platform: process.platform, development: !app.isPackaged, update: updates.snapshot() }))
   ipcMain.handle('updates:check', () => updates.check())
@@ -103,6 +124,21 @@ else {
       dataDir: join(app.getPath('userData'), 'app-data'),
       allowedOrigins: developmentPanelUrl ? [new URL(developmentPanelUrl).origin] : [],
     })
+    inputCapture = createInputCapture({
+      emit: event => serverApp.inputOverlay.input(event),
+      status: state => serverApp.inputOverlay.setRuntime(state),
+      executable: app.isPackaged
+        ? join(process.resourcesPath, 'input-capture', 'projectCHAT.InputCapture.exe')
+        : resolve(app.getAppPath(), 'build', 'input-capture', 'projectCHAT.InputCapture.exe'),
+    })
+    let captureEnabled
+    const syncInputCapture = state => {
+      if (state.config.captureEnabled === captureEnabled) return
+      captureEnabled = state.config.captureEnabled
+      void inputCapture.setEnabled(captureEnabled)
+    }
+    unsubscribeInputOverlay = serverApp.inputOverlay.subscribe(syncInputCapture)
+    syncInputCapture(serverApp.inputOverlay.snapshot())
     const port = Number(process.env.PORT || 4317)
     const url = await serverApp.listen(port)
     const panelUrl = developmentPanelUrl || url
@@ -115,7 +151,11 @@ else {
       backgroundColor: '#090b0e',
       autoHideMenuBar: true,
       show: false,
-      title: 'projectCHAT',
+      title: 'Cue',
+      titleBarStyle: 'hidden',
+      ...(process.platform === 'darwin'
+        ? { trafficLightPosition: { x: 13, y: 11 } }
+        : { titleBarOverlay: { color: '#090a0d', symbolColor: '#8d949f', height: 36 } }),
       icon: app.isPackaged ? undefined : developmentIcon,
       webPreferences: {
         preload,
@@ -126,23 +166,28 @@ else {
     })
     const showMainWindow = () => {
       if (!mainWindow || mainWindow.isDestroyed()) return
+      startupTrayActive = false
+      if (app.dock) void app.dock.show()
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.setSkipTaskbar(false)
       mainWindow.show()
       mainWindow.focus()
+      syncTray()
     }
     const syncTray = () => {
-      if (!desktopPreferences.runInBackground) {
+      if (!desktopPreferences.runInBackground && !startupTrayActive) {
         tray?.destroy()
         tray = undefined
         return
       }
       if (tray) return
-      const image = nativeImage.createFromPath(developmentIcon)
-      tray = new Tray(process.platform === 'darwin' ? image.resize({ width: 18, height: 18 }) : image)
-      tray.setToolTip('projectCHAT')
+      const image = nativeImage.createFromPath(trayIconPath)
+      if (image.isEmpty()) throw new Error('Не удалось загрузить иконку трея.')
+      if (process.platform === 'darwin') image.setTemplateImage(true)
+      tray = new Tray(image)
+      tray.setToolTip('Cue')
       tray.setContextMenu(Menu.buildFromTemplate([
-        { label: 'Открыть projectCHAT', click: showMainWindow },
+        { label: 'Открыть Cue', click: showMainWindow },
         { type: 'separator' },
         {
           label: 'Выйти',
@@ -154,9 +199,11 @@ else {
       ]))
       tray.on('click', showMainWindow)
     }
+    revealMainWindow = showMainWindow
     const preferencesSnapshot = () => ({
-      openAtLogin: app.getLoginItemSettings().openAtLogin,
+      openAtLogin: app.getLoginItemSettings(loginItemQuery(process.platform)).openAtLogin,
       runInBackground: desktopPreferences.runInBackground,
+      updateChannel: desktopPreferences.updateChannel,
       openAtLoginSupported: app.isPackaged && ['darwin', 'win32'].includes(process.platform),
       runInBackgroundSupported: true,
     })
@@ -177,18 +224,28 @@ else {
     handleDesktop('desktop:preferences:get', preferencesSnapshot)
     handleDesktop('desktop:preferences:set', async patch => {
       if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Некорректные настройки приложения.')
-      const allowed = ['openAtLogin', 'runInBackground']
+      const allowed = ['openAtLogin', 'runInBackground', 'updateChannel']
       if (Object.keys(patch).some(key => !allowed.includes(key))) throw new Error('Неизвестная настройка приложения.')
       if ('openAtLogin' in patch) {
         if (typeof patch.openAtLogin !== 'boolean') throw new Error('Некорректная настройка автозапуска.')
         if (!preferencesSnapshot().openAtLoginSupported) throw new Error('Автозапуск доступен после установки приложения.')
-        app.setLoginItemSettings({ openAtLogin: patch.openAtLogin })
+        app.setLoginItemSettings(loginItemUpdate(process.platform, patch.openAtLogin))
+      }
+      if ('runInBackground' in patch && typeof patch.runInBackground !== 'boolean')
+        throw new Error('Некорректная настройка фоновой работы.')
+      if ('updateChannel' in patch && !['stable', 'beta'].includes(patch.updateChannel))
+        throw new Error('Некорректный канал обновлений.')
+      if ('runInBackground' in patch || 'updateChannel' in patch) {
+        desktopPreferences = await saveDesktopPreferences(preferencesPath, {
+          ...desktopPreferences,
+          ...('runInBackground' in patch ? { runInBackground: patch.runInBackground } : {}),
+          ...('updateChannel' in patch ? { updateChannel: patch.updateChannel } : {}),
+        })
       }
       if ('runInBackground' in patch) {
-        if (typeof patch.runInBackground !== 'boolean') throw new Error('Некорректная настройка фоновой работы.')
-        desktopPreferences = await saveDesktopPreferences(preferencesPath, { runInBackground: patch.runInBackground })
         syncTray()
       }
+      if ('updateChannel' in patch) updates.setChannel(desktopPreferences.updateChannel)
       return preferencesSnapshot()
     })
     const handleStreamDock = (channel, handler) => {
@@ -247,7 +304,13 @@ else {
       event.preventDefault()
       if (/^https?:\/\//u.test(target)) void shell.openExternal(target)
     })
-    mainWindow.once('ready-to-show', () => mainWindow.show())
+    mainWindow.once('ready-to-show', () => {
+      if (startupTrayActive) {
+        mainWindow.setSkipTaskbar(true)
+        return
+      }
+      showMainWindow()
+    })
     await mainWindow.loadURL(panelUrl)
     trace('window loaded')
     if (!app.isPackaged && process.env.STREAM_POLLS_SCREENSHOT) {
@@ -260,7 +323,7 @@ else {
     const message = error?.code === 'EADDRINUSE'
       ? 'Порт 4317 уже занят. Закройте другую копию сервера опросов и запустите приложение снова.'
       : error instanceof Error ? error.message : String(error)
-    await dialog.showMessageBox({ type: 'error', title: 'projectCHAT', message: 'Не удалось запустить приложение', detail: message })
+    await dialog.showMessageBox({ type: 'error', title: 'Cue', message: 'Не удалось запустить приложение', detail: message })
     app.quit()
   }
   }
@@ -272,6 +335,8 @@ else {
   })
   app.on('before-quit', () => {
     isQuitting = true
+    unsubscribeInputOverlay?.()
+    inputCapture?.stop()
     if (serverApp) void serverApp.close()
   })
 }

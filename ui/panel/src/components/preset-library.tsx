@@ -8,15 +8,19 @@ import {
 import { Clock3, GripVertical, Pin, Plus, Radio, Trash2 } from "lucide-react"
 
 import { PresetEditor } from "@/components/preset-editor"
-import { Badge } from "@/components/ui/badge"
+import {
+  LibraryContent,
+  LibraryRail,
+  LibraryWorkspace,
+} from "@/components/page-layout"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   formatTime,
   type Draft,
   type Preset,
   type PresetDialogState,
 } from "@/domain/polls"
+import { useDemoMode } from "@/hooks/use-demo-mode"
 
 type PresetLibraryProps = {
   presets: Preset[]
@@ -142,11 +146,8 @@ export function PresetLibrary({
   }
 
   return (
-    <section
-      className="grid h-full min-h-0 grid-cols-[18rem_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden max-lg:grid-cols-[15rem_minmax(0,1fr)]"
-      aria-label="Шаблоны"
-    >
-      <div className="flex min-h-0 flex-col bg-sidebar p-3 transition-colors">
+    <LibraryWorkspace aria-label="Шаблоны" data-editing={!!dialog}>
+      <LibraryRail className={dialog ? "hidden" : undefined}>
         <Button
           variant="secondary"
           className="h-11 w-full justify-start gap-3 px-3"
@@ -162,7 +163,7 @@ export function PresetLibrary({
           </span>
         </Button>
 
-        <ScrollArea className="mt-3 min-h-0 flex-1">
+        <div className="mt-3 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
           <div className="space-y-1">
             {presets.map((preset) => {
               const active = preset.id === activePreset?.id
@@ -220,10 +221,10 @@ export function PresetLibrary({
               )
             })}
           </div>
-        </ScrollArea>
-      </div>
+        </div>
+      </LibraryRail>
 
-      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+      <LibraryContent>
         {dialog ? (
           <PresetEditor
             key={dialog.mode === "edit" ? dialog.preset.id : dialog.editorId}
@@ -265,8 +266,8 @@ export function PresetLibrary({
             </div>
           </div>
         )}
-      </div>
-    </section>
+      </LibraryContent>
+    </LibraryWorkspace>
   )
 }
 
@@ -293,115 +294,132 @@ function PresetDetails({
   onTogglePin: () => void
   onDelete: () => void
 }) {
+  const { enabled: demoEnabled } = useDemoMode()
   const { draft } = preset
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto p-6 lg:p-8">
-        <div className="mx-auto max-w-3xl">
-          <div className="flex items-start gap-5">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-2xl font-semibold tracking-[-0.03em]">
-                  {preset.name}
-                </h2>
-                {applied && (
-                  <Badge className="bg-brand/12 text-brand">В опросе</Badge>
-                )}
-              </div>
-              <p className="mt-3 max-w-2xl text-lg leading-snug text-foreground/90">
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      style={{ containerType: "inline-size" }}
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-6">
+        <div className="mx-auto max-w-2xl">
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <h2 className="min-w-0 text-xl leading-snug font-semibold tracking-[-0.02em] [overflow-wrap:anywhere]">
+                {preset.name}
+              </h2>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="-mt-1 shrink-0"
+                disabled={!canManage || busy}
+                aria-label={
+                  preset.pinned ? "Открепить шаблон" : "Закрепить шаблон"
+                }
+                aria-pressed={preset.pinned}
+                onClick={onTogglePin}
+              >
+                <Pin
+                  className={
+                    preset.pinned
+                      ? "fill-brand/20 text-brand"
+                      : "text-muted-foreground"
+                  }
+                />
+              </Button>
+            </div>
+            {draft.question.trim() !== preset.name.trim() && (
+              <p className="mt-2 text-sm leading-relaxed [overflow-wrap:anywhere] text-muted-foreground">
                 {draft.question}
               </p>
+            )}
+
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <Property icon={<Clock3 />}>
+                {formatTime(draft.duration)}
+              </Property>
+              <Property icon={<Radio />}>
+                {draft.source === "twitch" || !demoEnabled ? "Twitch" : "Демо"}
+              </Property>
+              <Property>
+                {draft.showOverlay ? "Виджет включён" : "Без виджета"}
+              </Property>
+              {draft.secret && <Property>Скрытые результаты</Property>}
+              {draft.allowChange && <Property>Можно переголосовать</Property>}
+              {applied && <span className="text-xs text-brand">В опросе</span>}
             </div>
 
-            <Button
-              variant={preset.pinned ? "secondary" : "ghost"}
-              size="sm"
-              disabled={!canManage || busy}
-              aria-pressed={preset.pinned}
-              onClick={onTogglePin}
-            >
-              <Pin
-                className={preset.pinned ? "fill-brand/20 text-brand" : ""}
-              />
-              {preset.pinned ? "Закреплён" : "Закрепить"}
-            </Button>
-          </div>
-
-          <div className="mt-6 flex flex-wrap gap-2">
-            <MetaBadge>
-              <Clock3 /> {formatTime(draft.duration)}
-            </MetaBadge>
-            <MetaBadge>
-              <Radio /> {draft.source === "twitch" ? "Twitch" : "Демо"}
-            </MetaBadge>
-            <MetaBadge>
-              {draft.showOverlay ? "Виджет включён" : "Без виджета"}
-            </MetaBadge>
-            {draft.secret && <MetaBadge>Скрытые результаты</MetaBadge>}
-            {draft.allowChange && <MetaBadge>Можно переголосовать</MetaBadge>}
-          </div>
-
-          <div className="mt-10 space-y-2">
-            {draft.options.map((option, optionIndex) => (
-              <div
-                key={option.id}
-                className="group flex min-h-14 items-center gap-4 rounded-xl bg-surface-subtle px-4 transition-colors hover:bg-surface-raised"
-              >
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-surface-raised text-xs font-medium text-muted-foreground">
-                  {optionIndex + 1}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                  {option.name}
-                </span>
-                <span className="max-w-48 truncate rounded-lg bg-brand/8 px-2.5 py-1 font-mono text-xs text-brand/80">
-                  {option.word}
-                </span>
-              </div>
-            ))}
+            <div className="mt-6 space-y-1 rounded-lg bg-surface-subtle p-1">
+              {draft.options.map((option, optionIndex) => (
+                <div
+                  key={option.id}
+                  className="group flex min-h-11 items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-surface-raised/70"
+                >
+                  <span className="w-5 shrink-0 text-right font-mono text-xs text-muted-foreground/55 tabular-nums">
+                    {optionIndex + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 text-sm font-medium [overflow-wrap:anywhere]">
+                    {option.name}
+                  </span>
+                  <span className="max-w-[40%] truncate font-mono text-xs text-brand/75">
+                    {option.word}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="flex min-h-17 shrink-0 items-center justify-between gap-4 bg-panel-muted px-6 py-3 transition-colors lg:px-8">
+      <div className="preset-detail-footer grid min-h-17 shrink-0 grid-cols-[auto_1fr_auto_auto] items-center gap-2 bg-panel-muted px-4 py-3 transition-colors">
         <Button
           variant="ghost"
+          size="icon"
           className="text-destructive hover:bg-destructive/10 hover:text-destructive"
           disabled={!canManage || busy}
           onClick={onDelete}
         >
           <Trash2 />
-          Удалить
+          <span className="sr-only">Удалить шаблон</span>
         </Button>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            disabled={!canManage || busy}
-            onClick={onEdit}
-          >
-            Редактировать
-          </Button>
-          <Button
-            disabled={!canApply || !canManage || busy || applied}
-            onClick={onApply}
-          >
-            {applied
-              ? "Уже выбран"
-              : !canManage
-                ? "Нет подключения"
-                : applyBlocked
-                  ? "Сначала завершите опрос"
-                  : "Использовать в опросе"}
-          </Button>
-        </div>
+        <span />
+        <Button
+          variant="outline"
+          disabled={!canManage || busy}
+          onClick={onEdit}
+        >
+          Редактировать
+        </Button>
+        <Button
+          disabled={!canApply || !canManage || busy || applied}
+          onClick={onApply}
+        >
+          {applied
+            ? "Уже выбран"
+            : !canManage
+              ? "Нет подключения"
+              : applyBlocked
+                ? "Опрос идёт"
+                : "Использовать"}
+        </Button>
       </div>
     </div>
   )
 }
 
-function MetaBadge({ children }: { children: ReactNode }) {
+function Property({
+  icon,
+  children,
+}: {
+  icon?: ReactNode
+  children: ReactNode
+}) {
   return (
-    <span className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-surface-subtle px-2.5 text-xs text-muted-foreground [&_svg]:size-3.5">
+    <span className="flex min-h-5 items-start gap-2 text-xs leading-5 text-muted-foreground [&_svg]:mt-0.5 [&_svg]:size-3.5 [&_svg]:shrink-0">
+      {icon || (
+        <span className="mt-2 size-1 shrink-0 rounded-full bg-muted-foreground/45" />
+      )}
       {children}
     </span>
   )

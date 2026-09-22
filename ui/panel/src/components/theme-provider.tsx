@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import * as React from "react"
 
-export type AppTheme = "lime" | "violet" | "ice"
+export type AppTheme = "lime" | "violet" | "ice" | "mono"
 
 type ThemeProviderProps = {
   children: React.ReactNode
@@ -14,7 +14,7 @@ type ThemeProviderState = {
   setTheme: (theme: AppTheme) => void
 }
 
-const THEMES: AppTheme[] = ["lime", "violet", "ice"]
+const THEMES: AppTheme[] = ["lime", "violet", "ice", "mono"]
 const ThemeProviderContext = React.createContext<
   ThemeProviderState | undefined
 >(undefined)

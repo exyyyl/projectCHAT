@@ -16,7 +16,7 @@ function TwitchAvatar({ state }: { state: TwitchState }) {
     !!state.profileImageUrl && failedUrl !== state.profileImageUrl
 
   return (
-    <span className="relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#a970ff]/14 text-[#c9a9ff]">
+    <span className="relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-twitch/14 text-twitch">
       <UserRound className="size-4" />
       {imageVisible && (
         <img

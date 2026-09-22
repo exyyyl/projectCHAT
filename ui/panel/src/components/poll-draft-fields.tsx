@@ -1,37 +1,38 @@
 import { Plus, X } from "lucide-react"
-import type { ReactNode } from "react"
+import { useId, type ReactNode } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
+import {
+  FormColumns,
+  FormField,
+  FormDuration,
+  FormSwitch,
+} from "@/components/form-controls"
 import { Textarea } from "@/components/ui/textarea"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import type { Draft } from "@/domain/polls"
-
-const durations = [
-  [30, "30 сек"],
-  [60, "1 мин"],
-  [180, "3 мин"],
-  [300, "5 мин"],
-] as const
 
 type PollDraftFieldsProps = {
   draft: Draft
   idPrefix: string
   extraSettings?: ReactNode
   showValidation?: boolean
-  layout?: "stacked" | "split"
+  actions?: ReactNode
+  leadingFields?: ReactNode
   onChange: (update: (current: Draft) => Draft) => void
 }
 
 export function PollDraftFields({
   draft,
-  idPrefix,
+  idPrefix: prefix,
   extraSettings,
   showValidation = false,
-  layout = "stacked",
+  actions,
+  leadingFields,
   onChange,
 }: PollDraftFieldsProps) {
+  const instanceId = useId()
+  const idPrefix = `${prefix}-${instanceId}`
   const normalizedWords = draft.options.map((option) =>
     option.word.normalize("NFKC").trim().toLocaleLowerCase("ru")
   )
@@ -50,16 +51,11 @@ export function PollDraftFields({
     draft.duration > 3600
 
   const questionField = (
-    <div className="space-y-2">
-      <label
-        className="text-xs text-muted-foreground"
-        htmlFor={`${idPrefix}-question`}
-      >
-        Вопрос
-      </label>
+    <FormField label="Вопрос" htmlFor={`${idPrefix}-question`}>
       <Textarea
         id={`${idPrefix}-question`}
-        rows={3}
+        rows={2}
+        className="min-h-20"
         maxLength={100}
         placeholder="Что выбираем?"
         value={draft.question}
@@ -69,14 +65,13 @@ export function PollDraftFields({
         onChange={(event) =>
           onChange((item) => ({ ...item, question: event.target.value }))
         }
-        className="resize-none text-lg"
       />
-    </div>
+    </FormField>
   )
 
   const optionsField = (
     <div>
-      <div className="mb-2 grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_32px] gap-2 text-xs text-muted-foreground">
+      <div className="mb-2 grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_36px] gap-2 text-xs text-muted-foreground">
         <span>Вариант</span>
         <span>Ключевое слово</span>
         <span />
@@ -85,7 +80,7 @@ export function PollDraftFields({
         {draft.options.map((option, index) => (
           <div
             key={option.id}
-            className="grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_32px] gap-2"
+            className="grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_36px] items-center gap-2"
           >
             <Input
               value={option.name}
@@ -172,100 +167,50 @@ export function PollDraftFields({
   )
 
   const durationField = (
-    <div className="space-y-2">
-      <div className="text-xs text-muted-foreground">Длительность</div>
-      <div className="flex flex-wrap items-center gap-3">
-        <ToggleGroup
-          type="single"
-          value={String(draft.duration)}
-          onValueChange={(value) =>
-            value && onChange((item) => ({ ...item, duration: Number(value) }))
-          }
-          className="justify-start"
-        >
-          {durations.map(([value, label]) => (
-            <ToggleGroupItem key={value} value={String(value)}>
-              {label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Input
-            type="number"
-            min={10}
-            max={3600}
-            step={1}
-            value={draft.duration || ""}
-            aria-label="Своя длительность в секундах"
-            aria-invalid={showValidation && invalidDuration ? true : undefined}
-            className="w-22 font-mono tabular-nums"
-            onChange={(event) =>
-              onChange((item) => ({
-                ...item,
-                duration: Number(event.target.value),
-              }))
-            }
-          />
-          сек
-        </label>
-      </div>
-    </div>
+    <FormDuration
+      value={draft.duration}
+      invalid={showValidation && invalidDuration}
+      onChange={(duration) => onChange((item) => ({ ...item, duration }))}
+    />
   )
 
   const rulesField = (
-    <div className="space-y-2">
-      <div className="text-xs text-muted-foreground">Правила</div>
-      <div className="space-y-1 rounded-xl bg-surface-subtle p-1">
-        <div className="flex min-h-10 items-center justify-between gap-4 rounded-lg px-3 py-2">
-          <label className="text-sm" htmlFor={`${idPrefix}-secret`}>
-            Скрывать результаты до финала
-          </label>
-          <Switch
-            id={`${idPrefix}-secret`}
-            checked={draft.secret}
-            onCheckedChange={(checked) =>
-              onChange((item) => ({ ...item, secret: checked }))
-            }
-          />
-        </div>
-        <div className="flex min-h-10 items-center justify-between gap-4 rounded-lg px-3 py-2">
-          <label className="text-sm" htmlFor={`${idPrefix}-allow-change`}>
-            Разрешить переголосование
-          </label>
-          <Switch
-            id={`${idPrefix}-allow-change`}
-            checked={draft.allowChange}
-            onCheckedChange={(checked) =>
-              onChange((item) => ({ ...item, allowChange: checked }))
-            }
-          />
-        </div>
+    <FormField label="Правила">
+      <div>
+        <FormSwitch
+          id={`${idPrefix}-secret`}
+          label="Скрывать результаты до финала"
+          checked={draft.secret}
+          onCheckedChange={(secret) =>
+            onChange((item) => ({ ...item, secret }))
+          }
+        />
+        <FormSwitch
+          id={`${idPrefix}-allow-change`}
+          label="Разрешить переголосование"
+          checked={draft.allowChange}
+          onCheckedChange={(allowChange) =>
+            onChange((item) => ({ ...item, allowChange }))
+          }
+        />
       </div>
-    </div>
+    </FormField>
   )
 
-  if (layout === "split")
-    return (
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(17rem,.8fr)]">
-        <div className="space-y-6 rounded-2xl bg-surface-subtle p-5">
-          {questionField}
-          {optionsField}
-        </div>
-        <div className="space-y-5 rounded-2xl bg-surface-subtle p-5">
-          {durationField}
-          {extraSettings}
-          {rulesField}
-        </div>
-      </div>
-    )
-
   return (
-    <div className="space-y-6">
+    <FormColumns
+      settings={
+        <>
+          <div>{durationField}</div>
+          {extraSettings && <div>{extraSettings}</div>}
+          <div className="form-settings-wide">{rulesField}</div>
+          {actions && <div className="form-settings-wide">{actions}</div>}
+        </>
+      }
+    >
+      {leadingFields}
       {questionField}
       {optionsField}
-      {durationField}
-      {extraSettings}
-      {rulesField}
-    </div>
+    </FormColumns>
   )
 }

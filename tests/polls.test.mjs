@@ -52,12 +52,84 @@ test('deadline closes poll even if vote arrives before next timer tick', () => {
   assert.equal(result.state.poll.endedAt, 11000);
   assert.equal(result.state.poll.options[0].votes, 0);
 });
+test('Twitch vote queued before the deadline is counted after processing is delayed', () => {
+  const initial = initialState();
+  const running = applyCommand(initial, {
+    type: 'start',
+    draftRevision: 0,
+    draft: { ...initial.draft, source: 'twitch', duration: 10 },
+    broadcasterId: '123',
+  }, 1000).state;
+  const result = applyCommand(running, {
+    type: 'vote',
+    source: 'twitch',
+    pollId: running.poll.id,
+    broadcasterId: '123',
+    viewerId: 'twitch:456',
+    viewerName: 'Viewer',
+    eventId: 'queued-message',
+    message: 'майн',
+    sentAt: 10500,
+  }, 12000);
+  assert.equal(result.outcome, 'counted');
+  assert.equal(result.state.poll.status, 'ended');
+  assert.equal(result.state.poll.options[0].votes, 1);
+});
 test('extension persists and cannot reopen an ended poll', () => {
   let state = start();
   state = applyCommand(state, { type: 'extend', pollId: state.poll.id }, 2000).state;
   assert.equal(state.poll.deadline, 91000);
   state = applyCommand(state, { type: 'finish', pollId: state.poll.id }, 5000).state;
   assert.throws(() => applyCommand(state, { type: 'extend', pollId: state.poll.id }, 6000), /завершён/);
+});
+test('active poll rules can change without resetting votes', () => {
+  let state = vote(start()).state;
+  const result = applyCommand(state, {
+    type: 'poll-rules',
+    pollId: state.poll.id,
+    secret: true,
+    allowChange: true,
+  }, 3000);
+  state = result.state;
+  assert.equal(state.poll.secret, true);
+  assert.equal(state.poll.allowChange, true);
+  assert.equal(state.poll.options[0].votes, 1);
+});
+test('adding an option keeps votes, enables changes and guarantees decision time', () => {
+  let state = vote(start({ duration: 10 })).state;
+  const oldDeadline = state.poll.deadline;
+  state = applyCommand(state, {
+    type: 'option-add',
+    pollId: state.poll.id,
+    name: 'Terraria',
+    word: ' терра ',
+  }, 5000).state;
+  const added = state.poll.options.at(-1);
+  assert.deepEqual(state.poll.options.map(option => option.votes), [1, 0, 0, 0]);
+  assert.equal(added.name, 'Terraria');
+  assert.equal(added.word, 'терра');
+  assert.equal(state.poll.allowChange, true);
+  assert.equal(state.poll.deadline, 35000);
+  assert.ok(state.poll.deadline > oldDeadline);
+
+  state = vote(state, {
+    eventId: 'changed-to-added',
+    message: 'терра',
+    sentAt: 6000,
+  }, 6000).state;
+  assert.deepEqual(state.poll.options.map(option => option.votes), [0, 0, 0, 1]);
+});
+test('active option rejects duplicate keywords and the seventh choice', () => {
+  let state = start();
+  assert.throws(() => applyCommand(state, {
+    type: 'option-add', pollId: state.poll.id, name: 'Duplicate', word: 'МАЙН',
+  }, 2000), /уже используется/);
+  for (const [name, word] of [['Four', 'four'], ['Five', 'five'], ['Six', 'six']]) {
+    state = applyCommand(state, { type: 'option-add', pollId: state.poll.id, name, word }, 2000).state;
+  }
+  assert.throws(() => applyCommand(state, {
+    type: 'option-add', pollId: state.poll.id, name: 'Seven', word: 'seven',
+  }, 2000), /максимальное/);
 });
 test('hiding overlay preserves vote acceptance and counters', () => {
   let state = start();
@@ -173,7 +245,7 @@ test('settings import replaces the draft and presets without importing runtime s
     draftRevision: 0,
     settings: {
       schema: 1,
-      app: 'projectCHAT',
+      app: 'Cue',
       draft: importedDraft,
       presets: [{ name: 'Игры', draft: { ...importedDraft, question: 'Во что играем?' } }],
       poll: { unsafe: true },
@@ -190,12 +262,13 @@ test('settings import replaces the draft and presets without importing runtime s
 test('settings import rejects active polls and malformed backups', () => {
   const initial = initialState();
   assert.throws(() => applyCommand(initial, { type: 'settings-import', draftRevision: 0, settings: { schema: 2 } }), /не поддерживается/);
+  assert.doesNotThrow(() => applyCommand(initial, { type: 'settings-import', draftRevision: 0, settings: { schema: 1, app: 'Vela', draft: initial.draft, presets: [] } }));
   const running = start();
   assert.throws(() => applyCommand(running, { type: 'settings-import', draftRevision: 1, settings: { schema: 1, app: 'projectCHAT', draft: initial.draft, presets: [] } }), /закройте/);
 });
 test('widget settings are validated, migrated, persisted and included in imports', () => {
   const initial = initialState();
-  const widget = { accent: '#a970ff', surface: 'glass', density: 'compact', radius: 'large', titleSize: 'small', width: 'wide', opacity: 85, font: 'mono', optionStyle: 'cards', optionSize: 'large', keywordStyle: 'filled', barSize: 'thick', showTimer: false, showKeywords: false, showBars: false, showVotes: false, showPercentages: false };
+  const widget = { accent: '#a970ff', surface: 'accent', density: 'compact', radius: 'large', titleSize: 'small', width: 'wide', opacity: 85, font: 'mono', optionStyle: 'cards', optionSize: 'large', keywordStyle: 'filled', barSize: 'thick', showTimer: false, showKeywords: false, showBars: false, showVotes: false, showPercentages: false };
   let state = applyCommand(initial, { type: 'widget-update', widget }).state;
   assert.deepEqual(state.widget, widget);
   assert.throws(() => applyCommand(state, { type: 'widget-update', widget: { ...widget, accent: 'purple' } }), /цвет/);
@@ -203,6 +276,8 @@ test('widget settings are validated, migrated, persisted and included in imports
   assert.deepEqual(state.widget, widget);
   const legacy = { accent: '#d3fb75', surface: 'solid', density: 'comfortable', showTimer: true, showKeywords: true };
   assert.deepEqual(validateStoredState({ ...initialState(), widget: legacy }).widget, defaultWidget());
+  const legacyGlass = { ...widget, surface: 'glass' };
+  assert.equal(validateStoredState({ ...initialState(), widget: legacyGlass }).widget.surface, 'accent');
 });
 test('stale panel cannot replace a newer draft or mutate a different poll', () => {
   const original = initialState();

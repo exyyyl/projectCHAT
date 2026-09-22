@@ -10,15 +10,26 @@ const plugin = join(root, '..', 'build', 'stream-dock-plugins', 'ru.projectchat.
 test('bundled Stream Dock plugin exposes universal poll controls and preset selection', async () => {
   const manifest = JSON.parse(await readFile(join(plugin, 'manifest.json'), 'utf8'))
   assert.equal(manifest.UUID, 'ru.projectchat.control')
+  assert.equal(manifest.Name, 'Cue')
+  assert.equal(manifest.Category, 'Cue')
+  assert.equal(manifest.Author, 'exyyyl')
   assert.equal(manifest.CodePathWin, 'ProjectChatPlugin.exe')
   assert.equal(manifest.Version, '0.5.0')
   assert.deepEqual(
-    manifest.Actions.map((action) => action.UUID),
+    manifest.Actions.filter((action) => action.VisibleInActionsList !== false).map((action) => action.UUID),
     [
       'ru.projectchat.control.toggle-poll',
       'ru.projectchat.control.toggle-output',
       'ru.projectchat.control.extend',
       'ru.projectchat.control.select-preset',
+    ],
+  )
+  assert.deepEqual(
+    manifest.Actions.filter((action) => action.VisibleInActionsList === false).map((action) => action.UUID),
+    [
+      'ru.projectchat.control.start',
+      'ru.projectchat.control.finish',
+      'ru.projectchat.control.next-preset',
     ],
   )
   const presetAction = manifest.Actions.find(action => action.UUID === 'ru.projectchat.control.select-preset')
@@ -33,6 +44,9 @@ test('bundled Stream Dock plugin exposes universal poll controls and preset sele
   assert.match(source, /127\.0\.0\.1:4317\/api\/stream-dock/u)
   assert.match(source, /setState|sendToPropertyInspector/u)
   assert.match(inspector, /setSettings|sendToPlugin/u)
+  assert.match(inspector, /presetSelected/u)
+  assert.match(source, /PresetIdsByContext/u)
+  assert.match(source, /presetSelected/u)
 })
 
 test('Stream Dock controls are available in packaged UI', async () => {
@@ -40,13 +54,17 @@ test('Stream Dock controls are available in packaged UI', async () => {
   const page = await readFile(join(root, '..', 'ui', 'panel', 'src', 'components', 'stream-dock-page.tsx'), 'utf8')
   assert.doesNotMatch(app, /streamDockComingSoon/u)
   assert.doesNotMatch(page, /StreamDockComingSoon|releasePreview/u)
-  assert.match(page, /projectCHAT Control/u)
+  assert.match(page, /Плагин опросов/u)
+  assert.match(page, /В разработке/u)
   assert.match(page, /PROJECTCHAT_PLUGIN_VERSION = "0\.5\.0"/u)
   assert.match(page, /Ajazz-Twitch-Setup\.exe/u)
   assert.match(page, /TWITCH_PLUGIN_VERSION = "1\.11\.6\.15-ajazz\.5"/u)
   assert.match(page, /Старт \/ стоп/u)
   assert.match(page, /twitch-ajazz\.svg/u)
   assert.match(page, /function PluginActionGrid/u)
+  assert.match(page, /uninstallPlugin/u)
+  assert.doesNotMatch(page, /\.installPlugin\(/u)
+  assert.doesNotMatch(page, /Переустановить|Обновить Cue Control/u)
   assert.doesNotMatch(page, /function DeviceBar/u)
   assert.doesNotMatch(page, /Встроен|16 действий|Только Windows/u)
   assert.doesNotMatch(page, /Выбрать \.sdPlugin|Наборы Elgato|Поиск плагина|Поиск иконки/u)

@@ -17,13 +17,62 @@ export function percentages(options) {
 export function formatTime(seconds) { return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`; }
 export function voteCount(total) { return `${total} ${total % 10 === 1 && total % 100 !== 11 ? 'голос' : total % 10 >= 2 && total % 10 <= 4 && !(total % 100 >= 12 && total % 100 <= 14) ? 'голоса' : 'голосов'}`; }
 export function connect(onState, onConnection, onTwitch = () => {}) {
-  const source = new EventSource('/api/events');
-  source.addEventListener('state', event => { onConnection(true); onState(JSON.parse(event.data)); });
-  source.addEventListener('twitch', event => onTwitch(JSON.parse(event.data)));
-  source.onopen = () => onConnection(true);
-  source.onerror = () => onConnection(false);
-  window.addEventListener('pagehide', () => source.close(), { once: true });
-  return source;
+  return connectEvents('/api/events', { state: onState, twitch: onTwitch }, onConnection);
+}
+
+// OBS keeps the page alive across application restarts. Recreate failed streams
+// explicitly: a CLOSED EventSource no longer performs native retries.
+export function connectEvents(url, handlers, onConnection = () => {}) {
+  let source = null, retryTimer = null, retryDelay = 1000;
+  let paused = false, disposed = false;
+
+  function stop() {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+    const previous = source;
+    source = null;
+    previous?.close();
+  }
+
+  function start() {
+    if (disposed || paused || source) return;
+    const current = new EventSource(url);
+    source = current;
+    for (const [name, handler] of Object.entries(handlers)) {
+      current.addEventListener(name, event => {
+        if (source !== current) return;
+        const state = JSON.parse(event.data);
+        retryDelay = 1000;
+        onConnection(true);
+        handler(state);
+      });
+    }
+    current.onopen = () => { if (source === current) onConnection(true); };
+    current.onerror = () => {
+      if (source !== current) return;
+      stop();
+      onConnection(false);
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        start();
+      }, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 5000);
+    };
+  }
+
+  const pause = () => { paused = true; stop(); onConnection(false); };
+  const resume = () => { paused = false; start(); };
+  window.addEventListener('pagehide', pause);
+  window.addEventListener('pageshow', resume);
+  start();
+  return {
+    close() {
+      disposed = true;
+      stop();
+      window.removeEventListener('pagehide', pause);
+      window.removeEventListener('pageshow', resume);
+    },
+  };
 }
 export function createOverlay(root) {
   const question = root.querySelector('[data-overlay-question]');
@@ -43,7 +92,8 @@ export function createOverlay(root) {
       current = poll;
       root.style.setProperty('--pc-accent', widget.accent || '#d3fb75');
       root.style.setProperty('--pc-opacity', String((widget.opacity || 100) / 100));
-      root.classList.toggle('pc-widget-glass', widget.surface === 'glass');
+      const surface = widget.surface === 'glass' ? 'accent' : widget.surface;
+      root.classList.toggle('pc-widget-accent', surface === 'accent');
       root.classList.toggle('pc-widget-minimal', widget.surface === 'minimal');
       root.classList.toggle('pc-widget-compact', widget.density === 'compact');
       root.classList.toggle('pc-radius-small', widget.radius === 'small');

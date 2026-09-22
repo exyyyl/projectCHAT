@@ -7,7 +7,7 @@ const execute = promisify(execFile)
 
 export function createProjectChatPluginCompiler({ platform = process.platform } = {}) {
   return async function compileProjectChatPlugin(target, paths) {
-    if (platform !== 'win32') throw new Error('Плагин projectCHAT можно собрать только в Windows.')
+    if (platform !== 'win32') throw new Error('Плагин Cue можно собрать только в Windows.')
     const frameworkRoots = [
       join(paths.windowsDir, 'Microsoft.NET', 'Framework64', 'v4.0.30319'),
       join(paths.windowsDir, 'Microsoft.NET', 'Framework', 'v4.0.30319'),
@@ -15,7 +15,7 @@ export function createProjectChatPluginCompiler({ platform = process.platform } 
     const framework = frameworkRoots.find((path) => existsSync(join(path, 'csc.exe')))
     if (!framework) throw new Error('Встроенный компилятор .NET Framework не найден.')
     const source = join(target, 'ProjectChatPlugin.cs')
-    if (!existsSync(source)) throw new Error('В пакете отсутствует исходник плагина projectCHAT.')
+    if (!existsSync(source)) throw new Error('В пакете отсутствует исходник плагина Cue.')
     const output = join(target, 'ProjectChatPlugin.exe')
     try {
       await execute(
@@ -34,7 +34,7 @@ export function createProjectChatPluginCompiler({ platform = process.platform } 
       )
     } catch (error) {
       const detail = error?.stderr?.trim() || error?.message || String(error)
-      throw new Error(`Не удалось собрать плагин projectCHAT: ${detail}`)
+      throw new Error(`Не удалось собрать плагин Cue: ${detail}`)
     }
   }
 }

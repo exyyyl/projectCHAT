@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react"
 import {
   Check,
+  Clock3,
   Grid2X2,
   LoaderCircle,
   MessageCircle,
   Radio,
   Tag,
+  Trash2,
   Video,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
@@ -28,6 +30,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import { PageContainer, PageScroll } from "@/components/page-layout"
 import { useToast } from "@/components/ui/toast"
 
 const PROJECTCHAT_PLUGIN_ID = "ru.projectchat.control.sdplugin"
@@ -59,11 +62,10 @@ function errorMessage(error: unknown) {
 export function StreamDockPage() {
   const api = window.streamPollsDesktop?.streamDock
   const showToast = useToast()
-  const [status, setStatus] = useState<StreamDockStatus>()
   const [plugins, setPlugins] = useState<StreamDockPlugin[]>([])
   const [loading, setLoading] = useState(Boolean(api))
-  const [installing, setInstalling] = useState(false)
-  const [confirmInstall, setConfirmInstall] = useState(false)
+  const [operation, setOperation] = useState<"remove">()
+  const [confirmRemove, setConfirmRemove] = useState(false)
 
   const refresh = useCallback(async () => {
     if (!api) {
@@ -72,12 +74,7 @@ export function StreamDockPage() {
     }
     setLoading(true)
     try {
-      const [nextStatus, nextPlugins] = await Promise.all([
-        api.getStatus(),
-        api.listPlugins(),
-      ])
-      setStatus(nextStatus)
-      setPlugins(nextPlugins)
+      setPlugins(await api.listPlugins())
     } catch (error) {
       showToast({ message: errorMessage(error), tone: "error" })
     } finally {
@@ -88,10 +85,10 @@ export function StreamDockPage() {
   useEffect(() => {
     if (!api) return
     let active = true
-    void Promise.all([api.getStatus(), api.listPlugins()])
-      .then(([nextStatus, nextPlugins]) => {
+    void api
+      .listPlugins()
+      .then((nextPlugins) => {
         if (!active) return
-        setStatus(nextStatus)
         setPlugins(nextPlugins)
       })
       .catch((error) => {
@@ -111,95 +108,87 @@ export function StreamDockPage() {
   const twitchPlugin = plugins.find(
     (plugin) => plugin.id.toLowerCase() === TWITCH_PLUGIN_ID
   )
-  const canInstall = Boolean(status?.supported && status.ajazzFound)
 
-  const installProjectChat = async () => {
+  const removeProjectChat = async () => {
     if (!api || !projectChatPlugin) return
-    setInstalling(true)
+    setOperation("remove")
     try {
-      await api.installPlugin(projectChatPlugin.sourceKey)
+      await api.uninstallPlugin(projectChatPlugin.id)
       showToast({
-        message: projectChatPlugin.isInstalled
-          ? "Плагин projectCHAT обновлён"
-          : "Плагин projectCHAT установлен",
+        message: "Плагин опросов удалён",
         tone: "success",
       })
       await refresh()
     } catch (error) {
       showToast({ message: errorMessage(error), tone: "error" })
     } finally {
-      setInstalling(false)
-      setConfirmInstall(false)
+      setOperation(undefined)
+      setConfirmRemove(false)
     }
   }
 
   return (
-    <section
-      className="h-full overflow-y-auto overscroll-contain p-5 lg:p-8"
-      aria-label="Stream Dock"
-    >
-      <div className="mx-auto w-full max-w-6xl">
+    <PageScroll aria-label="Stream Dock">
+      <PageContainer>
         <div className="grid gap-4 xl:grid-cols-2">
           <ProjectChatPluginCard
             plugin={projectChatPlugin}
-            canInstall={canInstall}
             loading={loading}
-            installing={installing}
-            onInstall={() => setConfirmInstall(true)}
+            operation={operation}
+            onRemove={() => setConfirmRemove(true)}
           />
           <TwitchPluginCard plugin={twitchPlugin} />
         </div>
-      </div>
+      </PageContainer>
 
       <AlertDialog
-        open={confirmInstall}
-        onOpenChange={(open) => !open && setConfirmInstall(false)}
+        open={confirmRemove}
+        onOpenChange={(open) => !open && setConfirmRemove(false)}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {projectChatPlugin?.isInstalled
-                ? "Обновить projectCHAT Control?"
-                : "Установить projectCHAT Control?"}
-            </AlertDialogTitle>
+            <AlertDialogTitle>Удалить плагин опросов?</AlertDialogTitle>
             <AlertDialogDescription>
-              Stream Dock AJAZZ перезапустится. При обновлении текущая версия
-              плагина будет сохранена автоматически.
+              AJAZZ перезапустится, а копия плагина сохранится для
+              восстановления.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={installing}>Отмена</AlertDialogCancel>
+            <AlertDialogCancel disabled={Boolean(operation)}>
+              Отмена
+            </AlertDialogCancel>
             <AlertDialogAction
-              disabled={installing}
-              onClick={() => void installProjectChat()}
+              variant="destructive"
+              disabled={Boolean(operation)}
+              onClick={() => void removeProjectChat()}
             >
-              {installing && <LoaderCircle className="animate-spin" />}
-              Продолжить
+              {operation === "remove" && (
+                <LoaderCircle className="animate-spin" />
+              )}
+              Удалить
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </section>
+    </PageScroll>
   )
 }
 
 function ProjectChatPluginCard({
   plugin,
-  canInstall,
   loading,
-  installing,
-  onInstall,
+  operation,
+  onRemove,
 }: {
   plugin?: StreamDockPlugin
-  canInstall: boolean
   loading: boolean
-  installing: boolean
-  onInstall: () => void
+  operation?: "remove"
+  onRemove: () => void
 }) {
   const installed = Boolean(plugin?.isInstalled)
 
   return (
-    <article className="flex min-h-[300px] flex-col overflow-hidden rounded-2xl bg-surface-subtle ring-1 ring-border-subtle ring-inset">
+    <article className="flex min-h-[300px] flex-col overflow-hidden rounded-xl bg-surface-subtle ring-1 ring-border-subtle ring-inset">
       <div className="flex items-start gap-4 p-5 pb-4 lg:p-6 lg:pb-4">
         <img
           src={projectChatIcon}
@@ -209,8 +198,9 @@ function ProjectChatPluginCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-semibold tracking-[-0.02em]">
-              projectCHAT Control
+              Плагин опросов
             </h2>
+            <DevelopmentBadge />
             {installed && <PluginBadge>Установлен</PluginBadge>}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -224,24 +214,43 @@ function ProjectChatPluginCard({
 
       <PluginActionGrid actions={pollActions} tone="brand" />
 
-      <div className="mt-auto flex justify-end p-5 lg:p-6">
+      <div className="mt-auto flex justify-end gap-2 p-5 lg:p-6">
+        {installed && (
+          <Button
+            size="lg"
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            disabled={Boolean(operation) || loading}
+            onClick={onRemove}
+          >
+            <Trash2 /> Удалить
+          </Button>
+        )}
         <Button
           size="lg"
-          disabled={!plugin || !canInstall || installing || loading}
-          onClick={onInstall}
+          disabled
+          aria-disabled="true"
         >
-          {installing && <LoaderCircle className="animate-spin" />}
-          {installed ? "Обновить" : "Установить"}
+          Установить
         </Button>
       </div>
     </article>
   )
 }
 
+function DevelopmentBadge() {
+  return (
+    <span className="inline-flex h-5 items-center gap-1.5 rounded-md bg-foreground/6 px-2 text-[11px] font-medium text-muted-foreground ring-1 ring-border-subtle ring-inset">
+      <Clock3 className="size-3" />
+      В разработке
+    </span>
+  )
+}
+
 function TwitchPluginCard({ plugin }: { plugin?: StreamDockPlugin }) {
   const installed = Boolean(plugin?.isInstalled)
   return (
-    <article className="flex min-h-[300px] flex-col overflow-hidden rounded-2xl bg-surface-subtle ring-1 ring-border-subtle ring-inset">
+    <article className="flex min-h-[300px] flex-col overflow-hidden rounded-xl bg-surface-subtle ring-1 ring-border-subtle ring-inset">
       <div className="flex items-start gap-4 p-5 pb-4 lg:p-6 lg:pb-4">
         <img src={twitchIcon} alt="" className="size-12 shrink-0 rounded-2xl" />
         <div className="min-w-0 flex-1">
@@ -285,7 +294,7 @@ function PluginActionGrid({
 }) {
   return (
     <div
-      className="mx-5 grid gap-2 rounded-2xl bg-background/65 p-3 ring-1 ring-border-subtle ring-inset transition-colors lg:mx-6"
+      className="mx-5 grid gap-2 rounded-xl bg-background/65 p-3 ring-1 ring-border-subtle transition-colors ring-inset lg:mx-6"
       style={{
         gridTemplateColumns: `repeat(${actions.length}, minmax(0, 1fr))`,
       }}
@@ -308,7 +317,7 @@ function PluginActionKey({
   return (
     <div className="min-w-0 text-center">
       <div
-        className={`mx-auto flex aspect-square w-full max-w-14 items-center justify-center overflow-hidden rounded-xl bg-surface-raised shadow-[inset_0_1px_var(--border-subtle)] ${tone === "twitch" ? "text-[#b98cff]" : "text-brand"}`}
+        className={`mx-auto flex aspect-square w-full max-w-14 items-center justify-center overflow-hidden rounded-xl bg-surface-raised shadow-[inset_0_1px_var(--border-subtle)] ${tone === "twitch" ? "text-twitch" : "text-brand"}`}
       >
         {action.image ? (
           <img src={action.image} alt="" className="size-full object-cover" />
@@ -332,7 +341,7 @@ function PluginBadge({
 }) {
   const className =
     tone === "twitch"
-      ? "bg-[#9146ff]/10 text-[#c5a2ff] ring-[#9146ff]/18"
+      ? "bg-twitch/10 text-twitch ring-twitch/18"
       : "bg-brand/8 text-brand ring-brand/15"
   return (
     <span

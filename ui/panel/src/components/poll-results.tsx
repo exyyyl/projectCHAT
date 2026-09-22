@@ -112,8 +112,8 @@ export function PollResults({
       className={
         compact
           ? `widget-poll ${radius} ${
-              widget?.surface === "glass"
-                ? "border border-white/10 backdrop-blur-md"
+              widget?.surface === "accent"
+                ? "widget-poll-accent"
                 : widget?.surface === "minimal"
                   ? "bg-transparent drop-shadow-[0_2px_12px_rgb(0_0_0/0.55)]"
                   : ""
@@ -124,11 +124,12 @@ export function PollResults({
         widget
           ? ({
               "--widget-accent": widget.accent,
+              "--widget-opacity": widget.opacity / 100,
               fontFamily,
               backgroundColor:
-                widget.surface === "minimal"
-                  ? undefined
-                  : `rgb(13 17 21 / ${widget.opacity / 100})`,
+                widget.surface === "solid"
+                  ? `rgb(13 17 21 / ${widget.opacity / 100})`
+                  : undefined,
             } as React.CSSProperties)
           : undefined
       }
@@ -163,11 +164,11 @@ export function PollResults({
           return (
             <div
               key={option.id}
-              className={`space-y-2.5 ${
+              className={`widget-option space-y-2.5 ${
                 widget?.optionStyle === "cards"
-                  ? "rounded-xl bg-white/[0.045] p-3"
+                  ? "widget-option-card rounded-xl bg-white/[0.045] p-3"
                   : widget?.optionStyle === "outline"
-                    ? "rounded-xl border border-white/10 p-3"
+                    ? "widget-option-outline rounded-xl border border-white/10 p-3"
                     : ""
               }`}
             >

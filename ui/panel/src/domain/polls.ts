@@ -48,7 +48,7 @@ export type PresetDialogState =
 
 export type WidgetSettings = {
   accent: string
-  surface: "solid" | "glass" | "minimal"
+  surface: "solid" | "accent" | "minimal"
   density: "comfortable" | "compact"
   radius: "small" | "medium" | "large"
   titleSize: "small" | "medium" | "large"

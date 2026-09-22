@@ -41,7 +41,9 @@ jobs:
           if ($env:GITHUB_REF_NAME -ne $expectedTag) {
             throw "Tag $env:GITHUB_REF_NAME does not match package version $version. Expected $expectedTag."
           }
+          $channel = if ($version -match "-") { "beta" } else { "latest" }
           "APP_VERSION=$version" >> $env:GITHUB_ENV
+          "UPDATE_CHANNEL=$channel" >> $env:GITHUB_ENV
 
       - name: Install dependencies
         run: |
@@ -62,28 +64,28 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
-            "release/projectCHAT-Setup-$env:APP_VERSION.exe",
-            "release/projectCHAT-Setup-$env:APP_VERSION.exe.blockmap",
-            "release/latest.yml"
+            "release/Cue-Setup-$env:APP_VERSION.exe",
+            "release/Cue-Setup-$env:APP_VERSION.exe.blockmap",
+            "release/$env:UPDATE_CHANNEL.yml"
           )
           foreach ($file in $files) {
             if (-not (Test-Path $file)) {
               throw "Missing release file: $file"
             }
           }
-          $metadata = Get-Content "release/latest.yml" -Raw
+          $metadata = Get-Content "release/$env:UPDATE_CHANNEL.yml" -Raw
           if ($metadata -notmatch "version:\s+$([regex]::Escape($env:APP_VERSION))") {
-            throw "latest.yml does not contain version $env:APP_VERSION"
+            throw "$env:UPDATE_CHANNEL.yml does not contain version $env:APP_VERSION"
           }
 
       - name: Keep installer as workflow artifact
         uses: actions/upload-artifact@v7
         with:
-          name: projectCHAT-${{ env.APP_VERSION }}-windows
+          name: Cue-${{ env.APP_VERSION }}-windows
           path: |
-            release/projectCHAT-Setup-${{ env.APP_VERSION }}.exe
-            release/projectCHAT-Setup-${{ env.APP_VERSION }}.exe.blockmap
-            release/latest.yml
+            release/Cue-Setup-${{ env.APP_VERSION }}.exe
+            release/Cue-Setup-${{ env.APP_VERSION }}.exe.blockmap
+            release/*.yml
           if-no-files-found: error
           retention-days: 14
 
@@ -93,12 +95,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $assets = @(
-            "release/projectCHAT-Setup-$env:APP_VERSION.exe",
-            "release/projectCHAT-Setup-$env:APP_VERSION.exe.blockmap",
-            "release/latest.yml"
+            "release/Cue-Setup-$env:APP_VERSION.exe",
+            "release/Cue-Setup-$env:APP_VERSION.exe.blockmap",
+            "release/$env:UPDATE_CHANNEL.yml"
           )
-          gh release create $env:GITHUB_REF_NAME @assets `
-            --verify-tag `
-            --title "projectCHAT $env:APP_VERSION" `
-            --generate-notes `
-            --latest
+          if ($env:UPDATE_CHANNEL -eq "beta") {
+            gh release create $env:GITHUB_REF_NAME @assets `
+              --verify-tag `
+              --title "Cue $env:APP_VERSION" `
+              --generate-notes `
+              --prerelease
+          } else {
+            gh release create $env:GITHUB_REF_NAME @assets `
+              --verify-tag `
+              --title "Cue $env:APP_VERSION" `
+              --generate-notes `
+              --latest
+          }
