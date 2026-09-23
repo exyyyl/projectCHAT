@@ -423,22 +423,26 @@ function DataAction({
 
 function ProjectInfo() {
   return (
-    <footer className="flex flex-wrap items-center gap-4 px-1 pb-2">
-      <img src={appIcon} alt="" className="size-9 shrink-0 object-contain" />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-sm font-semibold">Cue</span>
-          <span className="text-xs text-muted-foreground">© 2026 exyyyl</span>
-        </div>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-          exyyyl — разработка · peachysoul — креатив
-        </p>
+    <footer className="flex flex-wrap items-center gap-x-6 gap-y-4 rounded-xl bg-surface-subtle px-4 py-4 sm:px-5">
+      <div className="flex min-w-0 items-center gap-3">
+        <img src={appIcon} alt="" className="size-9 shrink-0 object-contain" />
+        <span className="text-sm font-semibold">Cue</span>
+      </div>
+      <div className="flex min-w-0 flex-1 flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground">
+        <span>
+          <strong className="font-medium text-foreground">exyyyl</strong> ·
+          разработка
+        </span>
+        <span>
+          <strong className="font-medium text-foreground">peachysoul</strong> ·
+          креативная поддержка
+        </span>
       </div>
       <a
         href="https://t.me/itsprojectCHAT"
         target="_blank"
         rel="noreferrer"
-        className="flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        className="flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-surface-raised focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
         <TelegramIcon className="size-4 text-telegram" />
         <span>@itsprojectCHAT</span>

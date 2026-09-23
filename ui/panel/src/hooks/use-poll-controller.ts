@@ -9,6 +9,7 @@ import {
   type PresetDialogState,
   type ServerState,
   type TwitchState,
+  type WidgetSettings,
   validateDraft,
 } from "@/domain/polls"
 
@@ -45,6 +46,7 @@ export function usePollController() {
   const draftRevisionRef = useRef(0)
   const queueRef = useRef<Promise<unknown>>(Promise.resolve())
   const automaticDemoRef = useRef<string | null>(null)
+  const pendingWidgetRef = useRef<WidgetSettings | null>(null)
 
   useEffect(() => {
     stateRef.current = state
@@ -56,8 +58,11 @@ export function usePollController() {
   const accept = useCallback((incoming: ServerState, takeDraft = false) => {
     if (stateRef.current && incoming.revision < stateRef.current.revision)
       return
-    stateRef.current = incoming
-    setState(incoming)
+    const next = pendingWidgetRef.current
+      ? { ...incoming, widget: pendingWidgetRef.current }
+      : incoming
+    stateRef.current = next
+    setState(next)
     draftRevisionRef.current = incoming.draftRevision
     if (takeDraft || (!dirtyRef.current && !savingRef.current)) {
       draftRef.current = incoming.draft
@@ -173,6 +178,38 @@ export function usePollController() {
       return null
     } finally {
       setBusy(false)
+    }
+  }
+
+  const updateWidget = async (patch: Partial<WidgetSettings>) => {
+    if (!connected || !stateRef.current) return
+    const widget = { ...stateRef.current.widget, ...patch }
+    pendingWidgetRef.current = widget
+    const optimistic = { ...stateRef.current, widget }
+    stateRef.current = optimistic
+    setState(optimistic)
+    setError("")
+    try {
+      const result = await send("widget-update", { widget })
+      if (pendingWidgetRef.current === widget) {
+        pendingWidgetRef.current = null
+        accept(result.state)
+      }
+    } catch (failure) {
+      if (pendingWidgetRef.current === widget) {
+        pendingWidgetRef.current = null
+        try {
+          const response = await fetch("/api/state")
+          if (response.ok) accept((await response.json()) as ServerState)
+        } catch {
+          // The next server event will restore the saved settings.
+        }
+      }
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : "Не удалось сохранить оформление виджета."
+      )
     }
   }
 
@@ -367,6 +404,7 @@ export function usePollController() {
     twitchWarning,
     changeDraft,
     run,
+    updateWidget,
     start,
     clear,
     setOutput,

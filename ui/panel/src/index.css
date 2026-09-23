@@ -567,12 +567,13 @@
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  width: 220px;
-  padding-left: 80px;
+  width: 48px;
+  padding-left: 8px;
 }
 
-.app-titlebar[data-collapsed] .app-titlebar-tools {
-  width: 112px;
+.app-titlebar[data-mac] .app-titlebar-tools {
+  width: 120px;
+  padding-left: 80px;
 }
 
 .app-tabs {

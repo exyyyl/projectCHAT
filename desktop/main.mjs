@@ -16,6 +16,12 @@ const { autoUpdater } = updaterModule
 const preload = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 const developmentIcon = fileURLToPath(new URL('../build/icon-source.png', import.meta.url))
 const trayIconPath = fileURLToPath(new URL(process.platform === 'darwin' ? '../build/tray-icon-template.png' : '../build/tray-icon.png', import.meta.url))
+const windowThemes = {
+  lime: '#0b0d10',
+  violet: '#0f0d14',
+  ice: '#0a1116',
+  mono: '#050505',
+}
 let serverApp
 let mainWindow
 let streamDock
@@ -50,6 +56,9 @@ else {
   trace('ready')
   if (!app.isPackaged && app.dock) app.dock.setIcon(developmentIcon)
   const developmentPanelUrl = !app.isPackaged ? process.env.STREAM_POLLS_PANEL_URL?.trim() : ''
+  const developmentOrigins = developmentPanelUrl
+    ? [new URL(developmentPanelUrl).origin, ...Array.from({ length: 20 }, (_, index) => `http://127.0.0.1:${5173 + index}`)]
+    : []
   const preferencesPath = join(app.getPath('userData'), 'desktop-preferences.json')
   desktopPreferences = await loadDesktopPreferences(preferencesPath)
   const loginSettings = app.getLoginItemSettings(loginItemQuery(process.platform))
@@ -122,7 +131,7 @@ else {
     trace('starting local server')
     serverApp = await createApp({
       dataDir: join(app.getPath('userData'), 'app-data'),
-      allowedOrigins: developmentPanelUrl ? [new URL(developmentPanelUrl).origin] : [],
+      allowedOrigins: developmentOrigins,
     })
     inputCapture = createInputCapture({
       emit: event => serverApp.inputOverlay.input(event),
@@ -155,7 +164,7 @@ else {
       titleBarStyle: 'hidden',
       ...(process.platform === 'darwin'
         ? { trafficLightPosition: { x: 13, y: 11 } }
-        : { titleBarOverlay: { color: '#090a0d', symbolColor: '#8d949f', height: 36 } }),
+        : { titleBarOverlay: { color: windowThemes.lime, symbolColor: '#eef0f3', height: 40 } }),
       icon: app.isPackaged ? undefined : developmentIcon,
       webPreferences: {
         preload,
@@ -221,6 +230,12 @@ else {
         return handler(...args)
       })
     }
+    handleDesktop('desktop:theme:set', theme => {
+      if (!Object.hasOwn(windowThemes, theme)) throw new Error('Неизвестная тема приложения.')
+      if (process.platform === 'win32') {
+        mainWindow.setTitleBarOverlay({ color: windowThemes[theme], symbolColor: '#eef0f3', height: 40 })
+      }
+    })
     handleDesktop('desktop:preferences:get', preferencesSnapshot)
     handleDesktop('desktop:preferences:set', async patch => {
       if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Некорректные настройки приложения.')

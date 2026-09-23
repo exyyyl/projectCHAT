@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('streamPollsDesktop', {
   getInfo: () => ipcRenderer.invoke('desktop:get-info'),
+  setWindowTheme: theme => ipcRenderer.invoke('desktop:theme:set', theme),
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   downloadUpdate: () => ipcRenderer.invoke('updates:download'),
   installUpdate: () => ipcRenderer.invoke('updates:install'),

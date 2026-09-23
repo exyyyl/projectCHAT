@@ -435,20 +435,17 @@ function TabWorkspace({
             draft={draft}
             widget={state.widget}
             busy={busy}
-            onUpdate={(widget) =>
-              void controller.run("widget-update", { widget })
-            }
+            onUpdate={(patch) => void controller.updateWidget(patch)}
             onSetOutput={(visible) => void controller.setOutput(visible)}
           />
         </div>
       )}
 
-      {SHOW_INPUT_OVERLAY &&
-        tab.visited.includes("input-overlay") && (
-          <div className={view === "input-overlay" ? "h-full" : "hidden"}>
-            <InputOverlayPage />
-          </div>
-        )}
+      {SHOW_INPUT_OVERLAY && tab.visited.includes("input-overlay") && (
+        <div className={view === "input-overlay" ? "h-full" : "hidden"}>
+          <InputOverlayPage />
+        </div>
+      )}
 
       {tab.visited.includes("stream-dock") && (
         <div className={view === "stream-dock" ? "h-full" : "hidden"}>

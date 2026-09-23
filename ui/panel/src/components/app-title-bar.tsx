@@ -71,8 +71,11 @@ export function AppTitleBar({
   return (
     <header
       className="app-titlebar app-drag-region"
-      data-collapsed={sidebarCollapsed || undefined}
-      data-mac={navigator.userAgent.includes("Mac") || undefined}
+      data-mac={
+        (Boolean(window.streamPollsDesktop) &&
+          navigator.userAgent.includes("Mac")) ||
+        undefined
+      }
     >
       <div className="app-titlebar-tools">
         {onToggleSidebar && (

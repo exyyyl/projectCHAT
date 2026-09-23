@@ -217,7 +217,7 @@ export function FormColor({
   return (
     <div className="flex min-h-11 items-center justify-between gap-3">
       <span className="shrink-0 text-xs text-muted-foreground">Акцент</span>
-      <div className="flex min-w-0 items-center justify-end gap-1">
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1">
         {colors.map((color) => (
           <button
             key={color.value}
@@ -233,7 +233,7 @@ export function FormColor({
             />
           </button>
         ))}
-        <label className="relative flex size-7 cursor-pointer items-center justify-center rounded-md bg-surface-subtle focus-within:ring-2 focus-within:ring-ring">
+        <label className="relative flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md bg-surface-subtle focus-within:ring-2 focus-within:ring-ring">
           <Plus className="size-3.5" />
           <input
             type="color"
@@ -241,7 +241,7 @@ export function FormColor({
             value={value}
             disabled={disabled}
             onChange={(event) => onChange(event.target.value)}
-            className="absolute inset-0 cursor-pointer opacity-0"
+            className="absolute inset-0 h-full w-full min-w-0 cursor-pointer opacity-0"
           />
         </label>
       </div>

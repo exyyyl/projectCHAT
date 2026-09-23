@@ -49,7 +49,10 @@ export function ThemeProvider({
     [storageKey]
   )
 
-  React.useLayoutEffect(() => applyTheme(theme), [theme])
+  React.useLayoutEffect(() => {
+    applyTheme(theme)
+    void window.streamPollsDesktop?.setWindowTheme(theme)
+  }, [theme])
 
   React.useEffect(() => {
     const handleStorageChange = (event: StorageEvent) => {

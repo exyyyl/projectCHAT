@@ -1,12 +1,7 @@
 import { useState } from "react"
 import { Gift, ListChecks, MousePointer2 } from "lucide-react"
 
-import {
-  FormColor,
-  FormSelect,
-  FormSwitch,
-  VisibilityButton,
-} from "@/components/form-controls"
+import { FormColor, FormSelect, FormSwitch } from "@/components/form-controls"
 import type { Contest } from "@/domain/contest"
 
 import { PollResults } from "@/components/poll-results"
@@ -31,7 +26,7 @@ type WidgetPageProps = {
   draft: Draft
   widget: WidgetSettings
   busy: boolean
-  onUpdate: (widget: WidgetSettings) => void
+  onUpdate: (patch: Partial<WidgetSettings>) => void
   onSetOutput: (visible: boolean) => void
 }
 
@@ -83,7 +78,6 @@ const widgetKinds = [
 export function WidgetPage(props: WidgetPageProps) {
   const [selected, setSelected] =
     useState<(typeof widgetKinds)[number]["id"]>("polls")
-  const visible = props.poll ? props.poll.visible : props.draft.showOverlay
   return (
     <section
       className="flex h-full min-h-0 flex-col overflow-hidden"
@@ -106,15 +100,6 @@ export function WidgetPage(props: WidgetPageProps) {
             {label}
           </Button>
         ))}
-        {selected === "polls" && (
-          <div className="ml-auto">
-            <VisibilityButton
-              visible={visible}
-              disabled={props.busy}
-              onChange={props.onSetOutput}
-            />
-          </div>
-        )}
       </div>
       <div className={selected === "polls" ? "min-h-0 flex-1" : "hidden"}>
         <PollWidgetEditor {...props} />
@@ -153,16 +138,17 @@ function PollWidgetEditor({
   widget: savedWidget,
   busy,
   onUpdate,
+  onSetOutput,
 }: WidgetPageProps) {
   const showToast = useToast()
   const widget = { ...defaults, ...savedWidget }
+  const visible = poll ? poll.visible : draft.showOverlay
   const overlayOrigin = import.meta.env.DEV
     ? "http://127.0.0.1:4317"
     : location.origin
   const overlayUrl = `${overlayOrigin}/overlay`
   const overlaySize = widget.width === "wide" ? "640 × 640" : "480 × 640"
-  const update = (patch: Partial<WidgetSettings>) =>
-    onUpdate({ ...widget, ...patch })
+  const update = onUpdate
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(overlayUrl)
@@ -188,28 +174,35 @@ function PollWidgetEditor({
           </div>
         </div>
       </StudioStage>
-      <StudioRail className="flex flex-col bg-panel px-5 py-5">
-        <div className="flex items-center justify-between gap-3">
+      <StudioRail className="flex min-w-0 flex-col bg-panel px-5 py-5">
+        <div className="min-w-0 rounded-lg bg-surface-subtle px-3">
+          <FormSwitch
+            label="Показывать в OBS"
+            checked={visible}
+            disabled={busy}
+            onCheckedChange={onSetOutput}
+          />
+        </div>
+        <div className="mt-6 flex items-center justify-between gap-3">
           <h2 className="text-sm font-medium">Оформление</h2>
           <Button
             variant="ghost"
             size="sm"
             className="h-7 text-xs text-muted-foreground"
-            disabled={busy}
             onClick={() => onUpdate(defaults)}
           >
             Сбросить
           </Button>
         </div>
-        <Tabs defaultValue="style" className="mt-4">
-          <TabsList className="widget-editor-tabs grid h-9 grid-cols-3 border-0 bg-surface-subtle p-1">
-            <TabsTrigger value="style" className="rounded-md px-1">
+        <Tabs defaultValue="style" className="mt-4 min-w-0">
+          <TabsList className="widget-editor-tabs grid h-9 w-full min-w-0 grid-cols-3 border-0 bg-surface-subtle p-1">
+            <TabsTrigger value="style" className="min-w-0 rounded-md px-1">
               Стиль
             </TabsTrigger>
-            <TabsTrigger value="options" className="rounded-md px-1">
+            <TabsTrigger value="options" className="min-w-0 rounded-md px-1">
               Варианты
             </TabsTrigger>
-            <TabsTrigger value="content" className="rounded-md px-1">
+            <TabsTrigger value="content" className="min-w-0 rounded-md px-1">
               Состав
             </TabsTrigger>
           </TabsList>
@@ -218,7 +211,7 @@ function PollWidgetEditor({
               <FormColor
                 value={widget.accent}
                 colors={colors}
-                disabled={busy}
+                disabled={false}
                 onChange={(accent) => update({ accent })}
               />
             </div>
@@ -232,8 +225,7 @@ function PollWidgetEditor({
                   label,
                 ])}
                 disabled={
-                  busy ||
-                  (field.key === "opacity" && widget.surface === "minimal")
+                  field.key === "opacity" && widget.surface === "minimal"
                 }
                 onChange={(value) => {
                   const option = field.options.find(
@@ -251,7 +243,7 @@ function PollWidgetEditor({
                 label={field.label}
                 value={String(widget[field.key])}
                 options={field.options.map(([value, label]) => [value, label])}
-                disabled={busy}
+                disabled={false}
                 onChange={(value) => {
                   const option = field.options.find(
                     (option) => option[0] === value
@@ -267,7 +259,6 @@ function PollWidgetEditor({
                 key={key}
                 label={label}
                 checked={widget[key]}
-                disabled={busy}
                 onCheckedChange={(checked) => update({ [key]: checked })}
               />
             ))}
@@ -284,13 +275,18 @@ function PollWidgetEditor({
           >
             {overlayUrl}
           </div>
-          <div className="mt-2 grid grid-cols-[auto_1fr] gap-2">
+          <div className="mt-2 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-2">
             <Button variant="outline" size="sm" asChild>
               <a href={overlayUrl} target="_blank" rel="noreferrer">
                 Открыть
               </a>
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => void copy()}>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="min-w-0"
+              onClick={() => void copy()}
+            >
               Копировать ссылку
             </Button>
           </div>

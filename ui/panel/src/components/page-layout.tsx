@@ -88,7 +88,7 @@ export function StudioRail({ className, ...props }: AsideProps) {
   return (
     <aside
       className={cn(
-        "bg-sidebar px-6 py-8 transition-colors xl:min-h-0 xl:overflow-y-auto",
+        "min-w-0 overflow-x-hidden bg-sidebar px-6 py-8 transition-colors xl:min-h-0 xl:overflow-y-auto",
         className
       )}
       {...props}

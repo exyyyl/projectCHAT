@@ -95,6 +95,7 @@ type StreamDockOperation = {
 interface Window {
   streamPollsDesktop?: {
     getInfo(): Promise<DesktopInfo>
+    setWindowTheme(theme: "lime" | "violet" | "ice" | "mono"): Promise<void>
     checkForUpdates(): Promise<DesktopUpdateState>
     downloadUpdate(): Promise<DesktopUpdateState>
     installUpdate(): Promise<boolean>
