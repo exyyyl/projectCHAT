@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTwitch, chatMessage, chatVote } from '../server/twitch.mjs';
 import { createStore } from '../server/store.mjs';
+import { PollError } from '../server/polls.mjs';
 
 const clientId = 'testclient12345';
 const tokens = { access_token: 'private-access', refresh_token: 'private-refresh', expires_in: 14400 };
@@ -142,3 +143,68 @@ test('revocation stops listening, and cancel removes pending device authorizatio
   await f.twitch.command({ type: 'disconnect' });
   assert.equal(f.timers.size, 0); assert.equal(f.twitch.snapshot().device, null);
 });
+
+test('oversized Unicode and invalid IDs do not disconnect chat or block a subsequent vote', async t => {
+  const f = await fixture(t); await f.authorize();
+  const s = f.store.snapshot();
+  await f.store.command({ type: 'start', draftRevision: s.draftRevision, draft: { ...s.draft, source: 'twitch' }, broadcasterId: '123' });
+  const ws = f.sockets[0];
+  for (const event of [
+    { message: { text: '😀'.repeat(251) } },
+    { message_id: '' }, { message_id: 'x'.repeat(129) },
+    { chatter_user_id: '' }, { chatter_user_id: 'x'.repeat(122) },
+    { message: { text: { code: 'malformed' } } },
+  ]) {
+    await ws.message(notification(f.now(), event));
+    assert.equal(f.twitch.snapshot().phase, 'connected');
+    assert.notEqual(ws.closed, true);
+  }
+  await ws.message(notification(f.now()));
+  assert.equal(f.store.snapshot().poll.options[0].votes, 1);
+  assert.equal(f.sockets.length, 1);
+});
+
+test('chat vote bounds include the viewer prefix and preserve supported text literally', () => {
+  const poll = { id: 'poll', status: 'running', source: 'twitch', broadcasterId: '123', startedAt: 1000, deadline: 2000 };
+  const message = notification(1000, { chatter_user_id: 'x'.repeat(121), message_id: 'e'.repeat(128), message: { text: '😀'.repeat(250) } });
+  const vote = chatVote(message, poll, '123');
+  assert.equal(vote.viewerId.length, 128);
+  assert.equal(vote.eventId.length, 128);
+  assert.equal(vote.message, message.payload.event.message.text);
+  const markup = '<img src=x onerror=alert(1)>';
+  assert.equal(chatVote(notification(1000, { message: { text: markup } }), poll, '123').message, markup);
+});
+
+for (const status of [400, 409]) {
+  test(`a rejected queued vote (${status}) does not reset Twitch or replay the vote`, async t => {
+    const f = await fixture(t); await f.authorize();
+    const s = f.store.snapshot();
+    await f.store.command({ type: 'start', draftRevision: s.draftRevision, draft: { ...s.draft, source: 'twitch' }, broadcasterId: '123' });
+    const command = f.store.command.bind(f.store);
+    let votes = 0;
+    f.store.command = data => {
+      if (data.type === 'vote' && ++votes === 1) throw new PollError('Rejected vote', status);
+      return command(data);
+    };
+    const ws = f.sockets[0];
+    await ws.message(notification(f.now(), { message_id: 'rejected' }));
+    assert.equal(f.twitch.snapshot().phase, 'connected');
+    assert.equal(f.store.snapshot().poll.options[0].votes, 0);
+    await ws.message(notification(f.now()));
+    assert.equal(f.store.snapshot().poll.options[0].votes, 1);
+    assert.equal(votes, 2);
+    assert.notEqual(ws.closed, true);
+  });
+}
+
+for (const error of [new Error('Disk failed'), new PollError('Storage failed', 500)]) {
+  test(`unexpected vote failure still enters an error state: ${error.message}`, async t => {
+    const f = await fixture(t); await f.authorize();
+    const s = f.store.snapshot();
+    await f.store.command({ type: 'start', draftRevision: s.draftRevision, draft: { ...s.draft, source: 'twitch' }, broadcasterId: '123' });
+    f.store.command = () => { throw error; };
+    await f.sockets[0].message(notification(f.now()));
+    assert.equal(f.twitch.snapshot().phase, 'error');
+    assert.equal(f.sockets[0].closed, true);
+  });
+}

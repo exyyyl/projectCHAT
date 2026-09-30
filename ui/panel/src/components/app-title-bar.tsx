@@ -1,13 +1,13 @@
 import { useEffect, useRef } from "react"
 import {
   Plus,
+  CircleDashed,
   ChevronLeft,
   ChevronRight,
   Gift,
   Grid3X3,
   LayoutTemplate,
   ListChecks,
-  MousePointer2,
   PanelLeftClose,
   PanelLeftOpen,
   PanelsTopLeft,
@@ -16,7 +16,6 @@ import {
 } from "lucide-react"
 
 import type { TabView, WorkspaceTab } from "@/domain/app-navigation"
-import { SHOW_INPUT_OVERLAY } from "@/domain/release-features"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -30,15 +29,8 @@ const sections: Partial<
   polls: { label: "Опросы", icon: ListChecks },
   presets: { label: "Шаблоны", icon: LayoutTemplate },
   widget: { label: "Виджеты", icon: PanelsTopLeft },
-  ...(SHOW_INPUT_OVERLAY
-    ? {
-        "input-overlay": {
-          label: "Клавиши",
-          icon: MousePointer2,
-        },
-      }
-    : {}),
   contests: { label: "Конкурсы", icon: Gift },
+  "decision-wheel": { label: "Рулетка", icon: CircleDashed },
   "stream-dock": { label: "Stream Dock", icon: Grid3X3 },
   new: { label: "Новая вкладка", icon: Plus },
   settings: { label: "Настройки", icon: Settings2 },

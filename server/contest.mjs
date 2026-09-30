@@ -20,11 +20,16 @@ const demoNames = ['PixelFox', 'NightOwl', 'LimeCat', 'MoonByte', 'Kira', 'NoSco
 const demoReplies = ['Я здесь!', 'Вижу сообщение', 'Да, это я', 'Спасибо!', 'На месте 👋'];
 
 function validateSetup(setup) {
-  const mode = setup?.mode === 'active' ? 'active' : 'keyword';
+  const mode = ['active', 'keyword', 'number'].includes(setup?.mode) ? setup.mode : 'keyword';
   const keyword = cleanText(setup?.keyword, 32);
   const duration = Number(setup?.duration);
+  const numberMin = setup?.numberMin;
+  const numberMax = setup?.numberMax;
   if (mode === 'keyword' && !keyword) throw new PollError('Добавьте слово для участия.');
   if (mode === 'keyword' && /\s/u.test(keyword)) throw new PollError('Слово для участия должно быть без пробелов.');
+  if (mode === 'number' && (!Number.isSafeInteger(numberMin) || !Number.isSafeInteger(numberMax)
+    || numberMin < 0 || numberMax > 1_000_000 || numberMin >= numberMax))
+    throw new PollError('Укажите диапазон чисел от 0 до 1 000 000: начало меньше конца.');
   if (!Number.isInteger(duration) || duration < 10 || duration > 3600) throw new PollError('Укажите время от 10 до 3600 секунд.');
   const allowedRoles = Array.isArray(setup?.allowedRoles)
     ? [...new Set(setup.allowedRoles.filter(role => audienceRoles.includes(role)))]
@@ -33,6 +38,8 @@ function validateSetup(setup) {
   return {
     mode,
     keyword: mode === 'keyword' ? keyword : '',
+    numberMin: mode === 'number' ? numberMin : null,
+    numberMax: mode === 'number' ? numberMax : null,
     duration,
     source: setup?.source === 'test' ? 'test' : 'twitch',
     antiSpam: mode === 'keyword' && setup?.antiSpam === true,
@@ -46,7 +53,11 @@ const migrateContest = contest => {
   delete stored.title;
   return {
     ...stored,
-    mode: contest.mode === 'active' ? 'active' : 'keyword',
+    mode: ['active', 'number'].includes(contest.mode) ? contest.mode : 'keyword',
+    numberMin: contest.mode === 'number' ? contest.numberMin : null,
+    numberMax: contest.mode === 'number' ? contest.numberMax : null,
+    guesses: Array.isArray(contest.guesses) ? contest.guesses : [],
+    guessCount: Number.isSafeInteger(contest.guessCount) ? contest.guessCount : (contest.guesses?.length || 0),
     antiSpam: contest.antiSpam === true,
     allowedRoles: Array.isArray(contest.allowedRoles) && contest.allowedRoles.some(role => audienceRoles.includes(role))
       ? [...new Set(contest.allowedRoles.filter(role => audienceRoles.includes(role)))]
@@ -63,10 +74,53 @@ const migrateContest = contest => {
           : ['viewer'],
         eligible: participant.eligible !== false,
         excludedReason: participant.eligible === false ? cleanText(participant.excludedReason, 20) || 'manual' : '',
+        guessCount: Number.isSafeInteger(participant.guessCount) ? participant.guessCount : 0,
       }))
       : [],
   };
 };
+
+function recordNumberGuess(contest, message, roles) {
+  const guess = Number(message.text);
+  const participant = {
+    id: message.viewerId,
+    name: cleanText(message.viewerName, 50),
+    login: cleanText(message.viewerLogin || message.viewerName, 50),
+    messageId: message.eventId,
+    message: message.text,
+    joinedAt: message.sentAt,
+    roles,
+    eligible: true,
+    excludedReason: '',
+    guessCount: 1,
+  };
+  const existing = contest.participants.find(entry => entry.id === message.viewerId);
+  const guesses = [...contest.guesses, {
+    id: message.eventId,
+    viewerId: message.viewerId,
+    name: participant.name,
+    text: message.text,
+    at: message.sentAt,
+  }].slice(-200);
+  const winner = existing ? { ...existing, guessCount: (existing.guessCount || 0) + 1 } : participant;
+  const participants = existing
+    ? contest.participants.map(entry => entry.id === winner.id ? winner : entry)
+    : [...contest.participants, participant].slice(-5000);
+  const guessCount = (contest.guessCount || 0) + 1;
+  if (guess !== contest.winningNumber) return { ...contest, participants, guesses, guessCount };
+  return {
+    ...contest,
+    status: 'winner',
+    participants,
+    guesses,
+    guessCount,
+    winner,
+    winnerMessages: [{ id: message.eventId, text: message.text, at: message.sentAt }],
+    winnerHistory: [winner.id],
+    closedAt: message.sentAt,
+    drawnAt: message.sentAt,
+  };
+}
 
 export async function createContest(filename, { now = Date.now, randomInt = secureRandomInt } = {}) {
   let state = emptyState(now);
@@ -81,7 +135,13 @@ export async function createContest(filename, { now = Date.now, randomInt = secu
   let work = Promise.resolve();
   let disk = Promise.resolve();
   const listeners = new Set();
-  const snapshot = () => structuredClone({ ...state, serverNow: now() });
+  const snapshot = () => structuredClone({
+    ...state,
+    serverNow: now(),
+    contest: state.contest?.mode === 'number' && state.contest.status === 'collecting'
+      ? { ...state.contest, winningNumber: null }
+      : state.contest,
+  });
   const publish = () => {
     const value = snapshot();
     for (const listener of listeners) {
@@ -123,10 +183,15 @@ export async function createContest(filename, { now = Date.now, randomInt = secu
         status: 'collecting',
         ...setup,
         keywordNormalized: normalizeKeyword(setup.keyword),
+        winningNumber: setup.mode === 'number'
+          ? setup.numberMin + randomInt(setup.numberMax - setup.numberMin + 1)
+          : null,
         broadcasterId,
         startedAt,
         deadline: startedAt + setup.duration * 1000,
         participants: [],
+        guesses: [],
+        guessCount: 0,
         winner: null,
         winnerMessages: [],
         winnerHistory: [],
@@ -136,6 +201,24 @@ export async function createContest(filename, { now = Date.now, randomInt = secu
     if (command.type === 'demo') {
       if (current.source !== 'test') throw new PollError('Демо доступно только в тестовом конкурсе.', 409);
       if (current.status === 'collecting') {
+        if (current.mode === 'number') {
+          const usedNames = new Set(current.participants.map(participant => participant.name));
+          const available = demoNames.filter(name => !usedNames.has(name));
+          const name = available.length ? available[randomInt(available.length)] : `Viewer ${current.participants.length + 1}`;
+          const span = current.numberMax - current.numberMin + 1;
+          const winningGuess = current.guesses.length % 6 === 5;
+          let guess = winningGuess ? current.winningNumber : current.numberMin + randomInt(span);
+          if (!winningGuess && guess === current.winningNumber)
+            guess = guess === current.numberMax ? current.numberMin : guess + 1;
+          return commit(recordNumberGuess(current, {
+            viewerId: `demo:${crypto.randomUUID()}`,
+            viewerName: name,
+            viewerLogin: name,
+            eventId: crypto.randomUUID(),
+            text: String(guess),
+            sentAt: now(),
+          }, [current.allowedRoles[0] || 'viewer']));
+        }
         const usedNames = new Set(current.participants.map(participant => participant.name));
         const available = demoNames.filter(name => !usedNames.has(name));
         const name = available.length ? available[randomInt(available.length)] : `Viewer ${current.participants.length + 1}`;
@@ -163,6 +246,7 @@ export async function createContest(filename, { now = Date.now, randomInt = secu
       return commit({ ...current, status: 'ready', closedAt: now() });
     }
     if (command.type === 'eligibility') {
+      if (current.mode === 'number') throw new PollError('Участники конкурса по числу определяются автоматически.', 409);
       if (!['collecting', 'ready'].includes(current.status)) throw new PollError('Состав участников уже зафиксирован.', 409);
       if (typeof command.participantId !== 'string' || typeof command.eligible !== 'boolean') throw new PollError('Некорректный участник.');
       let found = false;
@@ -179,10 +263,12 @@ export async function createContest(filename, { now = Date.now, randomInt = secu
       return commit({ ...current, participants });
     }
     if (command.type === 'clear') {
+      if (current.mode === 'number') throw new PollError('Попытки в конкурсе по числу нельзя сбросить.', 409);
       if (!['collecting', 'ready'].includes(current.status)) throw new PollError('Состав участников уже зафиксирован.', 409);
       return commit({ ...current, participants: [] });
     }
     if (command.type === 'draw') {
+      if (current.mode === 'number') throw new PollError('Победит первый зритель, угадавший число.', 409);
       if (!['collecting', 'ready', 'winner'].includes(current.status)) throw new PollError('Конкурс уже завершён.', 409);
       const used = new Set(current.winnerHistory || []);
       const candidates = current.participants.filter(participant => participant.eligible !== false && !used.has(participant.id));
@@ -216,6 +302,13 @@ export async function createContest(filename, { now = Date.now, randomInt = secu
         ? [...new Set(message.roles.filter(role => audienceRoles.includes(role)))]
         : ['viewer'];
       if (!roles.some(role => current.allowedRoles.includes(role))) return snapshot();
+      if (current.mode === 'number') {
+        if (!/^\d+$/u.test(text)) return snapshot();
+        const guess = Number(text);
+        if (!Number.isSafeInteger(guess) || guess < current.numberMin || guess > current.numberMax) return snapshot();
+        if (current.guesses.some(entry => entry.id === message.eventId)) return snapshot();
+        return commit(recordNumberGuess(current, { ...message, text }, roles));
+      }
       const existingIndex = current.participants.findIndex(participant => participant.id === message.viewerId);
       if (existingIndex >= 0) {
         const existing = current.participants[existingIndex];

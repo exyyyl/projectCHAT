@@ -1,11 +1,10 @@
 import { useState } from "react"
-import { Gift, ListChecks, MousePointer2 } from "lucide-react"
+import { Check, Gift, ListChecks } from "lucide-react"
 
 import { FormColor, FormSelect, FormSwitch } from "@/components/form-controls"
 import type { Contest } from "@/domain/contest"
 
 import { PollResults } from "@/components/poll-results"
-import { InputOverlayPage } from "@/components/input-overlay-page"
 import {
   StudioRail,
   StudioStage,
@@ -13,12 +12,9 @@ import {
 } from "@/components/page-layout"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useToast } from "@/components/ui/toast"
+import { useCopyLink } from "@/hooks/use-copy-link"
 import type { Draft, Poll, WidgetSettings } from "@/domain/polls"
-import {
-  SHOW_CONTEST_WIDGET,
-  SHOW_INPUT_OVERLAY,
-} from "@/domain/release-features"
+import { SHOW_CONTEST_WIDGET } from "@/domain/release-features"
 
 type WidgetPageProps = {
   contest?: Contest | null
@@ -63,15 +59,6 @@ const widgetKinds = [
   { id: "polls", label: "Опросы", icon: ListChecks },
   ...(SHOW_CONTEST_WIDGET
     ? [{ id: "contests" as const, label: "Конкурсы", icon: Gift }]
-    : []),
-  ...(SHOW_INPUT_OVERLAY
-    ? [
-        {
-          id: "input-overlay" as const,
-          label: "Клавиши и мышь",
-          icon: MousePointer2,
-        },
-      ]
     : []),
 ] as const
 
@@ -123,11 +110,6 @@ export function WidgetPage(props: WidgetPageProps) {
           </div>
         </div>
       )}
-      {SHOW_INPUT_OVERLAY && selected === "input-overlay" && (
-        <div className="min-h-0 flex-1">
-          <InputOverlayPage />
-        </div>
-      )}
     </section>
   )
 }
@@ -140,7 +122,6 @@ function PollWidgetEditor({
   onUpdate,
   onSetOutput,
 }: WidgetPageProps) {
-  const showToast = useToast()
   const widget = { ...defaults, ...savedWidget }
   const visible = poll ? poll.visible : draft.showOverlay
   const overlayOrigin = import.meta.env.DEV
@@ -149,14 +130,7 @@ function PollWidgetEditor({
   const overlayUrl = `${overlayOrigin}/overlay`
   const overlaySize = widget.width === "wide" ? "640 × 640" : "480 × 640"
   const update = onUpdate
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(overlayUrl)
-      showToast({ message: "Ссылка скопирована", tone: "success" })
-    } catch {
-      showToast({ message: "Не удалось скопировать ссылку", tone: "error" })
-    }
-  }
+  const { copied, copy } = useCopyLink(overlayUrl)
   return (
     <StudioWorkspace
       aria-label="Виджет опроса"
@@ -287,7 +261,13 @@ function PollWidgetEditor({
               className="min-w-0"
               onClick={() => void copy()}
             >
-              Копировать ссылку
+              <span
+                aria-live="polite"
+                className="inline-flex items-center gap-1.5"
+              >
+                {copied && <Check className="size-3.5" />}
+                {copied ? "Скопировано" : "Копировать ссылку"}
+              </span>
             </Button>
           </div>
         </div>

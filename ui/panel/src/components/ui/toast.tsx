@@ -1,29 +1,25 @@
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react"
 import { Check, Info, TriangleAlert, X, XCircle } from "lucide-react"
+import gsap from "gsap"
+import { useGSAP } from "@gsap/react"
 
 import { cn } from "@/lib/utils"
+import {
+  createToastStore,
+  type ToastTone,
+  type ToastItem,
+} from "@/domain/toasts"
 
-type ToastTone = "default" | "success" | "warning" | "error"
-
-type ToastInput = {
-  message: string
-  tone?: ToastTone
-  duration?: number
-}
-
-type ToastItem = ToastInput & { id: number }
-
-type ToastContextValue = {
-  showToast: (input: string | ToastInput) => void
-}
+type ToastContextValue = ReturnType<typeof createToastStore>
+gsap.registerPlugin(useGSAP)
 
 const ToastContext = createContext<ToastContextValue | null>(null)
 
@@ -31,7 +27,10 @@ const toneStyles: Record<
   ToastTone,
   { icon: typeof Info; iconClassName: string }
 > = {
-  default: { icon: Info, iconClassName: "bg-surface-raised text-foreground/75" },
+  default: {
+    icon: Info,
+    iconClassName: "bg-surface-raised text-foreground/75",
+  },
   success: { icon: Check, iconClassName: "bg-brand/12 text-brand" },
   warning: {
     icon: TriangleAlert,
@@ -44,81 +43,127 @@ const toneStyles: Record<
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<ToastItem[]>([])
-  const nextId = useRef(0)
-  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
+  const [store] = useState(() => createToastStore())
+  useEffect(() => () => store.dispose(), [store])
+  return <ToastContext.Provider value={store}>{children}</ToastContext.Provider>
+}
 
-  const dismiss = useCallback((id: number) => {
-    const timer = timers.current.get(id)
-    if (timer) clearTimeout(timer)
-    timers.current.delete(id)
-    setToasts((current) => current.filter((toast) => toast.id !== id))
-  }, [])
-
-  const showToast = useCallback(
-    (input: string | ToastInput) => {
-      const toast = typeof input === "string" ? { message: input } : input
-      const id = ++nextId.current
-      setToasts((current) => [...current.slice(-3), { ...toast, id }])
-      timers.current.set(
-        id,
-        setTimeout(() => dismiss(id), toast.duration ?? 4200)
-      )
-    },
-    [dismiss]
+export function ToastViewport() {
+  const store = useContext(ToastContext)!
+  const toasts = useSyncExternalStore(
+    store.subscribe,
+    store.snapshot,
+    store.snapshot
   )
-
-  useEffect(
-    () => () => {
-      for (const timer of timers.current.values()) clearTimeout(timer)
-    },
-    []
-  )
-
   return (
-    <ToastContext.Provider value={{ showToast }}>
-      {children}
-      <div
-        className="pointer-events-none fixed top-4 right-4 z-100 flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2"
-        aria-live="polite"
-        aria-atomic="false"
+    <div
+      className="app-notifications"
+      aria-label="Уведомления"
+      aria-live="polite"
+      aria-atomic="false"
+    >
+      {toasts.map((toast) => (
+        <ToastNotice
+          key={toast.id}
+          toast={toast}
+          dismiss={store.dismiss}
+          onExit={store.finishDismiss}
+        />
+      ))}
+    </div>
+  )
+}
+
+function ToastNotice({
+  toast,
+  dismiss,
+  onExit,
+}: {
+  toast: ToastItem
+  dismiss: (id: number) => void
+  onExit: (id: number) => void
+}) {
+  const element = useRef<HTMLDivElement>(null)
+  useGSAP(
+    () => {
+      gsap.set(element.current, { y: 40, opacity: 0 })
+    },
+    { scope: element }
+  )
+  useGSAP(
+    () => {
+      const reduced = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches
+      gsap.to(element.current, {
+        y: toast.leaving ? 40 : 0,
+        opacity: toast.leaving ? 0 : 1,
+        duration: reduced ? 0 : toast.leaving ? 0.36 : 0.6,
+        ease: toast.leaving ? "power2.in" : "power3.out",
+        overwrite: "auto",
+        onComplete: () => {
+          if (toast.leaving) onExit(toast.id)
+        },
+      })
+    },
+    { dependencies: [toast.leaving], scope: element }
+  )
+  useGSAP(
+    () => {
+      if (
+        toast.count < 2 ||
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      )
+        return
+      gsap.to(element.current, {
+        keyframes: [{ x: -3 }, { x: 3 }, { x: -2 }, { x: 2 }, { x: 0 }],
+        duration: 0.22,
+        ease: "power1.out",
+      })
+    },
+    { dependencies: [toast.count], scope: element }
+  )
+  const tone = toast.tone ?? "default"
+  const style = toneStyles[tone]
+  const StatusIcon = style.icon
+  return (
+    <div
+      ref={element}
+      role={tone === "error" ? "alert" : "status"}
+      aria-atomic="true"
+      inert={toast.leaving}
+      className={cn(
+        "flex min-w-0 items-center gap-2.5 rounded-xl bg-popover px-3 py-2 text-sm text-foreground shadow-[0_6px_20px_rgb(0_0_0/0.28)]"
+      )}
+    >
+      <span
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center rounded-md",
+          style.iconClassName
+        )}
       >
-        {toasts.map((toast) => {
-          const tone = toast.tone ?? "default"
-          const style = toneStyles[tone]
-          const StatusIcon = style.icon
-          return (
-            <div
-              key={toast.id}
-              role={tone === "error" ? "alert" : "status"}
-              className={cn(
-                "pointer-events-auto flex animate-in items-center gap-3 rounded-xl bg-popover/96 p-2.5 pr-2 text-sm text-popover-foreground shadow-[0_12px_36px_rgb(0_0_0/0.38)] ring-1 ring-border-strong backdrop-blur-xl duration-200 zoom-in-95 fade-in slide-in-from-top-2 motion-reduce:animate-none"
-              )}
-            >
-              <span
-                className={cn(
-                  "flex size-8 shrink-0 items-center justify-center rounded-lg",
-                  style.iconClassName
-                )}
-              >
-                <StatusIcon className="size-4" strokeWidth={2} />
-              </span>
-              <span className="min-w-0 flex-1 leading-snug text-foreground/90">
-                {toast.message}
-              </span>
-              <button
-                type="button"
-                className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground/65 transition-colors hover:bg-surface-raised hover:text-foreground"
-                aria-label="Закрыть уведомление"
-                onClick={() => dismiss(toast.id)}
-              >
-                <X className="size-3.5" />
-              </button>
-            </div>
-          )
-        })}
-      </div>
-    </ToastContext.Provider>
+        <StatusIcon className="size-3.5" strokeWidth={2} />
+      </span>
+      <span className="min-w-0 flex-1 leading-snug [overflow-wrap:anywhere] text-foreground/90">
+        {toast.message}
+      </span>
+      {toast.count > 1 && (
+        <span
+          className="rounded-md bg-surface-raised px-1.5 py-0.5 text-xs text-muted-foreground tabular-nums"
+          aria-label={`Повторов: ${toast.count}`}
+        >
+          ×{toast.count}
+        </span>
+      )}
+      <button
+        type="button"
+        className="pointer-events-auto flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground/65 transition-colors hover:bg-surface-raised hover:text-foreground"
+        aria-label="Закрыть уведомление"
+        onClick={() => dismiss(toast.id)}
+      >
+        <X className="size-3.5" />
+      </button>
+    </div>
   )
 }
 
@@ -126,5 +171,5 @@ export function useToast() {
   const context = useContext(ToastContext)
   if (!context)
     throw new Error("useToast должен использоваться внутри ToastProvider")
-  return context.showToast
+  return context.show
 }

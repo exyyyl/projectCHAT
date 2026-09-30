@@ -179,3 +179,70 @@ test('saved contests migrate to eligibility and keyword mode', async t => {
   assert.deepEqual(saved.allowedRoles, ['viewer', 'subscriber', 'vip', 'moderator']);
   assert.deepEqual(saved.winnerHistory, []);
 });
+
+test('number contest keeps the target hidden and awards the first exact guess', async t => {
+  const f = await fixture(t);
+  await f.contest.command({
+    type: 'start',
+    broadcasterId: 'channel',
+    setup: { mode: 'number', numberMin: 1, numberMax: 3, duration: 30, allowedRoles: ['subscriber'] },
+  });
+  const started = f.contest.snapshot().contest;
+  assert.equal(started.winningNumber, null);
+  const id = started.id;
+  await f.contest.chat(f.message('a', 'Viewer', '2', 'a1', ['viewer']));
+  await f.contest.chat(f.message('b', 'Subscriber', '4', 'b1', ['subscriber']));
+  await f.contest.chat(f.message('b', 'Subscriber', '1', 'b2', ['subscriber']));
+  await f.contest.chat(f.message('b', 'Subscriber', '3', 'b3', ['subscriber']));
+  assert.deepEqual(f.contest.snapshot().contest.guesses.map(entry => entry.text), ['1', '3']);
+  await f.contest.chat(f.message('b', 'Subscriber', '2', 'b4', ['subscriber']));
+  await f.contest.chat(f.message('c', 'Late', '2', 'c1', ['subscriber']));
+  const result = f.contest.snapshot().contest;
+  assert.equal(result.status, 'winner');
+  assert.equal(result.winningNumber, 2);
+  assert.equal(result.winner.name, 'Subscriber');
+  assert.deepEqual(result.winnerMessages.map(entry => entry.text), ['2']);
+  assert.deepEqual(result.participants.map(entry => entry.name), ['Subscriber']);
+  assert.equal(result.participants[0].guessCount, 3);
+  assert.equal(result.guessCount, 3);
+  assert.deepEqual(result.guesses.map(entry => entry.text), ['1', '3', '2']);
+  await assert.rejects(f.contest.command({ type: 'draw', contestId: id }), /первый зритель/i);
+});
+
+test('number contest reveals the answer when time runs out and validates bounds', async t => {
+  const f = await fixture(t);
+  await assert.rejects(f.contest.command({
+    type: 'start', broadcasterId: 'channel',
+    setup: { mode: 'number', numberMin: 5, numberMax: 5, duration: 30 },
+  }), /диапазон/i);
+  await assert.rejects(f.contest.command({
+    type: 'start', broadcasterId: 'channel',
+    setup: { mode: 'number', numberMin: null, numberMax: 10, duration: 30 },
+  }), /диапазон/i);
+  await f.contest.command({
+    type: 'start', broadcasterId: 'channel',
+    setup: { mode: 'number', numberMin: 0, numberMax: 10, duration: 10 },
+  });
+  await f.contest.chat(f.message('a', 'Alice', '1.0', 'a1'));
+  await f.contest.chat(f.message('a', 'Alice', ' 0 ', 'a2'));
+  assert.deepEqual(f.contest.snapshot().contest.guesses.map(entry => entry.text), ['0']);
+  f.advance(10_000);
+  await f.contest.tick();
+  const ended = f.contest.snapshot().contest;
+  assert.equal(ended.status, 'ready');
+  assert.equal(ended.winningNumber, 1);
+});
+
+test('demo number contest produces guesses and eventually a winner', async t => {
+  const f = await fixture(t);
+  await f.contest.command({
+    type: 'start', setup: { mode: 'number', numberMin: 1, numberMax: 100, duration: 30, source: 'test' },
+  });
+  const id = f.contest.snapshot().contest.id;
+  for (let attempt = 0; attempt < 6; attempt += 1)
+    await f.contest.command({ type: 'demo', contestId: id });
+  const result = f.contest.snapshot().contest;
+  assert.equal(result.status, 'winner');
+  assert.equal(result.guesses.length, 6);
+  assert.equal(result.winnerMessages[0].text, String(result.winningNumber));
+});

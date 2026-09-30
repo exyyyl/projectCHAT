@@ -16,11 +16,14 @@ export function chatVote(message, poll, userId) {
   const sentAt = Date.parse(message.metadata.message_timestamp);
   if (!Number.isFinite(sentAt) || sentAt < poll.startedAt || sentAt >= poll.deadline) return null;
   if (typeof event.chatter_user_id !== 'string' || typeof event.message_id !== 'string' || typeof event.message?.text !== 'string') return null;
+  const viewerId = `twitch:${event.chatter_user_id}`;
+  // Keep rejected input inside this notification, within the vote store's bounds.
+  if (!event.chatter_user_id || viewerId.length > 128 || !event.message_id || event.message_id.length > 128 || event.message.text.length > 500) return null;
   const rawName = typeof event.chatter_user_name === 'string' ? event.chatter_user_name : event.chatter_user_login;
   if (typeof rawName !== 'string') return null;
   const viewerName = rawName.normalize('NFKC').replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, 50);
   if (!viewerName) return null;
-  return { type: 'vote', source: 'twitch', pollId: poll.id, broadcasterId: userId, sentAt, viewerId: `twitch:${event.chatter_user_id}`, viewerName, eventId: event.message_id, message: event.message.text };
+  return { type: 'vote', source: 'twitch', pollId: poll.id, broadcasterId: userId, sentAt, viewerId, viewerName, eventId: event.message_id, message: event.message.text };
 }
 
 export function chatMessage(message, userId) {
@@ -227,7 +230,13 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
             }
             const vote = chatVote(message, store.snapshot().poll, status.userId);
             if (vote) {
-              const result = await store.command(vote);
+              let result;
+              try { result = await store.command(vote); }
+              catch (error) {
+                // Validation or a poll replaced while the vote was queued is not a connection failure.
+                if (error instanceof PollError && (error.status === 400 || error.status === 409)) break;
+                throw error;
+              }
               if (result.outcome === 'counted' || result.outcome === 'changed') await queueAvatar(message.payload.event.chatter_user_id, vote.pollId, vote.eventId, version);
             }
             break;

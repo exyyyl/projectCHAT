@@ -10,15 +10,22 @@ export type ContestParticipant = {
   roles: ContestAudienceRole[]
   eligible: boolean
   excludedReason: "" | "manual" | "repeat"
+  guessCount?: number
 }
 
 export type WinnerMessage = { id: string; text: string; at: number }
+export type ContestGuess = { id: string; viewerId: string; name: string; text: string; at: number }
 
 export type Contest = {
   id: string
   status: "collecting" | "ready" | "winner" | "finished"
-  mode: "keyword" | "active"
+  mode: "keyword" | "active" | "number"
   keyword: string
+  numberMin: number | null
+  numberMax: number | null
+  winningNumber: number | null
+  guesses: ContestGuess[]
+  guessCount: number
   antiSpam: boolean
   allowedRoles: ContestAudienceRole[]
   duration: number
@@ -39,8 +46,10 @@ export type ContestState = {
 }
 
 export type ContestSetup = {
-  mode: "keyword" | "active"
+  mode: "keyword" | "active" | "number"
   keyword: string
+  numberMin: number
+  numberMax: number
   antiSpam: boolean
   allowedRoles: ContestAudienceRole[]
   duration: number

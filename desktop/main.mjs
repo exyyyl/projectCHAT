@@ -9,24 +9,17 @@ import { createProjectChatPluginCompiler } from './stream-dock/compiler.mjs'
 import { createStreamDockProcessAdapter } from './stream-dock/processes.mjs'
 import { createUpdateController } from './updater.mjs'
 import { loadDesktopPreferences, saveDesktopPreferences } from './preferences.mjs'
-import { createInputCapture } from './input-capture.mjs'
 import { loginItemQuery, loginItemUpdate, wasLaunchedAtLogin } from './startup.mjs'
+import { windowThemes } from './window-theme.mjs'
+import { createDesktopIpcHandler, isTrustedPanelUrl } from './security.mjs'
 
 const { autoUpdater } = updaterModule
 const preload = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 const developmentIcon = fileURLToPath(new URL('../build/icon-source.png', import.meta.url))
 const trayIconPath = fileURLToPath(new URL(process.platform === 'darwin' ? '../build/tray-icon-template.png' : '../build/tray-icon.png', import.meta.url))
-const windowThemes = {
-  lime: '#0b0d10',
-  violet: '#0f0d14',
-  ice: '#0a1116',
-  mono: '#050505',
-}
 let serverApp
 let mainWindow
 let streamDock
-let inputCapture
-let unsubscribeInputOverlay
 let tray
 let isQuitting = false
 let revealMainWindow
@@ -122,32 +115,12 @@ else {
   }
   const updates = createUpdateController({ autoUpdater, currentVersion: app.getVersion(), currentReleaseNotes, channel: desktopPreferences.updateChannel, isPackaged: app.isPackaged, updateUrl, emit: sendUpdate })
 
-  ipcMain.handle('desktop:get-info', () => ({ version: app.getVersion(), platform: process.platform, development: !app.isPackaged, update: updates.snapshot() }))
-  ipcMain.handle('updates:check', () => updates.check())
-  ipcMain.handle('updates:download', () => updates.download())
-  ipcMain.handle('updates:install', () => updates.install())
-
   try {
     trace('starting local server')
     serverApp = await createApp({
       dataDir: join(app.getPath('userData'), 'app-data'),
       allowedOrigins: developmentOrigins,
     })
-    inputCapture = createInputCapture({
-      emit: event => serverApp.inputOverlay.input(event),
-      status: state => serverApp.inputOverlay.setRuntime(state),
-      executable: app.isPackaged
-        ? join(process.resourcesPath, 'input-capture', 'projectCHAT.InputCapture.exe')
-        : resolve(app.getAppPath(), 'build', 'input-capture', 'projectCHAT.InputCapture.exe'),
-    })
-    let captureEnabled
-    const syncInputCapture = state => {
-      if (state.config.captureEnabled === captureEnabled) return
-      captureEnabled = state.config.captureEnabled
-      void inputCapture.setEnabled(captureEnabled)
-    }
-    unsubscribeInputOverlay = serverApp.inputOverlay.subscribe(syncInputCapture)
-    syncInputCapture(serverApp.inputOverlay.snapshot())
     const port = Number(process.env.PORT || 4317)
     const url = await serverApp.listen(port)
     const panelUrl = developmentPanelUrl || url
@@ -157,14 +130,14 @@ else {
       height: 860,
       minWidth: 920,
       minHeight: 680,
-      backgroundColor: '#090b0e',
+      backgroundColor: windowThemes.lime.color,
       autoHideMenuBar: true,
       show: false,
       title: 'Cue',
       titleBarStyle: 'hidden',
       ...(process.platform === 'darwin'
         ? { trafficLightPosition: { x: 13, y: 11 } }
-        : { titleBarOverlay: { color: windowThemes.lime, symbolColor: '#eef0f3', height: 40 } }),
+        : { titleBarOverlay: windowThemes.lime }),
       icon: app.isPackaged ? undefined : developmentIcon,
       webPreferences: {
         preload,
@@ -223,17 +196,19 @@ else {
       mainWindow.setSkipTaskbar(true)
       mainWindow.hide()
     })
-    const trusted = event => event.sender === mainWindow?.webContents
+    const secureHandler = createDesktopIpcHandler(() => mainWindow, panelUrl)
     const handleDesktop = (channel, handler) => {
-      ipcMain.handle(channel, async (event, ...args) => {
-        if (!trusted(event)) throw new Error('Недоверенный источник IPC.')
-        return handler(...args)
-      })
+      ipcMain.handle(channel, secureHandler(handler))
     }
+    handleDesktop('desktop:get-info', () => ({ version: app.getVersion(), platform: process.platform, development: !app.isPackaged, update: updates.snapshot() }))
+    handleDesktop('updates:check', () => updates.check())
+    handleDesktop('updates:download', () => updates.download())
+    handleDesktop('updates:install', () => updates.install())
     handleDesktop('desktop:theme:set', theme => {
       if (!Object.hasOwn(windowThemes, theme)) throw new Error('Неизвестная тема приложения.')
+      mainWindow.setBackgroundColor(windowThemes[theme].color)
       if (process.platform === 'win32') {
-        mainWindow.setTitleBarOverlay({ color: windowThemes[theme], symbolColor: '#eef0f3', height: 40 })
+        mainWindow.setTitleBarOverlay(windowThemes[theme])
       }
     })
     handleDesktop('desktop:preferences:get', preferencesSnapshot)
@@ -263,12 +238,7 @@ else {
       if ('updateChannel' in patch) updates.setChannel(desktopPreferences.updateChannel)
       return preferencesSnapshot()
     })
-    const handleStreamDock = (channel, handler) => {
-      ipcMain.handle(channel, async (event, ...args) => {
-        if (!trusted(event)) throw new Error('Недоверенный источник IPC.')
-        return handler(...args)
-      })
-    }
+    const handleStreamDock = handleDesktop
     handleStreamDock('stream-dock:status', () => streamDock.status())
     handleStreamDock('stream-dock:plugins', () => streamDock.listPlugins())
     handleStreamDock('stream-dock:icons', () => streamDock.listIcons())
@@ -314,11 +284,12 @@ else {
       if (/^https?:\/\//u.test(target)) void shell.openExternal(target)
       return { action: 'deny' }
     })
-    mainWindow.webContents.on('will-navigate', (event, target) => {
-      if (target.startsWith(url) || target.startsWith(panelUrl)) return
+    const restrictNavigation = (event, target) => {
+      if (isTrustedPanelUrl(target, panelUrl)) return
       event.preventDefault()
-      if (/^https?:\/\//u.test(target)) void shell.openExternal(target)
-    })
+    }
+    mainWindow.webContents.on('will-navigate', restrictNavigation)
+    mainWindow.webContents.on('will-redirect', restrictNavigation)
     mainWindow.once('ready-to-show', () => {
       if (startupTrayActive) {
         mainWindow.setSkipTaskbar(true)
@@ -350,8 +321,6 @@ else {
   })
   app.on('before-quit', () => {
     isQuitting = true
-    unsubscribeInputOverlay?.()
-    inputCapture?.stop()
     if (serverApp) void serverApp.close()
   })
 }

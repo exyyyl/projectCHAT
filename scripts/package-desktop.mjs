@@ -19,12 +19,6 @@ const streamDockIcons = spawnSync(process.execPath, ['scripts/generate-stream-do
 if (streamDockIcons.error) throw streamDockIcons.error
 if (streamDockIcons.status !== 0) process.exit(streamDockIcons.status || 1)
 
-if (platform === 'win') {
-  const inputCapture = spawnSync(process.execPath, ['scripts/build-input-capture.mjs'], { stdio: 'inherit' })
-  if (inputCapture.error) throw inputCapture.error
-  if (inputCapture.status !== 0) process.exit(inputCapture.status || 1)
-}
-
 const npmCli = process.env.npm_execpath
 if (!npmCli) throw new Error('Не удалось найти npm CLI. Запустите упаковку через npm run.')
 const panel = spawnSync(process.execPath, [npmCli, 'run', 'build:panel'], { stdio: 'inherit' })

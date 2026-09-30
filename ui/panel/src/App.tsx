@@ -4,15 +4,16 @@ import {
   Grid3X3,
   LayoutTemplate,
   ListChecks,
-  MousePointer2,
   PanelsTopLeft,
   Settings2,
+  CircleDashed,
 } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
+import { AnimatedSidebar } from "@/components/animated-sidebar"
 import { AppTitleBar } from "@/components/app-title-bar"
 import { ContestPage } from "@/components/contest-page"
-import { InputOverlayPage } from "@/components/input-overlay-page"
+import { DecisionWheelPage } from "@/components/decision-wheel-page"
 import { PollWorkspace } from "@/components/poll-workspace"
 import { PresetDialogs } from "@/components/preset-dialogs"
 import { PresetLibrary } from "@/components/preset-library"
@@ -21,7 +22,7 @@ import { StreamDockPage } from "@/components/stream-dock-page"
 import { TwitchAccount } from "@/components/twitch-account"
 import { WidgetPage } from "@/components/widget-page"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { ToastProvider, useToast } from "@/components/ui/toast"
+import { ToastProvider, ToastViewport, useToast } from "@/components/ui/toast"
 import { useContestController } from "@/hooks/use-contest-controller"
 import { usePollController } from "@/hooks/use-poll-controller"
 import { useDemoMode } from "@/hooks/use-demo-mode"
@@ -33,7 +34,6 @@ import {
   type WorkspaceTab,
 } from "@/domain/app-navigation"
 import type { PresetDialogState, Draft } from "@/domain/polls"
-import { SHOW_INPUT_OVERLAY } from "@/domain/release-features"
 
 const newTabItems = [
   {
@@ -57,21 +57,17 @@ const newTabItems = [
     icon: LayoutTemplate,
   },
   {
+    id: "decision-wheel",
+    label: "Рулетка",
+    description: "Что выбрать дальше",
+    icon: CircleDashed,
+  },
+  {
     id: "widget",
     label: "Виджеты",
     description: "Оформление для OBS",
     icon: PanelsTopLeft,
   },
-  ...(SHOW_INPUT_OVERLAY
-    ? [
-        {
-          id: "input-overlay" as const,
-          label: "Клавиши",
-          description: "Клавиатура и мышь для OBS",
-          icon: MousePointer2,
-        },
-      ]
-    : []),
   {
     id: "stream-dock",
     label: "Stream Dock",
@@ -177,6 +173,7 @@ function AppContent() {
         <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
           Подключение…
         </div>
+        <ToastViewport />
       </div>
     )
 
@@ -193,7 +190,7 @@ function AppContent() {
         onHistory={(offset) => dispatch({ type: "history", offset })}
       />
       <div className="app-body">
-        {!sidebarCollapsed && (
+        <AnimatedSidebar collapsed={sidebarCollapsed}>
           <AppSidebar
             view={view}
             connected={connected}
@@ -208,7 +205,7 @@ function AppContent() {
               />
             }
           />
-        )}
+        </AnimatedSidebar>
 
         <main className="app-content">
           {navigation.tabs.map((tab) => (
@@ -237,6 +234,7 @@ function AppContent() {
           }}
         />
       </div>
+      <ToastViewport />
     </div>
   )
 }
@@ -290,6 +288,11 @@ function TabWorkspace({
   if (!state || !draft) return null
   return (
     <>
+      {tab.visited.includes("decision-wheel") && (
+        <div className={view === "decision-wheel" ? "h-full" : "hidden"}>
+          <DecisionWheelPage />
+        </div>
+      )}
       {view === "new" && (
         <div className="new-tab-page">
           <div className="new-tab-lobby">
@@ -438,12 +441,6 @@ function TabWorkspace({
             onUpdate={(patch) => void controller.updateWidget(patch)}
             onSetOutput={(visible) => void controller.setOutput(visible)}
           />
-        </div>
-      )}
-
-      {SHOW_INPUT_OVERLAY && tab.visited.includes("input-overlay") && (
-        <div className={view === "input-overlay" ? "h-full" : "hidden"}>
-          <InputOverlayPage />
         </div>
       )}
 

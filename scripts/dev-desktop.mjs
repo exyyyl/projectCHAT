@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { createServer } from 'node:net'
 import { resolve } from 'node:path'
 import electron from 'electron'
@@ -12,12 +12,6 @@ let stopping = false
 let stopWatching = () => {}
 let desktop
 let restarting = false
-
-if (process.platform === 'win32') {
-  const capture = spawnSync(process.execPath, [resolve(root, 'scripts', 'build-input-capture.mjs')], { cwd: root, stdio: 'inherit' })
-  if (capture.error) throw capture.error
-  if (capture.status !== 0) process.exit(capture.status || 1)
-}
 
 const portAvailable = port => new Promise((resolvePort, reject) => {
   const server = createServer()

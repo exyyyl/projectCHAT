@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react"
 import {
   Gift,
+  CircleDashed,
   Grid3X3,
   LayoutTemplate,
   ListChecks,
-  MousePointer2,
   PanelsTopLeft,
   WifiOff,
   type LucideIcon,
@@ -12,7 +12,6 @@ import {
 
 import type { Contest } from "@/domain/contest"
 import type { Poll } from "@/domain/polls"
-import { SHOW_INPUT_OVERLAY } from "@/domain/release-features"
 import { cn } from "@/lib/utils"
 import {
   Tooltip,
@@ -31,23 +30,12 @@ type AppSidebarProps = {
   onNavigate: (view: AppView) => void
 }
 
-const pollNavigation = [
+const navigation = [
   { id: "polls", label: "Опросы", icon: ListChecks },
   { id: "presets", label: "Шаблоны", icon: LayoutTemplate },
   { id: "widget", label: "Виджеты", icon: PanelsTopLeft },
-] as const
-
-const secondaryNavigation = [
   { id: "contests", label: "Конкурсы", icon: Gift },
-  ...(SHOW_INPUT_OVERLAY
-    ? [
-        {
-          id: "input-overlay" as const,
-          label: "Клавиши",
-          icon: MousePointer2,
-        },
-      ]
-    : []),
+  { id: "decision-wheel", label: "Рулетка", icon: CircleDashed },
   { id: "stream-dock", label: "Stream Dock", icon: Grid3X3 },
 ] as const
 
@@ -61,31 +49,18 @@ export function AppSidebar({
 }: AppSidebarProps) {
   return (
     <aside className="app-sidebar">
-      <nav className="sidebar-navigation" aria-label="Разделы приложения">
-        <div
-          className="sidebar-primary"
-          role="group"
-          aria-label="Опросы, шаблоны и виджеты"
-        >
-          {pollNavigation.map((item) => (
-            <SidebarNavButton
-              key={item.id}
-              item={item}
-              active={view === item.id}
-              onClick={() => onNavigate(item.id)}
-            />
-          ))}
-        </div>
-        <div className="sidebar-secondary">
-          {secondaryNavigation.map((item) => (
-            <SidebarNavButton
-              key={item.id}
-              item={item}
-              active={view === item.id}
-              onClick={() => onNavigate(item.id)}
-            />
-          ))}
-        </div>
+      <nav
+        className="sidebar-navigation space-y-1"
+        aria-label="Разделы приложения"
+      >
+        {navigation.map((item) => (
+          <SidebarNavButton
+            key={item.id}
+            item={item}
+            active={view === item.id}
+            onClick={() => onNavigate(item.id)}
+          />
+        ))}
       </nav>
       <div className="sidebar-bottom">
         {!connected && (

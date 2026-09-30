@@ -83,15 +83,15 @@ test('unavailable app retries once per failure and stops retrying when disposed'
   assert.equal(sources.length, 2);
 });
 
-test('keyboard overlay receives new input snapshots after reconnecting', t => {
+test('event subscribers receive new snapshots after reconnecting', t => {
   let connection;
   t.after(() => connection?.close());
   const { sources } = browser(t);
   const states = [];
-  connection = connectEvents('/api/input-overlay/events', { input: state => states.push(state) });
+  connection = connectEvents('/api/example/events', { input: state => states.push(state) });
   sources[0].fail();
   t.mock.timers.tick(1000);
-  assert.equal(sources[1].url, '/api/input-overlay/events');
+  assert.equal(sources[1].url, '/api/example/events');
   sources[1].dispatchEvent(new MessageEvent('input', { data: JSON.stringify({ pressedKeys: ['W'] }) }));
   assert.deepEqual(states, [{ pressedKeys: ['W'] }]);
 });

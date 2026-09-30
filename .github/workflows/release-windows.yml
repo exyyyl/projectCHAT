@@ -103,12 +103,12 @@ jobs:
             gh release create $env:GITHUB_REF_NAME @assets `
               --verify-tag `
               --title "Cue $env:APP_VERSION" `
-              --generate-notes `
+              --notes-file build/release-notes.md `
               --prerelease
           } else {
             gh release create $env:GITHUB_REF_NAME @assets `
               --verify-tag `
               --title "Cue $env:APP_VERSION" `
-              --generate-notes `
+              --notes-file build/release-notes.md `
               --latest
           }

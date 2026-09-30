@@ -27,7 +27,6 @@ module.exports = {
   extraResources: [
     { from: 'build/update-config.json', to: 'update-config.json' },
     { from: 'build/stream-dock-plugins', to: 'stream-dock-plugins' },
-    ...(process.platform === 'win32' ? [{ from: 'build/input-capture', to: 'input-capture' }] : []),
   ],
   publish: {
     provider: 'generic',
