@@ -20,7 +20,7 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
   const store = await createStore(join(dataDir, 'state.json'), { now });
   const contest = await createContest(join(dataDir, 'contest.json'), { now });
   const chat = await createChatArchive(join(dataDir, 'chat.sqlite'), { now });
-  const twitch = await createTwitch({ filename: join(dataDir, 'twitch.json'), store, now, clientId: TWITCH_CLIENT_ID, onChatMessage: message => Promise.allSettled([message.kind === 'activity' ? Promise.resolve() : contest.chat(message), Promise.resolve().then(() => chat.add(message))]), ...twitchOptions });
+  const twitch = await createTwitch({ filename: join(dataDir, 'twitch.json'), store, now, clientId: TWITCH_CLIENT_ID, onChatModeration: (channelId, target) => chat.markDeleted(channelId, target), onChatMessage: message => Promise.allSettled([message.kind === 'activity' ? Promise.resolve() : contest.chat(message), Promise.resolve().then(() => chat.add(message))]), ...twitchOptions });
   const emotes = createChatEmotes({ twitch, now, ...emoteOptions });
   const streams = new Set();
   let allowedHosts;
@@ -39,6 +39,7 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
       const path = requestUrl.pathname;
       if (request.method === 'GET' && path === '/api/state') return json(response, 200, store.snapshot());
       if (request.method === 'GET' && path === '/api/twitch') return json(response, 200, twitch.snapshot());
+      if (request.method === 'GET' && path === '/api/twitch/stream') return json(response, 200, await twitch.stream());
       if (request.method === 'GET' && path === '/api/contest') return json(response, 200, contest.snapshot());
       if (request.method === 'GET' && path === '/api/chat/memo') return json(response, 200, { text: chat.memo() });
       if (request.method === 'GET' && path === '/api/chat/avatars') {
@@ -172,7 +173,7 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
         const result = await store.command(command);
         return json(response, 200, { ok: true, message: message || `Выбран шаблон «${result.outcome}»`, state: result.state });
       }
-      if (request.method === 'POST' && ['/api/command', '/api/twitch', '/api/contest', '/api/chat/notes', '/api/chat/memo', '/api/chat/send'].includes(path)) {
+      if (request.method === 'POST' && ['/api/command', '/api/twitch', '/api/contest', '/api/chat/notes', '/api/chat/memo', '/api/chat/send', '/api/chat/moderate'].includes(path)) {
         if (!request.headers['content-type']?.startsWith('application/json') || request.headers['x-poll-client'] !== 'panel') return json(response, 415, { error: 'Ожидается JSON-команда панели.' });
         let bytes = 0, text = '';
         for await (const chunk of request) {
@@ -184,10 +185,20 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
         try { command = JSON.parse(text); } catch { return json(response, 400, { error: 'Некорректный JSON.' }); }
         if (!command || typeof command !== 'object' || Array.isArray(command)) throw new PollError('Некорректная команда.');
         if (path === '/api/chat/memo') return json(response, 200, { text: chat.saveMemo(command.text) });
+        if (path === '/api/chat/moderate') {
+          const channelId = twitch.snapshot().userId;
+          requireThat(channelId && command.channelId === channelId, 'Аккаунт Twitch изменился. Обновите чат.', 409);
+          const target = chat.moderationTarget(channelId, command.messageId);
+          await twitch.moderate(command.action, target, command.duration);
+          chat.markDeleted(channelId, command.action === 'delete' ? { eventId: target.eventId } : { viewerId: target.viewerId });
+          return json(response, 200, { ok: true });
+        }
         if (path === '/api/chat/send') {
+          const channelId = twitch.snapshot().userId;
+          requireThat(command.channelId === undefined || command.channelId === channelId, 'Аккаунт Twitch изменился. Обновите чат.', 409);
           const sent = await twitch.sendMessage(command.text);
-          chat.add(sent);
-          return json(response, 200, { ok: true, eventId: sent.eventId });
+          const message = chat.addOutgoing(sent);
+          return json(response, 200, { ok: true, eventId: sent.eventId, message });
         }
         if (path === '/api/chat/notes') {
           const channelId = twitch.snapshot().userId;

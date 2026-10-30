@@ -5,7 +5,6 @@ export type AppView =
   | "widget"
   | "contests"
   | "decision-wheel"
-  | "stream-dock"
   | "settings"
 export type TabView = AppView | "new"
 export type WorkspaceTab = {

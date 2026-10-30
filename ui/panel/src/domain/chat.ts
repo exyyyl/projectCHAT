@@ -5,6 +5,7 @@ export type ChatBadgeAsset = { url: string; title: string }
 
 export type ChatMessage = {
   id: number
+  deleted?: boolean
   kind: "message" | "activity"
   activityType: string
   viewerId: string

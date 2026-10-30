@@ -1,0 +1,148 @@
+.chat-home-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.chat-moderation-trigger {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+}
+.chat-moderation-trigger:hover,
+.chat-moderation-trigger[data-state="open"] {
+  background: var(--surface-raised);
+  color: var(--foreground);
+}
+.chat-moderation-trigger svg {
+  width: 16px;
+  height: 16px;
+}
+.chat-moderation-help {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.chat-moderation-reconnect {
+  padding: 9px;
+  border-radius: 6px;
+  background: var(--surface-raised);
+  font-size: 12px;
+}
+.chat-moderation-row {
+  position: relative;
+  margin: 0 -9px;
+  overflow: hidden;
+  border-radius: 7px;
+  touch-action: pan-y;
+}
+.chat-moderation-row .chat-home-message {
+  position: relative;
+  margin: 0;
+  background: var(--panel);
+  transition:
+    transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+    background 0.15s;
+}
+.chat-moderation-row:hover .chat-home-message {
+  background: var(--surface-subtle);
+}
+.chat-moderation-row[data-dragging] {
+  user-select: none;
+}
+.chat-moderation-row[data-dragging] .chat-home-message {
+  transition: none;
+}
+.chat-moderation-row[data-dragging] .chat-moderation-actions {
+  display: none;
+}
+.chat-swipe-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  background: var(--surface-raised);
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.chat-swipe-label svg {
+  width: 16px;
+  height: 16px;
+}
+.chat-swipe-label[data-action="delete"] {
+  justify-content: flex-end;
+}
+.chat-moderation-row[data-ready] .chat-swipe-label[data-action="delete"] {
+  background: color-mix(in srgb, var(--destructive) 20%, var(--panel));
+  color: var(--foreground);
+}
+.chat-moderation-row[data-ready] .chat-swipe-label[data-action="timeout"] {
+  background: color-mix(in srgb, var(--brand) 16%, var(--panel));
+  color: var(--foreground);
+}
+.chat-moderation-actions {
+  position: absolute;
+  display: flex;
+  gap: 3px;
+  top: 3px;
+  right: 4px;
+  padding: 3px;
+  border-radius: 7px;
+  background: var(--surface-raised);
+  opacity: 0;
+  pointer-events: none;
+}
+.chat-moderation-actions button {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--muted-foreground);
+}
+.chat-moderation-actions button:hover {
+  color: var(--foreground);
+  background: var(--panel);
+}
+.chat-moderation-actions svg {
+  width: 14px;
+  height: 14px;
+}
+.chat-moderation-row:hover .chat-moderation-actions,
+.chat-moderation-row:focus-within .chat-moderation-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.chat-home-message[data-deleted] .chat-home-text {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+@media (hover: none) {
+  .chat-moderation-actions {
+    position: static;
+    justify-content: flex-end;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-moderation-row .chat-home-message {
+    transition: none;
+  }
+}
+.chat-moderation-row[data-enabled] .chat-home-message {
+  padding-right: 72px;
+}
+.chat-home-message[data-deleted] .chat-home-text { opacity: .6; font-style: normal; }
+.chat-home-deleted-label { display: inline-block; margin-left: 8px; color: var(--muted-foreground); font-size: 10px; font-style: normal; white-space: nowrap; }
+.chat-profile-deleted-text { opacity: .6; }
+.chat-home-delivery-state { margin-left: 8px; color: var(--muted-foreground); font-size: 10px; white-space: nowrap; }
+.chat-home-delivery-error { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 4px; color: var(--destructive); font-size: 11px; line-height: 1.5; }
+.chat-home-delivery-error button { color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; }
+.chat-moderation-row[data-delivery] .chat-home-message { padding-right: 72px; }
+.chat-home-composer button { transition: opacity .15s ease, background-color .15s ease; }

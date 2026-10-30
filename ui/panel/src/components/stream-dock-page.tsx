@@ -30,7 +30,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
-import { PageContainer, PageScroll } from "@/components/page-layout"
 import { useToast } from "@/components/ui/toast"
 
 const PROJECTCHAT_PLUGIN_ID = "ru.projectchat.control.sdplugin"
@@ -128,18 +127,16 @@ export function StreamDockPage() {
   }
 
   return (
-    <PageScroll aria-label="Stream Dock">
-      <PageContainer>
-        <div className="grid gap-4 xl:grid-cols-2">
-          <ProjectChatPluginCard
-            plugin={projectChatPlugin}
-            loading={loading}
-            operation={operation}
-            onRemove={() => setConfirmRemove(true)}
-          />
-          <TwitchPluginCard plugin={twitchPlugin} />
-        </div>
-      </PageContainer>
+    <>
+      <div className="grid gap-4 @min-[36rem]:grid-cols-2">
+        <ProjectChatPluginCard
+          plugin={projectChatPlugin}
+          loading={loading}
+          operation={operation}
+          onRemove={() => setConfirmRemove(true)}
+        />
+        <TwitchPluginCard plugin={twitchPlugin} />
+      </div>
 
       <AlertDialog
         open={confirmRemove}
@@ -170,7 +167,7 @@ export function StreamDockPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </PageScroll>
+    </>
   )
 }
 
@@ -188,7 +185,7 @@ function ProjectChatPluginCard({
   const installed = Boolean(plugin?.isInstalled)
 
   return (
-    <article className="flex min-h-[300px] flex-col overflow-hidden rounded-xl bg-surface-subtle ring-1 ring-border-subtle ring-inset">
+    <article className="flex min-h-[260px] flex-col overflow-hidden rounded-xl bg-background">
       <div className="flex items-start gap-4 p-5 pb-4 lg:p-6 lg:pb-4">
         <img
           src={projectChatIcon}
@@ -226,11 +223,7 @@ function ProjectChatPluginCard({
             <Trash2 /> Удалить
           </Button>
         )}
-        <Button
-          size="lg"
-          disabled
-          aria-disabled="true"
-        >
+        <Button size="lg" disabled aria-disabled="true">
           Установить
         </Button>
       </div>
@@ -241,8 +234,7 @@ function ProjectChatPluginCard({
 function DevelopmentBadge() {
   return (
     <span className="inline-flex h-5 items-center gap-1.5 rounded-md bg-foreground/6 px-2 text-[11px] font-medium text-muted-foreground ring-1 ring-border-subtle ring-inset">
-      <Clock3 className="size-3" />
-      В разработке
+      <Clock3 className="size-3" />В разработке
     </span>
   )
 }
@@ -250,7 +242,7 @@ function DevelopmentBadge() {
 function TwitchPluginCard({ plugin }: { plugin?: StreamDockPlugin }) {
   const installed = Boolean(plugin?.isInstalled)
   return (
-    <article className="flex min-h-[300px] flex-col overflow-hidden rounded-xl bg-surface-subtle ring-1 ring-border-subtle ring-inset">
+    <article className="flex min-h-[260px] flex-col overflow-hidden rounded-xl bg-background">
       <div className="flex items-start gap-4 p-5 pb-4 lg:p-6 lg:pb-4">
         <img src={twitchIcon} alt="" className="size-12 shrink-0 rounded-2xl" />
         <div className="min-w-0 flex-1">

@@ -1,3 +1,4 @@
+import { AnimatedSettings } from "@/components/animated-settings"
 import type { ContestOverlaySettings } from "../../../../public/contest-overlay-model.js"
 import { useId, useLayoutEffect, useRef, useState } from "react"
 import {
@@ -498,18 +499,20 @@ function PollWidgetEditor({
             </button>
           )}
         </div>
-        {panel && (
-          <div
-            className="widget-property-tray"
-            id={controlId + "-properties"}
-            role="region"
-            aria-label={
-              "Настройки: " + sections.find((item) => item[0] === panel)![1]
-            }
-          >
-            <div className="widget-property-grid">{properties[panel]}</div>
-          </div>
-        )}
+        <AnimatedSettings active={panel}>
+          {(shown) => (
+            <div
+              className="widget-property-tray"
+              id={controlId + "-properties"}
+              role="region"
+              aria-label={
+                "Настройки: " + sections.find((item) => item[0] === shown)![1]
+              }
+            >
+              <div className="widget-property-grid">{properties[shown]}</div>
+            </div>
+          )}
+        </AnimatedSettings>
       </div>
     </section>
   )

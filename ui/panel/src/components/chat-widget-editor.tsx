@@ -1,3 +1,4 @@
+import { AnimatedSettings } from "@/components/animated-settings"
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import type { CSSProperties } from "react"
 import {
@@ -464,7 +465,7 @@ export function ChatWidgetEditor({
                 <ChatOverlayView
                   messages={messages}
                   settings={
-                    source === "regular"
+                    source === "regular" && playing
                       ? settings
                       : { ...settings, hideAfter: 0 }
                   }
@@ -517,18 +518,20 @@ export function ChatWidgetEditor({
             </button>
           )}
         </div>
-        {panel && (
-          <div
-            className="widget-property-tray"
-            id={id + "-properties"}
-            role="region"
-            aria-label={
-              "Настройки: " + sections.find((item) => item[0] === panel)![1]
-            }
-          >
-            <div className="widget-property-grid">{properties[panel]}</div>
-          </div>
-        )}
+        <AnimatedSettings active={panel}>
+          {(shown) => (
+            <div
+              className="widget-property-tray"
+              id={id + "-properties"}
+              role="region"
+              aria-label={
+                "Настройки: " + sections.find((item) => item[0] === shown)![1]
+              }
+            >
+              <div className="widget-property-grid">{properties[shown]}</div>
+            </div>
+          )}
+        </AnimatedSettings>
       </div>
     </section>
   )

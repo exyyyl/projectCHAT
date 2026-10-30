@@ -1,4 +1,11 @@
-import { useId, type ReactNode, type ComponentPropsWithoutRef } from "react"
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  type ReactNode,
+  type ComponentPropsWithoutRef,
+} from "react"
+import { gsap } from "gsap"
 import { Check, ChevronDown, Plus } from "lucide-react"
 import { Select } from "radix-ui"
 import { Button } from "@/components/ui/button"
@@ -54,20 +61,73 @@ export function FormSegmented({
   onChange: (value: string) => void
 }) {
   const labelId = useId()
+  const root = useRef<HTMLDivElement>(null)
+  const indicator = useRef<HTMLSpanElement>(null)
+  const positioned = useRef(false)
+  useLayoutEffect(() => {
+    const group = root.current
+    const mark = indicator.current
+    if (!group || !mark) return
+    const place = (animate: boolean) => {
+      const selected = group.querySelector<HTMLElement>('[data-state="on"]')
+      if (!selected) {
+        gsap.set(mark, { opacity: 0 })
+        return
+      }
+      const vars = {
+        x: selected.offsetLeft,
+        y: selected.offsetTop,
+        width: selected.offsetWidth,
+        height: selected.offsetHeight,
+        opacity: 1,
+      }
+      gsap.to(mark, {
+        ...vars,
+        duration:
+          animate &&
+          positioned.current &&
+          !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+            ? 0.22
+            : 0,
+        ease: "power2.out",
+        overwrite: true,
+      })
+      positioned.current = true
+    }
+    place(true)
+    let width = group.clientWidth
+    const observer = new ResizeObserver(() => {
+      if (group.clientWidth !== width) {
+        width = group.clientWidth
+        place(false)
+      }
+    })
+    observer.observe(group)
+    return () => {
+      observer.disconnect()
+      gsap.killTweensOf(mark)
+    }
+  }, [value, options.length])
 
   return (
     <FormField label={label} labelId={labelId}>
       <ToggleGroup
+        ref={root}
         type="single"
         value={value}
         disabled={disabled}
         aria-labelledby={labelId}
         onValueChange={(next) => next && onChange(next)}
-        className="grid w-full rounded-lg border border-border-subtle bg-surface-subtle p-1"
+        className="form-segmented grid w-full rounded-lg border border-border-subtle bg-surface-subtle p-1"
         style={{
           gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
         }}
       >
+        <span
+          className="form-segmented-indicator"
+          ref={indicator}
+          aria-hidden="true"
+        />
         {options.map(([option, title]) => (
           <ToggleGroupItem key={option} value={option}>
             {title}

@@ -29,3 +29,8 @@
   .chat-looks-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .chat-look-art { height: 60px; }
 }
+
+/* The editor sample has a stable origin while the inspector changes height.
+   OBS keeps its original bottom-aligned flow. */
+.chat-canvas-preview { top: 16px; bottom: auto; }
+.chat-canvas-preview .cue-chat-overlay { justify-content: flex-start; }

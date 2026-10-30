@@ -9,7 +9,7 @@ const DEFAULT_MAX_MESSAGES = 100_000;
 const DEFAULT_MAX_BYTES = 128 * 1024 * 1024;
 const PAGE_SIZE = 50;
 const validId = value => typeof value === 'string' && /^[A-Za-z0-9:_-]{1,80}$/.test(value);
-const rowMessage = row => ({ id: row.id, kind: row.kind || 'message', activityType: row.activity_type || '', viewerId: row.viewer_id, viewerName: row.viewer_name, viewerLogin: row.viewer_login, roles: JSON.parse(row.roles), badges: JSON.parse(row.badges || '[]'), emotes: JSON.parse(row.emotes || '[]'), nameColor: row.name_color || '', cheerBits: row.cheer_bits || 0, text: row.text, sentAt: row.sent_at });
+const rowMessage = row => ({ id: row.id, deleted: Boolean(row.deleted), kind: row.kind || 'message', activityType: row.activity_type || '', viewerId: row.viewer_id, viewerName: row.viewer_name, viewerLogin: row.viewer_login, roles: JSON.parse(row.roles), badges: JSON.parse(row.badges || '[]'), emotes: JSON.parse(row.emotes || '[]'), nameColor: row.name_color || '', cheerBits: row.cheer_bits || 0, text: row.text, sentAt: row.sent_at });
 const validBadges = badges => (Array.isArray(badges) ? badges : []).slice(0, 20)
   .filter(badge => typeof badge?.setId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(badge.setId)
     && typeof badge?.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(badge.id))
@@ -63,6 +63,7 @@ export async function createChatArchive(filename, { maxMessages = DEFAULT_MAX_ME
   if (!columns.has('kind')) db.exec("ALTER TABLE messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'message'");
   if (!columns.has('activity_type')) db.exec("ALTER TABLE messages ADD COLUMN activity_type TEXT NOT NULL DEFAULT ''");
   if (!columns.has('cheer_bits')) db.exec('ALTER TABLE messages ADD COLUMN cheer_bits INTEGER NOT NULL DEFAULT 0');
+  if (!columns.has('deleted')) db.exec('ALTER TABLE messages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0');
   await chmod(filename, 0o600);
   const insert = db.prepare('INSERT OR IGNORE INTO messages (channel_id, event_id, viewer_id, viewer_name, viewer_login, roles, badges, emotes, name_color, kind, activity_type, cheer_bits, text, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
   const byEvent = db.prepare('SELECT * FROM messages WHERE channel_id = ? AND event_id = ?');
@@ -117,10 +118,43 @@ export async function createChatArchive(filename, { maxMessages = DEFAULT_MAX_ME
         for (const listener of listeners) { try { listener(message.broadcasterId, updated, true); } catch {} }
         return updated;
       }
-      const saved = { id: Number(result.lastInsertRowid), kind, activityType, viewerId: message.viewerId, viewerName: String(message.viewerName || '').slice(0, 50), viewerLogin: String(message.viewerLogin || '').slice(0, 50), roles, badges, emotes, nameColor, cheerBits, text, sentAt: Math.trunc(message.sentAt) };
+      const saved = { id: Number(result.lastInsertRowid), deleted: false, kind, activityType, viewerId: message.viewerId, viewerName: String(message.viewerName || '').slice(0, 50), viewerLogin: String(message.viewerLogin || '').slice(0, 50), roles, badges, emotes, nameColor, cheerBits, text, sentAt: Math.trunc(message.sentAt) };
       for (const listener of listeners) { try { listener(message.broadcasterId, saved, false); } catch {} }
       if (++insertsSincePrune >= pruneEvery) { insertsSincePrune = 0; prune(); }
       return saved;
+    },
+    addOutgoing(message) {
+      const existing = byEvent.get(message.broadcasterId, message.eventId);
+      // EventSub may beat the HTTP acknowledgement. Its text, badges, emotes
+      // and deletion flag are authoritative and must not be replaced.
+      if (existing) return rowMessage(existing);
+      const style = db.prepare("SELECT roles, badges, name_color FROM messages WHERE channel_id = ? AND viewer_id = ? AND kind = 'message' AND (badges <> '[]' OR name_color <> '') ORDER BY id DESC LIMIT 1").get(message.broadcasterId, message.viewerId);
+      return this.add({ ...message,
+        roles: style ? JSON.parse(style.roles) : message.roles,
+        badges: style ? JSON.parse(style.badges) : [{ setId: 'broadcaster', id: '1' }],
+        nameColor: style?.name_color || '',
+      });
+    },
+    moderationTarget(channelId, id) {
+      if (!validId(channelId) || !Number.isSafeInteger(id) || id < 1) throw new PollError('Некорректное сообщение.', 400);
+      const row = db.prepare("SELECT * FROM messages WHERE channel_id = ? AND id = ? AND kind = 'message' AND deleted = 0").get(channelId, id);
+      if (!row) throw new PollError('Сообщение уже удалено или недоступно.', 404);
+      return { broadcasterId: channelId, eventId: row.event_id, viewerId: row.viewer_id };
+    },
+    markDeleted(channelId, { eventId, viewerId } = {}) {
+      if (!validId(channelId)) return;
+      let condition = '', args = [];
+      if (eventId && validId(eventId)) { condition = ' AND event_id = ?'; args = [eventId]; }
+      else if (viewerId && validId(viewerId)) { condition = ' AND viewer_id = ?'; args = [viewerId]; }
+      else if (eventId || viewerId) return;
+      // Broadcast only rows that a live client can hold; update the full bounded
+      // archive in one statement rather than one SQLite write per message.
+      const rows = db.prepare(`SELECT * FROM messages WHERE channel_id = ? AND kind = 'message' AND deleted = 0${condition} AND id IN (SELECT id FROM messages WHERE channel_id = ? ORDER BY id DESC LIMIT 1000)`).all(channelId, ...args, channelId);
+      db.prepare(`UPDATE messages SET deleted = 1 WHERE channel_id = ? AND kind = 'message' AND deleted = 0${condition}`).run(channelId, ...args);
+      for (const row of rows) {
+        const message = { ...rowMessage(row), deleted: true };
+        for (const listener of listeners) { try { listener(channelId, message, true); } catch {} }
+      }
     },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     recent(channelId, before = Number.MAX_SAFE_INTEGER, limit = PAGE_SIZE) {

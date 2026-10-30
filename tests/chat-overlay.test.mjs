@@ -88,3 +88,8 @@ test('local preview samples cover maximum-width edge cases with valid native emo
   assert.match(createChatPreviewMessage(1, 'long').text, /\n/);
   assert.equal(createChatPreviewMessage(1, 'emotes').emotes.length, 40);
 });
+
+test('moderated messages disappear from OBS instead of resurfacing from the archive', () => {
+  const messages = [{ id: 1, sentAt: 1000 }, { id: 2, sentAt: 2000, deleted: true }];
+  assert.deepEqual(visibleChatMessages(messages, { ...chatOverlayDefaults, hideAfter: 0 }, 3000).map(item => item.id), [1]);
+});

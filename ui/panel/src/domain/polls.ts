@@ -102,6 +102,8 @@ export type TwitchState = {
   profileImageUrl?: string
   userId?: string
   canReadEmotes?: boolean
+  canDeleteMessages?: boolean
+  canTimeout?: boolean
   canSend?: boolean
   canShowShoutouts?: boolean
   error?: string

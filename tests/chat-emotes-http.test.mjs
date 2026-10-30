@@ -50,8 +50,12 @@ test('chat emotes route, send, EventSub enrichment and history work together wit
   assert.deepEqual(catalog.emotes.map(emote => emote.code), ['Kappa']);
   assert.equal(catalog.requiresReconnect, false);
   assert.doesNotMatch(JSON.stringify(catalog), /fake-token/);
+  app.chat.add({ broadcasterId: '123', viewerId: 'twitch:123', viewerName: 'Streamer', viewerLogin: 'streamer', roles: ['moderator'], badges: [{ setId: 'broadcaster', id: '1' }], nameColor: '#A1B2C3', eventId: 'previous-own-message', text: 'Earlier', sentAt: Date.now() - 1000 });
   const sent = await fetch(url + '/api/chat/send', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Poll-Client': 'panel' }, body: JSON.stringify({ text: '👋 Kappa' }) });
   assert.equal(sent.status, 200);
+  const delivered = await sent.json();
+  assert.deepEqual(delivered.message.badges, [{ setId: 'broadcaster', id: '1' }]);
+  assert.equal(delivered.message.nameColor, '#A1B2C3');
   assert.deepEqual(sentTexts, ['👋 Kappa']);
   await socket.message({ metadata: { message_type: 'notification', message_timestamp: new Date().toISOString() }, payload: { subscription: { type: 'channel.chat.message' }, event: { broadcaster_user_id: '123', chatter_user_id: '123', chatter_user_name: 'Streamer', chatter_user_login: 'streamer', message_id: 'sent-1', message: { text: '👋 Kappa', fragments: [{ type: 'text', text: '👋 ' }, { type: 'emote', text: 'Kappa', emote: { id: '25' } }] } } } });
   let liveEvents = '';
@@ -61,7 +65,7 @@ test('chat emotes route, send, EventSub enrichment and history work together wit
   assert.doesNotMatch(liveEvents, /Private streamer note/);
   overlayAbort.abort();
   const history = await (await fetch(url + '/api/chat/recent')).json();
-  assert.equal(history.messages.length, 1);
-  assert.deepEqual(history.messages[0].emotes, [{ start: 3, end: 8, id: '25' }]);
-  assert.equal(history.archive.count, 1);
+  assert.equal(history.messages.length, 2);
+  assert.deepEqual(history.messages[1].emotes, [{ start: 3, end: 8, id: '25' }]);
+  assert.equal(history.archive.count, 2);
 });

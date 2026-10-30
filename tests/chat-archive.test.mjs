@@ -124,3 +124,44 @@ test('emote metadata enriches sent messages, survives restart, and rejects unsaf
   assert.deepEqual(archive.profile('channel-a', 'twitch:one').messages.find(item => item.id === sent.id).emotes, emotes);
   archive.close();
 });
+
+test('moderation resolves local IDs in the current channel and tombstones survive enrichment and restart', async t => {
+  const filename = join(await mkdtemp(join(tmpdir(), 'cue-moderation-')), 'chat.sqlite');
+  let chat = await createChatArchive(filename);
+  const first = chat.add(message('1'));
+  chat.add(message('2'));
+  const other = chat.add(message('3', 'twitch:one', 'channel-b'));
+  assert.deepEqual(chat.moderationTarget('channel-a', first.id), { broadcasterId: 'channel-a', eventId: '1', viewerId: 'twitch:one' });
+  assert.throws(() => chat.moderationTarget('channel-a', other.id), /недоступно/);
+  assert.throws(() => chat.moderationTarget('channel-a', '../sql'), /Некорректное/);
+  const changes = [];
+  chat.subscribe((channelId, item, updated) => changes.push({ channelId, item, updated }));
+  chat.markDeleted('channel-a', { eventId: '1' });
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].updated, true);
+  assert.equal(changes[0].item.deleted, true);
+  assert.throws(() => chat.moderationTarget('channel-a', first.id), /удалено/);
+  chat.add({ ...message('1'), nameColor: '#123456' });
+  assert.equal(chat.recent('channel-a')[0].deleted, true);
+  chat.markDeleted('channel-a', { viewerId: 'twitch:one' });
+  assert.equal(chat.recent('channel-a').every(item => item.deleted), true);
+  assert.equal(chat.recent('channel-b')[0].deleted, false);
+  chat.markDeleted('channel-b', { eventId: '../invalid' });
+  assert.equal(chat.recent('channel-b')[0].deleted, false);
+  chat.close();
+  chat = await createChatArchive(filename);
+  t.after(() => chat.close());
+  assert.equal(chat.recent('channel-a').every(item => item.deleted), true);
+});
+
+test('a large timeout updates the complete archive but bounds live notifications', async t => {
+  const filename = join(await mkdtemp(join(tmpdir(), 'cue-bulk-moderation-')), 'chat.sqlite');
+  const chat = await createChatArchive(filename);
+  t.after(() => chat.close());
+  for (let index = 1; index <= 1100; index++) chat.add(message(String(index)));
+  let updates = 0;
+  chat.subscribe(() => updates++);
+  chat.markDeleted('channel-a', { viewerId: 'twitch:one' });
+  assert.equal(updates, 1000);
+  assert.equal(chat.recent('channel-a', 2)[0].deleted, true);
+});

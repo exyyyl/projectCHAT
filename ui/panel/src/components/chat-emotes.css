@@ -25,3 +25,4 @@
 .chat-emote-reconnect { padding: 10px 5px 2px; text-align: left; font-size: 11px; }
 .chat-emote-reconnect span { display: block; margin-top: 3px; color: var(--muted-foreground); }
 .chat-emote-picker button:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.chat-emote-hint { margin: 0; padding: 8px 12px; color: var(--muted-foreground); font-size: 11px; }

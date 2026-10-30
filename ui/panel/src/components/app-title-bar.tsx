@@ -5,7 +5,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Gift,
-  Grid3X3,
   LayoutTemplate,
   ListChecks,
   PanelLeftClose,
@@ -33,7 +32,6 @@ const sections: Partial<
   widget: { label: "Виджеты", icon: PanelsTopLeft },
   contests: { label: "Конкурсы", icon: Gift },
   "decision-wheel": { label: "Рулетка", icon: CircleDashed },
-  "stream-dock": { label: "Stream Dock", icon: Grid3X3 },
   new: { label: "Новая вкладка", icon: Plus },
   settings: { label: "Настройки", icon: Settings2 },
 }

@@ -9,7 +9,7 @@ export const chatOverlayRanges = Object.freeze({ fontSize: [14, 48], emoteSize: 
 export function resolveChatOverlay(input = {}) { return { ...chatOverlayDefaults, ...input }; }
 export function visibleChatMessages(messages, settings, now) {
   const cutoff = settings.hideAfter > 0 ? now - settings.hideAfter * 1000 : -Infinity;
-  return messages.filter(message => message.kind !== 'activity' && message.sentAt > cutoff).slice(-settings.maxMessages);
+  return messages.filter(message => !message.deleted && message.kind !== 'activity' && message.sentAt > cutoff).slice(-settings.maxMessages);
 }
 
 // Looks change appearance only. Output, emote preference and message lifetime stay independent.

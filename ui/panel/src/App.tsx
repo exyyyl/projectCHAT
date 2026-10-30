@@ -1,7 +1,6 @@
 import { useEffect, useReducer, useState } from "react"
 import {
   Gift,
-  Grid3X3,
   LayoutTemplate,
   ListChecks,
   PanelsTopLeft,
@@ -21,7 +20,6 @@ import { PollWorkspace } from "@/components/poll-workspace"
 import { PresetDialogs } from "@/components/preset-dialogs"
 import { PresetLibrary } from "@/components/preset-library"
 import { SettingsPage } from "@/components/settings-page"
-import { StreamDockPage } from "@/components/stream-dock-page"
 import { TwitchAccount } from "@/components/twitch-account"
 import { WidgetPage } from "@/components/widget-page"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -78,17 +76,11 @@ const newTabItems = [
     icon: PanelsTopLeft,
   },
   {
-    id: "stream-dock",
-    label: "Stream Dock",
-    description: "Управление со стримдека",
-    icon: Grid3X3,
-    wide: true,
-  },
-  {
     id: "settings",
     label: "Настройки",
     description: "Приложение и аккаунт",
     icon: Settings2,
+    wide: true,
   },
 ] satisfies ReadonlyArray<{
   id: AppView
@@ -113,7 +105,8 @@ function AppContent() {
   const controller = usePollController()
   const versionReady = Boolean(controller.state)
   useEffect(() => {
-    if (versionReady) void window.streamPollsDesktop?.markVersionHealthy?.().catch(() => {})
+    if (versionReady)
+      void window.streamPollsDesktop?.markVersionHealthy?.().catch(() => {})
   }, [versionReady])
   const contestController = useContestController()
   const showToast = useToast()
@@ -131,7 +124,9 @@ function AppContent() {
   const [sidebarManuallyCollapsed, setSidebarManuallyCollapsed] = useState(
     () => localStorage.getItem("vela-sidebar-collapsed") === "true"
   )
-  const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 1100px)").matches)
+  const [compact, setCompact] = useState(
+    () => window.matchMedia("(max-width: 1100px)").matches
+  )
   const [compactPinned, setCompactPinned] = useState(false)
   const [sidebarPeek, setSidebarPeek] = useState(false)
   const sidebarCollapsed = compact || sidebarManuallyCollapsed
@@ -240,19 +235,42 @@ function AppContent() {
             }
           />
         </AnimatedSidebar>
-        {sidebarCollapsed && <>
-          <div className="app-sidebar-edge" onMouseEnter={() => setSidebarPeek(true)} aria-hidden="true" />
-          <HoverSidebar open={hoverSidebarOpen} onClose={() => setSidebarPeek(false)}>
-            <AppSidebar
-              view={view}
-              connected={connected}
-              poll={poll}
-              contest={contestController.contest}
-              onNavigate={(next) => { navigate(next); setSidebarPeek(false); setCompactPinned(false) }}
-              account={<TwitchAccount state={twitch} active={view === "settings"} onClick={() => { navigate("settings"); setSidebarPeek(false); setCompactPinned(false) }} />}
+        {sidebarCollapsed && (
+          <>
+            <div
+              className="app-sidebar-edge"
+              onMouseEnter={() => setSidebarPeek(true)}
+              aria-hidden="true"
             />
-          </HoverSidebar>
-        </>}
+            <HoverSidebar
+              open={hoverSidebarOpen}
+              onClose={() => setSidebarPeek(false)}
+            >
+              <AppSidebar
+                view={view}
+                connected={connected}
+                poll={poll}
+                contest={contestController.contest}
+                onNavigate={(next) => {
+                  navigate(next)
+                  setSidebarPeek(false)
+                  setCompactPinned(false)
+                }}
+                account={
+                  <TwitchAccount
+                    state={twitch}
+                    active={view === "settings"}
+                    onClick={() => {
+                      navigate("settings")
+                      setSidebarPeek(false)
+                      setCompactPinned(false)
+                    }}
+                  />
+                }
+              />
+            </HoverSidebar>
+          </>
+        )}
 
         <main className="app-content">
           {navigation.tabs.map((tab) => (
@@ -335,7 +353,18 @@ function TabWorkspace({
   if (!state || !draft) return null
   return (
     <>
-      {view === "home" && <div className="h-full"><ChatHomePage key={twitch.userId || "offline"} emoteProvider={state.chatOverlay?.emoteProvider} twitch={twitch} poll={poll} contest={contestController.contest} onNavigate={navigate} /></div>}
+      {view === "home" && (
+        <div className="h-full">
+          <ChatHomePage
+            key={twitch.userId || "offline"}
+            emoteProvider={state.chatOverlay?.emoteProvider}
+            twitch={twitch}
+            poll={poll}
+            contest={contestController.contest}
+            onNavigate={navigate}
+          />
+        </div>
+      )}
       {tab.visited.includes("decision-wheel") && (
         <div className={view === "decision-wheel" ? "h-full" : "hidden"}>
           <DecisionWheelPage />
@@ -488,19 +517,17 @@ function TabWorkspace({
             draft={draft}
             widget={state.widget}
             contestOverlay={state.contestOverlay}
-            onUpdateContestOverlay={patch => void controller.updateContestOverlay(patch)}
+            onUpdateContestOverlay={(patch) =>
+              void controller.updateContestOverlay(patch)
+            }
             chatOverlay={state.chatOverlay}
             busy={busy}
-            onUpdateChatOverlay={(patch) => void controller.updateChatOverlay(patch)}
+            onUpdateChatOverlay={(patch) =>
+              void controller.updateChatOverlay(patch)
+            }
             onUpdate={(patch) => void controller.updateWidget(patch)}
             onSetOutput={(visible) => void controller.setOutput(visible)}
           />
-        </div>
-      )}
-
-      {tab.visited.includes("stream-dock") && (
-        <div className={view === "stream-dock" ? "h-full" : "hidden"}>
-          <StreamDockPage />
         </div>
       )}
     </>

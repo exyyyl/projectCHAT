@@ -46,10 +46,79 @@ async function fixture(t, customFetch, saved) {
   });
   t.after(() => twitch.close());
   return { twitch, store, sockets, calls, timers, filename, now: () => time,
+    elapse(delay) { time += delay; },
     async advance(delay) { const timer = [...timers].find(x => x.delay === delay); assert.ok(timer, `timer ${delay} exists`); timers.delete(timer); time += delay; await timer.fn(); },
     async authorize() { await twitch.command({ type: 'connect' }); await this.advance(5000); await sockets.at(-1).message(welcome('session1')); },
   };
 }
+test('stream overview uses the current account, deduplicates requests and caches for 30 seconds', async t => {
+  let count = 0, finish;
+  const f = await fixture(t, url => {
+    if (!url.includes('/helix/streams?')) return null;
+    count++;
+    assert.equal(new URL(url).searchParams.get('user_id'), '123');
+    return new Promise(resolve => { finish = () => resolve(response({ data: [{ user_id: '123', type: 'live', viewer_count: 1250, started_at: new Date(0).toISOString() }] })); });
+  });
+  assert.equal((await f.twitch.stream()).status, 'disconnected');
+  assert.equal(count, 0);
+  await f.authorize();
+  const first = f.twitch.stream(), second = f.twitch.stream();
+  assert.equal(count, 1);
+  finish();
+  assert.deepEqual(await first, await second);
+  const live = await f.twitch.stream();
+  assert.equal(live.status, 'live');
+  assert.equal(live.viewerCount, 1250);
+  assert.equal(live.startedAt, 0);
+  assert.doesNotMatch(JSON.stringify(live), /private-/);
+  f.elapse(29999);
+  assert.equal((await f.twitch.stream()).serverNow, f.now());
+  assert.equal(count, 1);
+  f.elapse(1);
+  const refreshed = f.twitch.stream();
+  assert.equal(count, 2);
+  finish();
+  await refreshed;
+  await f.twitch.command({ type: 'disconnect' });
+  assert.equal((await f.twitch.stream()).viewerCount, null);
+});
+test('only an empty successful Twitch response means offline; failures and malformed data are not cached', async t => {
+  let result = response({ data: [] });
+  const f = await fixture(t, url => url.includes('/helix/streams?') ? result : null);
+  await f.authorize();
+  const offline = await f.twitch.stream();
+  assert.equal(offline.status, 'offline');
+  assert.equal(offline.viewerCount, 0);
+  assert.equal(offline.startedAt, null);
+  f.elapse(30000);
+  for (const invalid of [response({}, 503), response({}), response({ data: [{ user_id: '999', type: 'live' }] }), response({ data: [{ user_id: '123', type: 'live', viewer_count: -1, started_at: 'invalid' }] })]) {
+    result = invalid;
+    await assert.rejects(f.twitch.stream(), PollError);
+  }
+  result = response({ data: [{ user_id: '123', type: 'live', viewer_count: 0, started_at: new Date(0).toISOString() }] });
+  assert.equal((await f.twitch.stream()).status, 'live');
+});
+test('stream responses from a disconnected session cannot populate the new session cache', async t => {
+  const releases = [];
+  let count = 0;
+  const f = await fixture(t, url => {
+    if (!url.includes('/helix/streams?')) return null;
+    count++;
+    return new Promise(resolve => releases.push(() => resolve(response({ data: [] }))));
+  });
+  await f.authorize();
+  const old = f.twitch.stream();
+  const rejected = assert.rejects(old, /отменено/);
+  await f.twitch.command({ type: 'disconnect' });
+  await f.authorize();
+  const next = f.twitch.stream();
+  releases[0]();
+  await rejected;
+  const duplicate = f.twitch.stream();
+  assert.equal(count, 2);
+  releases[1]();
+  assert.deepEqual(await next, await duplicate);
+});
 test('device login requests chat and shoutout scopes; public status never contains tokens', async t => {
   let pending = true;
   const f = await fixture(t, url => url.endsWith('/token') && pending ? (pending = false, response({ message: 'authorization_pending' }, 400)) : null);
@@ -67,12 +136,12 @@ test('device login requests chat and shoutout scopes; public status never contai
   assert.doesNotMatch(JSON.stringify(f.twitch.snapshot()), /private-access|private-refresh|private-device/);
   assert.equal('clientId' in f.twitch.snapshot(), false);
   const auth = f.calls.find(c => c.url.endsWith('/device'));
-  assert.equal(auth.options.body.get('scopes'), 'user:read:chat user:write:chat moderator:read:shoutouts user:read:emotes');
+  assert.equal(auth.options.body.get('scopes'), 'user:read:chat user:write:chat moderator:read:shoutouts user:read:emotes moderator:manage:chat_messages moderator:manage:banned_users');
   const sub = JSON.parse(f.calls.find(c => c.url.endsWith('/subscriptions')).options.body);
   assert.deepEqual(sub.condition, { broadcaster_user_id: '123', user_id: '123' });
   assert.equal(sub.transport.method, 'websocket');
   assert.deepEqual(f.calls.filter(c => c.url.endsWith('/subscriptions')).map(c => JSON.parse(c.options.body).type), [
-    'channel.chat.message', 'channel.chat.notification', 'channel.shoutout.create', 'channel.shoutout.receive',
+    'channel.chat.message', 'channel.chat.notification', 'channel.chat.message_delete', 'channel.chat.clear_user_messages', 'channel.chat.clear', 'channel.shoutout.create', 'channel.shoutout.receive',
   ]);
   assert.equal(JSON.parse(await readFile(f.filename, 'utf8')).refreshToken, 'private-refresh');
 });
@@ -90,7 +159,7 @@ test('chat send uses broadcaster identity and handles read-only legacy tokens', 
   await legacy.authorize();
   assert.equal(legacy.twitch.snapshot().canSend, false);
   assert.equal(legacy.twitch.snapshot().canShowShoutouts, false);
-  assert.deepEqual(legacy.calls.filter(c => c.url.endsWith('/subscriptions')).map(c => JSON.parse(c.options.body).type), ['channel.chat.message', 'channel.chat.notification']);
+  assert.deepEqual(legacy.calls.filter(c => c.url.endsWith('/subscriptions')).map(c => JSON.parse(c.options.body).type), ['channel.chat.message', 'channel.chat.notification', 'channel.chat.message_delete', 'channel.chat.clear_user_messages', 'channel.chat.clear']);
   await assert.rejects(legacy.twitch.sendMessage('Привет'), /Переподключите Twitch/);
 });
 test('real chat counts while hidden, deduplicates and excludes shared-channel and old messages', async t => {
@@ -174,14 +243,14 @@ test('Twitch session migration keeps old connection until welcome without resubs
   assert.equal(f.sockets.length, 2); assert.equal(old.closed, undefined);
   await f.sockets[1].message(welcome('session2'));
   assert.equal(old.closed, true); assert.equal(f.twitch.snapshot().phase, 'connected');
-  assert.equal(f.calls.filter(c => c.url.endsWith('/subscriptions')).length, 4);
+  assert.equal(f.calls.filter(c => c.url.endsWith('/subscriptions')).length, 7);
 });
 test('network loss resubscribes, reports gap, and disconnect cancels retries', async t => {
   const f = await fixture(t); await f.authorize();
   f.sockets[0].close(); assert.equal(f.twitch.snapshot().phase, 'reconnecting');
   await f.advance(1000);
   await f.sockets[1].message(welcome('fresh-session'));
-  assert.equal(f.calls.filter(c => c.url.endsWith('/subscriptions')).length, 8);
+  assert.equal(f.calls.filter(c => c.url.endsWith('/subscriptions')).length, 14);
   assert.equal(f.twitch.snapshot().phase, 'connected');
   assert.ok(f.twitch.snapshot().lastGapAt);
   f.sockets[1].close();
@@ -315,4 +384,36 @@ test('sending emoji and emote codes preserves text including joined Unicode emoj
   assert.equal(sent.text, text);
   assert.equal(JSON.parse(f.calls.find(call => call.url.endsWith('/helix/chat/messages')).options.body).message, text);
   await assert.rejects(f.twitch.sendMessage('hi\u202E'), /500 символов/);
+});
+
+test('moderation uses authorized broadcaster identity, scoped permissions and an explicit finite timeout', async t => {
+  const f = await fixture(t, (url, options) => {
+    if (url.endsWith('/validate')) return response({ ...account, scopes: [...account.scopes, 'moderator:manage:chat_messages', 'moderator:manage:banned_users'] });
+    if (url.includes('/helix/moderation/chat?')) return new Response(null, { status: 204 });
+    if (url.includes('/helix/moderation/bans?')) return response({ data: [] });
+  });
+  await f.authorize();
+  const target = { broadcasterId: '123', viewerId: 'twitch:456', eventId: 'message-uuid' };
+  assert.equal(f.twitch.snapshot().canDeleteMessages, true);
+  assert.equal(f.twitch.snapshot().canTimeout, true);
+  await f.twitch.moderate('delete', target);
+  const deletion = f.calls.find(c => c.url.includes('/moderation/chat?'));
+  assert.equal(deletion.options.method, 'DELETE');
+  assert.equal(new URL(deletion.url).searchParams.get('broadcaster_id'), '123');
+  assert.equal(new URL(deletion.url).searchParams.get('moderator_id'), '123');
+  assert.equal(new URL(deletion.url).searchParams.get('message_id'), 'message-uuid');
+  await f.twitch.moderate('timeout', target, 600);
+  const timeout = f.calls.find(c => c.url.includes('/moderation/bans?'));
+  assert.deepEqual(JSON.parse(timeout.options.body), { data: { user_id: '456', duration: 600 } });
+  const calls = f.calls.length;
+  await assert.rejects(f.twitch.moderate('timeout', target), /тайм-аут/);
+  await assert.rejects(f.twitch.moderate('timeout', target, 0), /тайм-аут/);
+  await assert.rejects(f.twitch.moderate('timeout', target, 1209601), /тайм-аут/);
+  await assert.rejects(f.twitch.moderate('ban', target), /Неизвестное/);
+  await assert.rejects(f.twitch.moderate('delete', { ...target, broadcasterId: '999' }), /Некорректное/);
+  await assert.rejects(f.twitch.moderate('timeout', { ...target, viewerId: 'twitch:123' }, 60), /отстранить себя/);
+  assert.equal(f.calls.length, calls);
+  const legacy = await fixture(t); await legacy.authorize();
+  await assert.rejects(legacy.twitch.moderate('delete', target), /Переподключите/);
+  await assert.rejects(legacy.twitch.moderate('timeout', target, 600), /Переподключите/);
 });

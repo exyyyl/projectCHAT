@@ -6,6 +6,7 @@ import { Check, Download, FileUp } from "lucide-react"
 import { type AppTheme, useTheme } from "@/components/theme-provider"
 import { TwitchSettings } from "@/components/twitch-settings"
 import { UpdateSettings } from "@/components/update-control"
+import { StreamDockPage } from "@/components/stream-dock-page"
 import { Button } from "@/components/ui/button"
 import { FormSwitch } from "@/components/form-controls"
 import { useToast } from "@/components/ui/toast"
@@ -249,6 +250,9 @@ export function SettingsPage({
               </p>
             )}
           </SettingsBlock>
+          <SettingsBlock title="Stream Dock" full>
+            <StreamDockPage />
+          </SettingsBlock>
           <SettingsBlock title="О Cue" action={<TelegramLink />}>
             <ProjectInfo />
           </SettingsBlock>
@@ -343,18 +347,20 @@ function ThemeSettings() {
 function SettingsBlock({
   title,
   wide,
+  full,
   action,
   children,
 }: {
   title: string
   wide?: boolean
+  full?: boolean
   action?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
     <section
       aria-label={title}
-      className={`min-w-0 rounded-xl bg-surface-subtle p-5 ${wide ? "grid gap-4 lg:col-span-2 lg:grid-cols-[9rem_minmax(0,1fr)] lg:gap-6" : "space-y-4"}`}
+      className={`min-w-0 rounded-xl bg-surface-subtle p-5 ${wide ? "grid gap-4 lg:col-span-2 lg:grid-cols-[9rem_minmax(0,1fr)] lg:gap-6" : "space-y-4"} ${full ? "lg:col-span-2" : ""}`}
     >
       <div className="flex min-h-5 items-center justify-between gap-3">
         <h2 className="text-sm font-medium">{title}</h2>

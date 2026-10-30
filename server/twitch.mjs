@@ -9,7 +9,9 @@ const READ_SCOPE = 'user:read:chat';
 const WRITE_SCOPE = 'user:write:chat';
 const SHOUTOUT_SCOPE = 'moderator:read:shoutouts';
 const EMOTE_SCOPE = 'user:read:emotes';
-const SCOPE = `${READ_SCOPE} ${WRITE_SCOPE} ${SHOUTOUT_SCOPE} ${EMOTE_SCOPE}`;
+const DELETE_SCOPE = 'moderator:manage:chat_messages';
+const TIMEOUT_SCOPE = 'moderator:manage:banned_users';
+const SCOPE = `${READ_SCOPE} ${WRITE_SCOPE} ${SHOUTOUT_SCOPE} ${EMOTE_SCOPE} ${DELETE_SCOPE} ${TIMEOUT_SCOPE}`;
 const pauseError = () => new PollError('Подключение отменено.', 409);
 const chatColor = value => typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value) ? value : '';
 const cleanChatText = value => typeof value === 'string' ? value.normalize('NFKC').replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, 500) : '';
@@ -124,14 +126,15 @@ export function chatActivity(message, userId) {
   return { broadcasterId: userId, ...actor, eventId: `activity:${rawId}`, kind: 'activity', activityType, roles: [], badges: [], nameColor: chatColor(event.color), text, sentAt };
 }
 
-export async function createTwitch({ filename, store, clientId, onChatMessage, fetcher = fetch, Socket = WebSocket, now = Date.now, later = setTimeout, cancel = clearTimeout }) {
+export async function createTwitch({ filename, store, clientId, onChatMessage, onChatModeration, fetcher = fetch, Socket = WebSocket, now = Date.now, later = setTimeout, cancel = clearTimeout }) {
   if (typeof clientId !== 'string' || !/^[a-zA-Z0-9]{10,100}$/.test(clientId)) throw new Error('Не настроен Client ID приложения Twitch.');
-  let credentials = {}, status = { phase: 'disconnected', login: '', displayName: '', profileImageUrl: '', userId: '', canSend: false, canShowShoutouts: false, canReadEmotes: false, error: '', device: null, lastGapAt: null };
+  let credentials = {}, status = { phase: 'disconnected', login: '', displayName: '', profileImageUrl: '', userId: '', canSend: false, canShowShoutouts: false, canReadEmotes: false, canDeleteMessages: false, canTimeout: false, error: '', device: null, lastGapAt: null };
   let epoch = 0, stopped = false, timer, maintenance, retry, retryCount = 0;
   let pending = null, currentSocket = null, work = Promise.resolve(), disk = Promise.resolve();
   const sockets = new Set(), listeners = new Set();
   const avatarCache = new Map(), avatarQueue = new Map();
   let badgeCache = { channelId: '', expiresAt: 0, badges: {} }, badgeRequest = null;
+  let streamCache = null, streamRequest = null;
   let avatarTimer = null;
   try {
     const saved = JSON.parse(await readFile(filename, 'utf8'));
@@ -157,6 +160,7 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
     epoch++; cancel(timer); cancel(maintenance); cancel(retry); cancel(avatarTimer); timer = maintenance = retry = avatarTimer = null;
     avatarQueue.clear();
     badgeCache = { channelId: '', expiresAt: 0, badges: {} }; badgeRequest = null;
+    streamCache = streamRequest = null;
     pending = null; currentSocket = null;
     for (const entry of [...sockets]) { sockets.delete(entry); cancel(entry.watchdog); entry.ws.close(); }
   }
@@ -239,7 +243,7 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
       profile = Array.isArray(users.data) ? users.data.find(user => user?.id === account.user_id) : null;
     } catch { ensure(version); }
     const image = typeof profile?.profile_image_url === 'string' && profile.profile_image_url.startsWith('https://') ? profile.profile_image_url : '';
-    update({ userId: account.user_id, login: account.login, displayName: typeof profile?.display_name === 'string' ? profile.display_name : account.login, profileImageUrl: image, canSend: account.scopes.includes(WRITE_SCOPE), canShowShoutouts: account.scopes.includes(SHOUTOUT_SCOPE), canReadEmotes: account.scopes.includes(EMOTE_SCOPE) });
+    update({ userId: account.user_id, login: account.login, displayName: typeof profile?.display_name === 'string' ? profile.display_name : account.login, profileImageUrl: image, canSend: account.scopes.includes(WRITE_SCOPE), canShowShoutouts: account.scopes.includes(SHOUTOUT_SCOPE), canReadEmotes: account.scopes.includes(EMOTE_SCOPE), canDeleteMessages: account.scopes.includes(DELETE_SCOPE), canTimeout: account.scopes.includes(TIMEOUT_SCOPE) });
     if (account.expires_in < 300) await refresh(version);
     cancel(maintenance);
     maintenance = later(() => serial(async () => {
@@ -294,7 +298,7 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
               });
               const chatCondition = { broadcaster_user_id: status.userId, user_id: status.userId };
               await subscribe('channel.chat.message', chatCondition);
-              const optional = [subscribe('channel.chat.notification', chatCondition)];
+              const optional = [subscribe('channel.chat.notification', chatCondition), ...['channel.chat.message_delete', 'channel.chat.clear_user_messages', 'channel.chat.clear'].map(type => subscribe(type, chatCondition))];
               if (status.canShowShoutouts) {
                 const shoutoutCondition = { broadcaster_user_id: status.userId, moderator_user_id: status.userId };
                 optional.push(subscribe('channel.shoutout.create', shoutoutCondition), subscribe('channel.shoutout.receive', shoutoutCondition));
@@ -307,6 +311,13 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
             retryCount = 0; update({ phase: 'connected', error: '', device: null }); break;
           }
           case 'notification': {
+            const event = message.payload?.event;
+            const type = message.payload?.subscription?.type;
+            if (event?.broadcaster_user_id === status.userId && onChatModeration) {
+              if (type === 'channel.chat.message_delete' && typeof event.message_id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(event.message_id)) onChatModeration(status.userId, { eventId: event.message_id });
+              if (type === 'channel.chat.clear_user_messages' && typeof event.target_user_id === 'string' && /^[0-9]{1,30}$/.test(event.target_user_id)) onChatModeration(status.userId, { viewerId: `twitch:${event.target_user_id}` });
+              if (type === 'channel.chat.clear') onChatModeration(status.userId, {});
+            }
             const chat = chatMessage(message, status.userId);
             if (chat && onChatMessage) {
               try { await onChatMessage(chat); } catch { /* other chat tools must not interrupt Twitch */ }
@@ -354,7 +365,56 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
   }
   return {
     snapshot, subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+    async stream() {
+      const channelId = status.userId;
+      if (!channelId || !credentials.accessToken) return { channelId: '', status: 'disconnected', viewerCount: null, startedAt: null, checkedAt: now(), serverNow: now() };
+      if (streamCache?.channelId === channelId && now() - streamCache.checkedAt < 30000) return { ...streamCache, serverNow: now() };
+      if (streamRequest) return streamRequest;
+      const version = epoch;
+      const pendingStream = (async () => {
+        const response = await request(`https://api.twitch.tv/helix/streams?${new URLSearchParams({ user_id: channelId })}`, {
+          headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': clientId },
+        });
+        ensure(version);
+        if (!Array.isArray(response.data)) throw new PollError('Не удалось получить статус эфира Twitch.', 502);
+        const live = response.data.find(stream => stream?.user_id === channelId && stream.type === 'live');
+        if (response.data.length && !live) throw new PollError('Некорректные данные эфира Twitch.', 502);
+        const startedAt = live ? Date.parse(live.started_at) : null;
+        if (live && (!Number.isFinite(startedAt) || !Number.isSafeInteger(live.viewer_count) || live.viewer_count < 0)) throw new PollError('Некорректные данные эфира Twitch.', 502);
+        streamCache = { channelId, status: live ? 'live' : 'offline', viewerCount: live ? live.viewer_count : 0, startedAt, checkedAt: now() };
+        return { ...streamCache, serverNow: now() };
+      })();
+      streamRequest = pendingStream;
+      try { return await pendingStream; } finally { if (streamRequest === pendingStream) streamRequest = null; }
+    },
+    async moderate(action, target, duration) {
+      const version = epoch;
+      if (status.phase !== 'connected') throw new PollError('Чат Twitch пока не подключён.', 409);
+      if (!['delete', 'timeout'].includes(action)) throw new PollError('Неизвестное действие модерации.', 400);
+      if (action === 'delete' ? !status.canDeleteMessages : !status.canTimeout) throw new PollError('Переподключите Twitch, чтобы разрешить модерацию чата.', 409);
+      const channelId = status.userId;
+      if (target?.broadcasterId !== channelId || !/^twitch:[0-9]{1,30}$/.test(target?.viewerId || '') || !/^[A-Za-z0-9_-]{1,80}$/.test(target?.eventId || '')) throw new PollError('Некорректное сообщение Twitch.', 400);
+      const viewerId = target.viewerId.slice(7);
+      if (action === 'timeout' && viewerId === channelId) throw new PollError('Нельзя отстранить себя от чата.', 400);
+      if (action === 'timeout' && (!Number.isInteger(duration) || duration < 1 || duration > 1209600)) throw new PollError('Укажите тайм-аут от 1 секунды до 14 дней.', 400);
+      const query = new URLSearchParams({ broadcaster_id: channelId, moderator_id: channelId });
+      if (action === 'delete') query.set('message_id', target.eventId);
+      try {
+        await request(`https://api.twitch.tv/helix/moderation/${action === 'delete' ? 'chat' : 'bans'}?${query}`, {
+          method: action === 'delete' ? 'DELETE' : 'POST',
+          headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': clientId, 'Content-Type': 'application/json' },
+          ...(action === 'timeout' ? { body: JSON.stringify({ data: { user_id: viewerId, duration } }) } : {}),
+        });
+      } catch (error) {
+        if (error.remoteStatus === 429) throw new PollError('Слишком много действий. Подождите немного.', 429);
+        if (error.remoteStatus === 400) throw new PollError(action === 'delete' && viewerId === channelId ? 'Публичный API Twitch не разрешает удалять сообщения владельца канала. Удалите сообщение в чате Twitch.' : 'Twitch отклонил действие: сообщение устарело или пользователя нельзя отстранить.', 400);
+        throw error;
+      }
+      ensure(version);
+    },
     async sendMessage(rawText) {
+      const version = epoch;
+      const identity = { userId: status.userId, displayName: status.displayName, login: status.login };
       if (status.phase !== 'connected') throw new PollError('Чат Twitch пока не подключён.', 409);
       if (!status.canSend) throw new PollError('Переподключите Twitch, чтобы разрешить отправку сообщений.', 409);
       if (typeof rawText !== 'string' || !rawText.trim() || rawText.length > 500 || /[\p{Cc}\p{Cf}]/u.test(rawText.replace(/\u200d/g, ''))) throw new PollError('Сообщение должно содержать от 1 до 500 символов.', 400);
@@ -370,9 +430,10 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
         if (error.remoteStatus === 429) throw new PollError('Слишком много сообщений. Подождите немного.', 429);
         throw error;
       }
+      ensure(version);
       const sent = result?.data?.[0];
       if (!sent?.is_sent || typeof sent.message_id !== 'string' || !sent.message_id) throw new PollError(sent?.drop_reason?.message || 'Twitch не отправил сообщение.', 409);
-      return { broadcasterId: status.userId, viewerId: `twitch:${status.userId}`, viewerName: status.displayName || status.login, viewerLogin: status.login, roles: ['moderator'], eventId: sent.message_id, text, sentAt: now() };
+      return { broadcasterId: identity.userId, viewerId: `twitch:${identity.userId}`, viewerName: identity.displayName || identity.login, viewerLogin: identity.login, roles: ['moderator'], eventId: sent.message_id, text, sentAt: now() };
     },
     async avatars(viewerIds) {
       if (!status.userId || !credentials.accessToken) return {};
@@ -451,11 +512,11 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
     command(command) { return serial(async () => {
       if (command.type === 'disconnect') {
         reset(); credentials = {}; await persist();
-        update({ phase: 'disconnected', userId: '', login: '', displayName: '', profileImageUrl: '', canSend: false, canShowShoutouts: false, canReadEmotes: false, device: null, error: '', lastGapAt: null });
+        update({ phase: 'disconnected', userId: '', login: '', displayName: '', profileImageUrl: '', canSend: false, canShowShoutouts: false, canReadEmotes: false, canDeleteMessages: false, canTimeout: false, device: null, error: '', lastGapAt: null });
       } else if (command.type === 'connect') {
         reset(); const version = epoch;
         credentials = {}; await persist();
-        update({ phase: 'connecting', userId: '', login: '', displayName: '', profileImageUrl: '', canSend: false, canShowShoutouts: false, canReadEmotes: false, device: null, error: '', lastGapAt: null });
+        update({ phase: 'connecting', userId: '', login: '', displayName: '', profileImageUrl: '', canSend: false, canShowShoutouts: false, canReadEmotes: false, canDeleteMessages: false, canTimeout: false, device: null, error: '', lastGapAt: null });
         try {
           const device = await form('device', { client_id: clientId, scopes: SCOPE }); ensure(version);
           const uri = new URL(device.verification_uri);

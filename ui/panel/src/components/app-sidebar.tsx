@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from "react"
 import {
   Gift,
   CircleDashed,
-  Grid3X3,
   LayoutTemplate,
   ListChecks,
   PanelsTopLeft,
@@ -38,7 +37,6 @@ const navigation = [
   { id: "widget", label: "Виджеты", icon: PanelsTopLeft },
   { id: "contests", label: "Конкурсы", icon: Gift },
   { id: "decision-wheel", label: "Рулетка", icon: CircleDashed },
-  { id: "stream-dock", label: "Stream Dock", icon: Grid3X3 },
 ] as const
 
 export function AppSidebar({

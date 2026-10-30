@@ -1038,3 +1038,8 @@ summary::-webkit-details-marker {
     flex: 1;
   }
 }
+.form-segmented { position: relative; isolation: isolate; }
+.form-segmented-indicator { position: absolute; left: 0; top: 0; z-index: -1; border-radius: 6px; background: var(--muted); pointer-events: none; }
+.form-segmented > button { transition: color .16s ease; }
+.form-segmented > button[data-state="on"], .form-segmented > button[data-state="on"]:hover { background: transparent; }
+@media (prefers-reduced-motion: reduce) { .form-segmented > button { transition: none; } }

@@ -1,7 +1,7 @@
 {
   "name": "projectchat",
   "productName": "Cue",
-  "version": "0.8.3-beta.1",
+  "version": "0.8.3-beta.2",
   "private": true,
   "type": "module",
   "main": "desktop/main.mjs",
