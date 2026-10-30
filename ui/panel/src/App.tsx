@@ -7,12 +7,15 @@ import {
   PanelsTopLeft,
   Settings2,
   CircleDashed,
+  MessageCircle,
 } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { AnimatedSidebar } from "@/components/animated-sidebar"
+import { HoverSidebar } from "@/components/hover-sidebar"
 import { AppTitleBar } from "@/components/app-title-bar"
 import { ContestPage } from "@/components/contest-page"
+import { ChatHomePage } from "@/components/chat-home-page"
 import { DecisionWheelPage } from "@/components/decision-wheel-page"
 import { PollWorkspace } from "@/components/poll-workspace"
 import { PresetDialogs } from "@/components/preset-dialogs"
@@ -36,6 +39,12 @@ import {
 import type { PresetDialogState, Draft } from "@/domain/polls"
 
 const newTabItems = [
+  {
+    id: "home",
+    label: "Главная",
+    description: "Чат и зрители",
+    icon: MessageCircle,
+  },
   {
     id: "polls",
     label: "Опросы",
@@ -102,6 +111,10 @@ export function App() {
 
 function AppContent() {
   const controller = usePollController()
+  const versionReady = Boolean(controller.state)
+  useEffect(() => {
+    if (versionReady) void window.streamPollsDesktop?.markVersionHealthy?.().catch(() => {})
+  }, [versionReady])
   const contestController = useContestController()
   const showToast = useToast()
   const { enabled: demoEnabled } = useDemoMode()
@@ -115,14 +128,35 @@ function AppContent() {
   )!
   const view = activeTab.history[activeTab.position]
   const navigate = (next: AppView) => dispatch({ type: "navigate", view: next })
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+  const [sidebarManuallyCollapsed, setSidebarManuallyCollapsed] = useState(
     () => localStorage.getItem("vela-sidebar-collapsed") === "true"
   )
+  const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 1100px)").matches)
+  const [compactPinned, setCompactPinned] = useState(false)
+  const [sidebarPeek, setSidebarPeek] = useState(false)
+  const sidebarCollapsed = compact || sidebarManuallyCollapsed
+  const hoverSidebarOpen = sidebarCollapsed && (sidebarPeek || compactPinned)
   const toggleSidebar = () => {
-    const next = !sidebarCollapsed
+    if (compact) {
+      setCompactPinned((current) => !current)
+      setSidebarPeek(false)
+      return
+    }
+    const next = !sidebarManuallyCollapsed
     localStorage.setItem("vela-sidebar-collapsed", String(next))
-    setSidebarCollapsed(next)
+    setSidebarManuallyCollapsed(next)
+    setSidebarPeek(false)
   }
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1100px)")
+    const update = () => {
+      setCompact(media.matches)
+      setCompactPinned(false)
+      setSidebarPeek(false)
+    }
+    media.addEventListener("change", update)
+    return () => media.removeEventListener("change", update)
+  }, [])
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return
@@ -167,7 +201,7 @@ function AppContent() {
     return (
       <div className="app-shell">
         <AppTitleBar
-          sidebarCollapsed={sidebarCollapsed}
+          sidebarCollapsed={sidebarCollapsed && !compactPinned}
           onToggleSidebar={toggleSidebar}
         />
         <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -180,7 +214,7 @@ function AppContent() {
   return (
     <div className="app-shell">
       <AppTitleBar
-        sidebarCollapsed={sidebarCollapsed}
+        sidebarCollapsed={sidebarCollapsed && !compactPinned}
         onToggleSidebar={toggleSidebar}
         tabs={navigation.tabs}
         activeId={navigation.activeId}
@@ -206,6 +240,19 @@ function AppContent() {
             }
           />
         </AnimatedSidebar>
+        {sidebarCollapsed && <>
+          <div className="app-sidebar-edge" onMouseEnter={() => setSidebarPeek(true)} aria-hidden="true" />
+          <HoverSidebar open={hoverSidebarOpen} onClose={() => setSidebarPeek(false)}>
+            <AppSidebar
+              view={view}
+              connected={connected}
+              poll={poll}
+              contest={contestController.contest}
+              onNavigate={(next) => { navigate(next); setSidebarPeek(false); setCompactPinned(false) }}
+              account={<TwitchAccount state={twitch} active={view === "settings"} onClick={() => { navigate("settings"); setSidebarPeek(false); setCompactPinned(false) }} />}
+            />
+          </HoverSidebar>
+        </>}
 
         <main className="app-content">
           {navigation.tabs.map((tab) => (
@@ -288,6 +335,7 @@ function TabWorkspace({
   if (!state || !draft) return null
   return (
     <>
+      {view === "home" && <div className="h-full"><ChatHomePage key={twitch.userId || "offline"} emoteProvider={state.chatOverlay?.emoteProvider} twitch={twitch} poll={poll} contest={contestController.contest} onNavigate={navigate} /></div>}
       {tab.visited.includes("decision-wheel") && (
         <div className={view === "decision-wheel" ? "h-full" : "hidden"}>
           <DecisionWheelPage />
@@ -412,6 +460,8 @@ function TabWorkspace({
             draft={draft}
             presets={state.presets}
             widget={state.widget}
+            contestOverlay={state.contestOverlay}
+            chatOverlay={state.chatOverlay}
             canImport={canEdit}
             busy={busy}
             twitch={twitch}
@@ -437,7 +487,11 @@ function TabWorkspace({
             poll={poll}
             draft={draft}
             widget={state.widget}
+            contestOverlay={state.contestOverlay}
+            onUpdateContestOverlay={patch => void controller.updateContestOverlay(patch)}
+            chatOverlay={state.chatOverlay}
             busy={busy}
+            onUpdateChatOverlay={(patch) => void controller.updateChatOverlay(patch)}
             onUpdate={(patch) => void controller.updateWidget(patch)}
             onSetOutput={(visible) => void controller.setOutput(visible)}
           />

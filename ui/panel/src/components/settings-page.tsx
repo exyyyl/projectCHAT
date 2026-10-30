@@ -1,11 +1,12 @@
+import type { ContestOverlaySettings } from "../../../../public/contest-overlay-model.js"
+import type { ChatOverlaySettings } from "../../../../public/chat-overlay-model.js"
 import { useEffect, useRef, useState, type ChangeEvent } from "react"
 import { Check, Download, FileUp } from "lucide-react"
 
-import appIcon from "@/assets/app-icon.png"
 import { type AppTheme, useTheme } from "@/components/theme-provider"
-import { PageContainer, PageScroll } from "@/components/page-layout"
 import { TwitchSettings } from "@/components/twitch-settings"
 import { UpdateSettings } from "@/components/update-control"
+import { Button } from "@/components/ui/button"
 import { FormSwitch } from "@/components/form-controls"
 import { useToast } from "@/components/ui/toast"
 import { useDemoMode } from "@/hooks/use-demo-mode"
@@ -15,6 +16,8 @@ type SettingsPageProps = {
   draft: Draft
   presets: Preset[]
   widget: WidgetSettings
+  contestOverlay: ContestOverlaySettings
+  chatOverlay: ChatOverlaySettings
   canImport: boolean
   busy: boolean
   twitch: TwitchState
@@ -26,6 +29,8 @@ export function SettingsPage({
   draft,
   presets,
   widget,
+  contestOverlay,
+  chatOverlay,
   canImport,
   busy,
   twitch,
@@ -115,6 +120,8 @@ export function SettingsPage({
         pinned: preset.pinned,
       })),
       widget,
+      contestOverlay,
+      chatOverlay,
     }
     const blob = new Blob([JSON.stringify(settings, null, 2)], {
       type: "application/json",
@@ -149,22 +156,26 @@ export function SettingsPage({
   }
 
   return (
-    <PageScroll aria-label="Настройки">
-      <PageContainer className="max-w-3xl">
-        <TwitchSettings
-          state={twitch}
-          busy={busy}
-          onCommand={onTwitchCommand}
-        />
-
-        <div className="mt-8 space-y-8">
-          <SettingsGroup title="Оформление">
+    <section
+      aria-label="Настройки"
+      className="h-full min-h-0 overflow-y-auto overscroll-contain"
+    >
+      <div className="mx-auto w-full max-w-4xl px-6 py-7 lg:px-8">
+        <h1 className="mb-6 text-lg font-semibold tracking-tight">Настройки</h1>
+        <div className="rounded-xl bg-surface-subtle px-5 py-4">
+          <TwitchSettings
+            state={twitch}
+            busy={busy}
+            onCommand={onTwitchCommand}
+          />
+        </div>
+        <div className="mt-5 grid min-w-0 gap-5 lg:grid-cols-2">
+          <SettingsBlock title="Оформление" wide>
             <ThemeSettings />
-          </SettingsGroup>
-
-          <SettingsGroup title="Приложение">
-            <SettingsList>
-              <PreferenceTile
+          </SettingsBlock>
+          <SettingsBlock title="Приложение">
+            <div className="space-y-1">
+              <PreferenceRow
                 label="Автозапуск"
                 hint={
                   preferenceHint(
@@ -183,13 +194,7 @@ export function SettingsPage({
                   void updatePreference("openAtLogin", checked)
                 }
               />
-              <PreferenceTile
-                label="Демо-режим"
-                checked={demoEnabled}
-                disabled={false}
-                onCheckedChange={setDemoEnabled}
-              />
-              <PreferenceTile
+              <PreferenceRow
                 label="Работа в трее"
                 hint={preferenceHint(
                   bridge,
@@ -205,24 +210,31 @@ export function SettingsPage({
                   void updatePreference("runInBackground", checked)
                 }
               />
-            </SettingsList>
-          </SettingsGroup>
-
-          <SettingsGroup title="Данные">
-            <SettingsList>
-              <DataAction
-                title="Экспортировать"
-                detail={formatPresetCount(presets.length)}
-                icon={<Download />}
-                onClick={exportSettings}
+              <PreferenceRow
+                label="Демо-режим"
+                checked={demoEnabled}
+                disabled={false}
+                onCheckedChange={setDemoEnabled}
               />
-              <DataAction
-                title="Импортировать"
-                detail={canImport ? "Из файла JSON" : "Завершите опрос"}
-                icon={<FileUp />}
+            </div>
+          </SettingsBlock>
+          <SettingsBlock title="Обновления">
+            <UpdateSettings />
+          </SettingsBlock>
+          <SettingsBlock title="Данные">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" onClick={exportSettings}>
+                <Download />
+                Экспортировать
+              </Button>
+              <Button
+                variant="outline"
                 disabled={!canImport || busy}
                 onClick={() => inputRef.current?.click()}
-              />
+              >
+                <FileUp />
+                Импортировать
+              </Button>
               <input
                 ref={inputRef}
                 type="file"
@@ -230,37 +242,19 @@ export function SettingsPage({
                 className="hidden"
                 onChange={(event) => void importSettings(event)}
               />
-            </SettingsList>
-          </SettingsGroup>
-
-          <SettingsGroup title="Обновления">
-            <SettingsList>
-              <PreferenceTile
-                label="Бета-обновления"
-                hint={
-                  bridge && preferences
-                    ? "Предрелизные сборки"
-                    : "Только в приложении"
-                }
-                checked={preferences?.updateChannel === "beta"}
-                disabled={
-                  !bridge || !preferences || preferenceBusy !== undefined
-                }
-                onCheckedChange={(checked) =>
-                  void updatePreference(
-                    "updateChannel",
-                    checked ? "beta" : "stable"
-                  )
-                }
-              />
-              <UpdateSettings />
-            </SettingsList>
-          </SettingsGroup>
-
-          <ProjectInfo />
+            </div>
+            {!canImport && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Завершите опрос для импорта.
+              </p>
+            )}
+          </SettingsBlock>
+          <SettingsBlock title="О Cue" action={<TelegramLink />}>
+            <ProjectInfo />
+          </SettingsBlock>
         </div>
-      </PageContainer>
-    </PageScroll>
+      </div>
+    </section>
   )
 }
 
@@ -300,7 +294,7 @@ function ThemeSettings() {
   const { theme, setTheme } = useTheme()
 
   return (
-    <div className="grid grid-cols-2 gap-1 rounded-xl border border-border-subtle bg-surface-subtle p-1 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 @min-[28rem]:grid-cols-4">
       {themes.map((option) => {
         const selected = theme === option.id
         return (
@@ -308,20 +302,37 @@ function ThemeSettings() {
             key={option.id}
             type="button"
             aria-pressed={selected}
-            className={`flex h-11 items-center gap-2.5 rounded-lg px-3 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${selected ? "bg-surface-raised text-foreground" : "text-muted-foreground hover:bg-surface-raised/60 hover:text-foreground"}`}
+            className="group min-w-0 rounded-lg text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background focus-visible:outline-none"
             onClick={() => setTheme(option.id)}
           >
             <span
-              className="relative size-5 shrink-0 rounded-full ring-1 ring-white/10 ring-inset"
+              aria-hidden="true"
+              className={`flex aspect-[1.6] gap-1.5 overflow-hidden rounded-lg p-2 ring-1 transition-[box-shadow] ring-inset ${selected ? "ring-foreground/50" : "ring-border-subtle group-hover:ring-border-strong"}`}
               style={{ background: option.background }}
             >
-              <span
-                className="absolute inset-1 rounded-full"
-                style={{ background: option.accent }}
-              />
+              <span className="flex w-1/4 flex-col gap-1.5 pt-1">
+                <span className="mb-1 size-2 rounded bg-white/20" />
+                <span
+                  className="h-1.5 w-full rounded-sm"
+                  style={{ background: option.accent }}
+                />
+                <span className="h-1 w-4/5 rounded-sm bg-white/15" />
+                <span className="h-1 w-3/5 rounded-sm bg-white/15" />
+              </span>
+              <span className="flex flex-1 flex-col gap-1.5 rounded bg-white/5 p-2">
+                <span className="h-1.5 w-3/5 rounded-sm bg-white/35" />
+                <span className="mt-2 h-1 w-full rounded-sm bg-white/10" />
+                <span className="h-1 w-4/5 rounded-sm bg-white/10" />
+                <span
+                  className="mt-auto h-3 w-1/3 rounded-sm"
+                  style={{ background: option.accent }}
+                />
+              </span>
             </span>
-            <span className="truncate text-sm font-medium">{option.label}</span>
-            {selected && <Check className="ml-auto size-3.5 text-brand" />}
+            <span className="mt-2 flex items-center justify-between gap-2 text-xs">
+              <span>{option.label}</span>
+              {selected && <Check className="size-3.5 text-foreground" />}
+            </span>
           </button>
         )
       })}
@@ -329,30 +340,32 @@ function ThemeSettings() {
   )
 }
 
-function SettingsGroup({
+function SettingsBlock({
   title,
+  wide,
+  action,
   children,
 }: {
   title: string
+  wide?: boolean
+  action?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
-    <section className="space-y-3">
-      <h2 className="px-1 text-sm font-medium text-foreground/90">{title}</h2>
-      {children}
+    <section
+      aria-label={title}
+      className={`min-w-0 rounded-xl bg-surface-subtle p-5 ${wide ? "grid gap-4 lg:col-span-2 lg:grid-cols-[9rem_minmax(0,1fr)] lg:gap-6" : "space-y-4"}`}
+    >
+      <div className="flex min-h-5 items-center justify-between gap-3">
+        <h2 className="text-sm font-medium">{title}</h2>
+        {action}
+      </div>
+      <div className="@container min-w-0">{children}</div>
     </section>
   )
 }
 
-function SettingsList({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="overflow-hidden rounded-xl border border-border-subtle bg-surface-subtle p-1">
-      <div className="grid gap-1">{children}</div>
-    </div>
-  )
-}
-
-function PreferenceTile({
+function PreferenceRow({
   label,
   hint,
   checked,
@@ -366,15 +379,13 @@ function PreferenceTile({
   onCheckedChange: (checked: boolean) => void
 }) {
   return (
-    <div className="rounded-lg px-3 transition-colors hover:bg-surface-raised/55">
-      <FormSwitch
-        label={label}
-        hint={hint}
-        checked={checked}
-        disabled={disabled}
-        onCheckedChange={onCheckedChange}
-      />
-    </div>
+    <FormSwitch
+      label={label}
+      hint={hint}
+      checked={checked}
+      disabled={disabled}
+      onCheckedChange={onCheckedChange}
+    />
   )
 }
 
@@ -388,66 +399,32 @@ function preferenceHint(
   return supported ? undefined : "Недоступно на этом устройстве"
 }
 
-function DataAction({
-  title,
-  detail,
-  icon,
-  disabled,
-  onClick,
-}: {
-  title: string
-  detail: string
-  icon: React.ReactNode
-  disabled?: boolean
-  onClick: () => void
-}) {
+function ProjectInfo() {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="group flex min-h-14 items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-surface-raised/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
-    >
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-raised text-muted-foreground transition-colors group-hover:text-foreground [&_svg]:size-4">
-        {icon}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium">{title}</div>
-        <div className="mt-0.5 truncate text-xs text-muted-foreground">
-          {detail}
-        </div>
+    <dl className="grid grid-cols-2 gap-4 text-xs">
+      <div className="space-y-1">
+        <dt className="font-medium">exyyyl</dt>
+        <dd className="text-muted-foreground">Разработка</dd>
       </div>
-    </button>
+      <div className="space-y-1">
+        <dt className="font-medium">peachysoul</dt>
+        <dd className="text-muted-foreground">Креативная поддержка</dd>
+      </div>
+    </dl>
   )
 }
 
-function ProjectInfo() {
+function TelegramLink() {
   return (
-    <footer className="flex flex-wrap items-center gap-x-6 gap-y-4 rounded-xl bg-surface-subtle px-4 py-4 sm:px-5">
-      <div className="flex min-w-0 items-center gap-3">
-        <img src={appIcon} alt="" className="size-9 shrink-0 object-contain" />
-        <span className="text-sm font-semibold">Cue</span>
-      </div>
-      <div className="flex min-w-0 flex-1 flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground">
-        <span>
-          <strong className="font-medium text-foreground">exyyyl</strong> ·
-          разработка
-        </span>
-        <span>
-          <strong className="font-medium text-foreground">peachysoul</strong> ·
-          креативная поддержка
-        </span>
-      </div>
-      <a
-        href="https://t.me/itsprojectCHAT"
-        target="_blank"
-        rel="noreferrer"
-        className="flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-surface-raised focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      >
-        <TelegramIcon className="size-4 text-telegram" />
-        <span>@itsprojectCHAT</span>
-      </a>
-    </footer>
+    <a
+      href="https://t.me/itsprojectCHAT"
+      target="_blank"
+      rel="noreferrer"
+      aria-label="@itsprojectCHAT — новости и поддержка в Telegram"
+      className="-my-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    >
+      <TelegramIcon className="size-4" />
+    </a>
   )
 }
 
@@ -462,18 +439,4 @@ function TelegramIcon({ className }: { className?: string }) {
       <path d="M21.6 3.2a1.6 1.6 0 0 0-1.7-.23L3.25 9.5c-1.12.44-1.1 2.03.04 2.43l4.23 1.47 1.63 5.02c.34 1.05 1.68 1.34 2.42.53l2.32-2.55 4.13 3.03c.93.68 2.25.17 2.42-.97l2.08-13.27a1.6 1.6 0 0 0-.92-1.99ZM9.3 12.84l8.46-5.27-6.83 6.63-.53 2.82-1.1-4.18Z" />
     </svg>
   )
-}
-
-function formatPresetCount(count: number) {
-  const lastTwo = count % 100
-  const last = count % 10
-  const suffix =
-    lastTwo >= 11 && lastTwo <= 14
-      ? "шаблонов"
-      : last === 1
-        ? "шаблон"
-        : last >= 2 && last <= 4
-          ? "шаблона"
-          : "шаблонов"
-  return `${count} ${suffix}`
 }

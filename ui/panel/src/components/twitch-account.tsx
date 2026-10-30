@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { UserRound } from "lucide-react"
+import { Settings2, UserRound } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import type { TwitchState } from "@/domain/polls"
@@ -16,7 +16,7 @@ function TwitchAvatar({ state }: { state: TwitchState }) {
     !!state.profileImageUrl && failedUrl !== state.profileImageUrl
 
   return (
-    <span className="relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-twitch/14 text-twitch">
+    <span className="relative flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-raised text-muted-foreground">
       <UserRound className="size-4" />
       {imageVisible && (
         <img
@@ -40,7 +40,7 @@ export function TwitchAccount({ state, active, onClick }: TwitchAccountProps) {
     ? state.displayName || state.login || "Twitch"
     : authorizing
       ? "Вход в Twitch…"
-      : "Twitch"
+      : "Подключить Twitch"
   const status = connected
     ? state.phase === "reconnecting"
       ? "Подключаемся…"
@@ -49,12 +49,13 @@ export function TwitchAccount({ state, active, onClick }: TwitchAccountProps) {
       ? "Ожидаем подтверждение"
       : "Не подключён"
 
+  const reconnecting = state.phase === "reconnecting"
   return (
     <Button
       variant="ghost"
-      className={`h-11 w-full min-w-0 justify-start gap-2.5 rounded-lg px-2 ${
+      className={`group h-11 w-full min-w-0 justify-start gap-2.5 rounded-md px-2.5 ${
         active
-          ? "bg-surface-raised text-foreground hover:bg-surface-raised"
+          ? "bg-surface-subtle text-foreground hover:bg-surface-raised"
           : "text-muted-foreground"
       }`}
       aria-current={active ? "page" : undefined}
@@ -67,30 +68,28 @@ export function TwitchAccount({ state, active, onClick }: TwitchAccountProps) {
     >
       {loading ? (
         <>
-          <span className="size-8 shrink-0 animate-pulse rounded-full bg-surface-raised" />
-          <span className="min-w-0 flex-1 space-y-1.5">
+          <span className="size-7 shrink-0 animate-pulse rounded-lg bg-surface-raised" />
+          <span className="min-w-0 flex-1">
             <span className="block h-2.5 w-18 animate-pulse rounded-full bg-surface-raised" />
-            <span className="block h-2 w-12 animate-pulse rounded-full bg-surface-subtle" />
           </span>
         </>
       ) : (
         <>
-          <span className="relative">
-            <TwitchAvatar state={state} />
-            {connected && (
-              <span
-                className={`absolute right-0 bottom-0 size-1.5 rounded-full ring-2 ring-sidebar ${state.phase === "connected" ? "bg-brand" : "bg-amber-300"}`}
-              />
-            )}
-          </span>
-          <span className="min-w-0 text-left">
-            <span className="block truncate text-sm text-foreground">
+          <TwitchAvatar state={state} />
+          <span className="min-w-0 flex-1 text-left">
+            <span className="block truncate text-sm font-medium text-foreground">
               {accountLabel}
             </span>
-            <span className="block truncate text-[10px] font-normal text-muted-foreground">
-              {status}
-            </span>
+            {reconnecting && (
+              <span className="block truncate text-xs font-normal text-muted-foreground">
+                Переподключение…
+              </span>
+            )}
           </span>
+          <Settings2
+            aria-hidden="true"
+            className="size-3.5 text-muted-foreground transition-colors group-hover:text-foreground"
+          />
         </>
       )}
     </Button>

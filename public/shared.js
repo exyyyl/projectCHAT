@@ -1,3 +1,5 @@
+import { resolveWidget, widgetStyle } from './widget-model.js';
+
 export function element(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -90,31 +92,16 @@ export function createOverlay(root) {
     render(poll, serverNow = Date.now(), widget = {}) {
       offset = serverNow - Date.now();
       current = poll;
-      root.style.setProperty('--pc-accent', widget.accent || '#d3fb75');
-      root.style.setProperty('--pc-opacity', String((widget.opacity || 100) / 100));
-      const surface = widget.surface === 'glass' ? 'accent' : widget.surface;
-      root.classList.toggle('pc-widget-accent', surface === 'accent');
-      root.classList.toggle('pc-widget-minimal', widget.surface === 'minimal');
-      root.classList.toggle('pc-widget-compact', widget.density === 'compact');
-      root.classList.toggle('pc-radius-small', widget.radius === 'small');
-      root.classList.toggle('pc-radius-large', widget.radius === 'large');
-      root.classList.toggle('pc-title-small', widget.titleSize === 'small');
-      root.classList.toggle('pc-title-large', widget.titleSize === 'large');
-      root.classList.toggle('pc-width-narrow', widget.width === 'narrow');
-      root.classList.toggle('pc-width-wide', widget.width === 'wide');
-      root.classList.toggle('pc-font-system', widget.font === 'system');
-      root.classList.toggle('pc-font-mono', widget.font === 'mono');
-      root.classList.toggle('pc-options-cards', widget.optionStyle === 'cards');
-      root.classList.toggle('pc-options-outline', widget.optionStyle === 'outline');
-      root.classList.toggle('pc-options-small', widget.optionSize === 'small');
-      root.classList.toggle('pc-options-large', widget.optionSize === 'large');
-      root.classList.toggle('pc-keywords-filled', widget.keywordStyle === 'filled');
-      root.classList.toggle('pc-keywords-text', widget.keywordStyle === 'text');
-      root.classList.toggle('pc-bars-thin', widget.barSize === 'thin');
-      root.classList.toggle('pc-bars-thick', widget.barSize === 'thick');
-      root.classList.toggle('pc-hide-keywords', widget.showKeywords === false);
-      root.classList.toggle('pc-hide-bars', widget.showBars === false);
-      root.classList.toggle('pc-hide-values', widget.showVotes === false && widget.showPercentages === false);
+      widget = resolveWidget(widget);
+      root.classList.add('cue-poll-widget');
+      for (const [key, value] of Object.entries(widgetStyle(widget))) {
+        if (key === 'fontFamily') root.style.fontFamily = value;
+        else root.style.setProperty(key, value);
+      }
+      Object.assign(root.dataset, { layout: widget.layout, surface: widget.surface, optionStyle: widget.optionStyle, keywordStyle: widget.keywordStyle, highlight: String(widget.highlightWinner) });
+      question.parentElement.className = 'cue-widget-heading';
+      timer.className = 'cue-widget-clock';
+      rows.className = 'cue-widget-options';
       timer.hidden = widget.showTimer === false;
       if (!poll) { root.classList.add('is-hidden'); root.setAttribute('aria-hidden', 'true'); return; }
       const visible = poll.visible !== false;
@@ -130,31 +117,46 @@ export function createOverlay(root) {
       question.textContent = poll.question || 'Твой вопрос';
       if (rows.children.length !== poll.options.length) {
         rows.replaceChildren(...poll.options.map(() => {
-          const row = element('div', 'pc-overlay-option');
-          const line = element('div', 'pc-overlay-row');
-          const label = element('span', 'pc-overlay-label');
-          label.append(element('span', 'pc-overlay-name'), element('span', 'pc-overlay-word'));
-          line.append(label, element('span', 'pc-overlay-value'));
-          const track = element('div', 'pc-track'); track.append(element('div', 'pc-fill'));
+          const row = element('div', 'cue-widget-option');
+          const line = element('div', 'cue-widget-option-main');
+          const label = element('span', 'cue-widget-label');
+          label.append(element('span', 'cue-widget-name'), element('span', 'cue-widget-keyword'));
+          const value = element('span', 'cue-widget-value');
+          value.append(element('strong'), element('small'));
+          line.append(element('span', 'cue-widget-number'), label, value);
+          const track = element('div', 'cue-widget-track'); track.append(element('div', 'cue-widget-fill'));
           row.append(line, track); return row;
         }));
       }
       const pct = percentages(poll.options);
       const max = Math.max(...poll.options.map(o => o.votes || 0));
       const secret = poll.secret && poll.status !== 'ended';
-      root.classList.toggle('pc-ended', poll.status === 'ended');
-      root.classList.toggle('pc-has-votes', max > 0);
+      root.dataset.ended = String(poll.status === 'ended');
+      root.style.setProperty('--cue-columns', String(Math.min(3, poll.options.length)));
       [...rows.children].forEach((row, i) => {
         const option = poll.options[i];
-        row.classList.toggle('pc-leader', !secret && max > 0 && option.votes === max);
-        row.querySelector('.pc-overlay-name').textContent = option.name || `Вариант ${i + 1}`;
-        row.querySelector('.pc-overlay-word').textContent = option.word;
-        const values = [];
-        if (widget.showVotes !== false) values.push(String(option.votes || 0));
-        if (widget.showPercentages !== false) values.push(`${pct[i]}%`);
-        row.querySelector('.pc-overlay-value').textContent = secret ? '—' : values.join(' · ');
-        row.querySelector('.pc-fill').style.transform = `scaleX(${(secret ? 0 : pct[i]) / 100})`;
+        const share = secret ? 0 : pct[i] / 100;
+        row.dataset.leading = String(!secret && max > 0 && option.votes === max);
+        row.style.setProperty('--cue-share', String(share));
+        row.querySelector('.cue-widget-name').textContent = option.name || `Вариант ${i + 1}`;
+        const number = row.querySelector('.cue-widget-number');
+        number.textContent = String(i + 1).padStart(2, '0'); number.hidden = !widget.showNumbers;
+        const keyword = row.querySelector('.cue-widget-keyword');
+        keyword.textContent = option.word; keyword.hidden = !widget.showKeywords;
+        const value = row.querySelector('.cue-widget-value');
+        value.hidden = !widget.showVotes && !widget.showPercentages;
+        value.querySelector('strong').textContent = secret ? '—' : widget.showPercentages ? `${pct[i]}%` : String(option.votes || 0);
+        const votes = value.querySelector('small');
+        votes.textContent = `${option.votes || 0} голос.`;
+        votes.hidden = secret || !widget.showVotes || !widget.showPercentages;
+        row.querySelector('.cue-widget-track').hidden = !widget.showBars;
+        row.querySelector('.cue-widget-fill').style.transform = `scaleX(${share})`;
       });
+      let footer = root.querySelector('.cue-widget-footer');
+      if (!footer) { footer = element('footer', 'cue-widget-footer'); footer.append(element('span'), element('strong')); root.append(footer); }
+      footer.hidden = !widget.showTotal;
+      footer.querySelector('span').textContent = poll.status === 'ended' ? 'Голосование завершено' : 'Всего голосов';
+      footer.querySelector('strong').textContent = secret ? '—' : poll.options.reduce((sum, option) => sum + (option.votes || 0), 0).toLocaleString('ru');
       tick();
     },
   };

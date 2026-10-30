@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createTwitch, chatMessage, chatVote } from '../server/twitch.mjs';
+import { createTwitch, chatActivity, chatMessage, chatVote } from '../server/twitch.mjs';
 import { createStore } from '../server/store.mjs';
 import { PollError } from '../server/polls.mjs';
 
 const clientId = 'testclient12345';
 const tokens = { access_token: 'private-access', refresh_token: 'private-refresh', expires_in: 14400 };
-const account = { client_id: clientId, user_id: '123', login: 'streamer', scopes: ['user:read:chat'], expires_in: 14400 };
+const account = { client_id: clientId, user_id: '123', login: 'streamer', scopes: ['user:read:chat', 'user:write:chat', 'moderator:read:shoutouts'], expires_in: 14400 };
 const profile = { data: [{ id: '123', login: 'streamer', display_name: 'Streamer', profile_image_url: 'https://static-cdn.jtvnw.net/jtv_user_pictures/streamer.png' }] };
 const viewerProfile = { data: [{ id: '456', login: 'viewer', display_name: 'Viewer', profile_image_url: 'https://static-cdn.jtvnw.net/jtv_user_pictures/viewer.png' }] };
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
@@ -50,7 +50,7 @@ async function fixture(t, customFetch, saved) {
     async authorize() { await twitch.command({ type: 'connect' }); await this.advance(5000); await sockets.at(-1).message(welcome('session1')); },
   };
 }
-test('device login requests only chat read scope; public status never contains tokens', async t => {
+test('device login requests chat and shoutout scopes; public status never contains tokens', async t => {
   let pending = true;
   const f = await fixture(t, url => url.endsWith('/token') && pending ? (pending = false, response({ message: 'authorization_pending' }, 400)) : null);
   await f.twitch.command({ type: 'connect' });
@@ -62,14 +62,36 @@ test('device login requests only chat read scope; public status never contains t
   assert.equal(f.twitch.snapshot().userId, '123');
   assert.equal(f.twitch.snapshot().displayName, 'Streamer');
   assert.equal(f.twitch.snapshot().profileImageUrl, profile.data[0].profile_image_url);
+  assert.equal(f.twitch.snapshot().canSend, true);
+  assert.equal(f.twitch.snapshot().canShowShoutouts, true);
   assert.doesNotMatch(JSON.stringify(f.twitch.snapshot()), /private-access|private-refresh|private-device/);
   assert.equal('clientId' in f.twitch.snapshot(), false);
   const auth = f.calls.find(c => c.url.endsWith('/device'));
-  assert.equal(auth.options.body.get('scopes'), 'user:read:chat');
+  assert.equal(auth.options.body.get('scopes'), 'user:read:chat user:write:chat moderator:read:shoutouts user:read:emotes');
   const sub = JSON.parse(f.calls.find(c => c.url.endsWith('/subscriptions')).options.body);
   assert.deepEqual(sub.condition, { broadcaster_user_id: '123', user_id: '123' });
   assert.equal(sub.transport.method, 'websocket');
+  assert.deepEqual(f.calls.filter(c => c.url.endsWith('/subscriptions')).map(c => JSON.parse(c.options.body).type), [
+    'channel.chat.message', 'channel.chat.notification', 'channel.shoutout.create', 'channel.shoutout.receive',
+  ]);
   assert.equal(JSON.parse(await readFile(f.filename, 'utf8')).refreshToken, 'private-refresh');
+});
+test('chat send uses broadcaster identity and handles read-only legacy tokens', async t => {
+  const f = await fixture(t, url => url.endsWith('/helix/chat/messages') ? response({ data: [{ message_id: 'sent-1', is_sent: true }] }) : null);
+  await f.authorize();
+  const sent = await f.twitch.sendMessage('Привет, чат!');
+  assert.equal(sent.eventId, 'sent-1');
+  assert.equal(sent.viewerId, 'twitch:123');
+  const request = f.calls.find(call => call.url.endsWith('/helix/chat/messages'));
+  assert.deepEqual(JSON.parse(request.options.body), { broadcaster_id: '123', sender_id: '123', message: 'Привет, чат!' });
+  await assert.rejects(f.twitch.sendMessage('x'.repeat(501)), /500 символов/);
+
+  const legacy = await fixture(t, url => url.endsWith('/validate') ? response({ ...account, scopes: ['user:read:chat'] }) : null);
+  await legacy.authorize();
+  assert.equal(legacy.twitch.snapshot().canSend, false);
+  assert.equal(legacy.twitch.snapshot().canShowShoutouts, false);
+  assert.deepEqual(legacy.calls.filter(c => c.url.endsWith('/subscriptions')).map(c => JSON.parse(c.options.body).type), ['channel.chat.message', 'channel.chat.notification']);
+  await assert.rejects(legacy.twitch.sendMessage('Привет'), /Переподключите Twitch/);
 });
 test('real chat counts while hidden, deduplicates and excludes shared-channel and old messages', async t => {
   const f = await fixture(t); await f.authorize();
@@ -91,15 +113,60 @@ test('real chat counts while hidden, deduplicates and excludes shared-channel an
 test('generic chat messages are normalized with audience roles for other Twitch tools', () => {
   const message = chatMessage(notification(1000, {
     message: { text: 'участвую' },
-    badges: [{ set_id: 'subscriber' }, { set_id: 'vip' }],
+    badges: [{ set_id: 'subscriber', id: '12' }, { set_id: 'vip', id: '1' }],
+    color: '#A1B2C3',
   }), '123');
   assert.equal(message.viewerName, 'Viewer');
   assert.equal(message.viewerLogin, 'Viewer');
   assert.equal(message.text, 'участвую');
   assert.deepEqual(message.roles, ['subscriber', 'vip']);
+  assert.deepEqual(message.badges, [{ setId: 'subscriber', id: '12' }, { setId: 'vip', id: '1' }]);
+  assert.equal(message.nameColor, '#A1B2C3');
+  assert.equal(chatMessage(notification(1000, { cheer: { bits: 250 } }), '123').cheerBits, 250);
   assert.equal(message.broadcasterId, '123');
   assert.deepEqual(chatMessage(notification(1000), '123').roles, ['viewer']);
+  assert.equal(chatMessage(notification(1000, { color: 'red', badges: [{ set_id: '<script>', id: '1' }] }), '123').nameColor, '');
+  assert.deepEqual(chatMessage(notification(1000, { badges: [{ set_id: '<script>', id: '1' }] }), '123').badges, []);
   assert.equal(chatMessage(notification(1000, { source_broadcaster_user_id: '999' }), '123'), null);
+});
+test('chat badge catalog combines global and channel versions and caches the result', async t => {
+  const f = await fixture(t, url => {
+    if (url.endsWith('/helix/chat/badges/global')) return response({ data: [
+      { set_id: 'vip', versions: [{ id: '1', title: 'VIP', image_url_2x: 'https://static-cdn.jtvnw.net/badges/vip.png' }] },
+      { set_id: 'subscriber', versions: [{ id: '12', title: 'Global', image_url_1x: 'https://static-cdn.jtvnw.net/badges/global.png' }] },
+    ] });
+    if (url.includes('/helix/chat/badges?')) return response({ data: [
+      { set_id: 'subscriber', versions: [{ id: '12', title: 'Подписчик', image_url_2x: 'https://static-cdn.jtvnw.net/badges/channel.png' }] },
+      { set_id: 'unsafe', versions: [{ id: '1', title: 'External', image_url_2x: 'https://example.com/image.png' }] },
+    ] });
+  });
+  await f.authorize();
+  const badges = await f.twitch.badges();
+  assert.deepEqual(badges['subscriber/12'], { url: 'https://static-cdn.jtvnw.net/badges/channel.png', title: 'Подписчик' });
+  assert.equal(badges['vip/1'].title, 'VIP');
+  assert.equal(badges['unsafe/1'], undefined);
+  assert.deepEqual(await f.twitch.badges(), badges);
+  assert.equal(f.calls.filter(call => call.url.includes('/helix/chat/badges')).length, 2);
+});
+test('chat activity normalizes raid, subscription, announcement and shoutout notices', () => {
+  const wrap = (type, event, id = 'activity-1') => ({
+    metadata: { message_type: 'notification', message_timestamp: new Date(1000).toISOString(), message_id: id },
+    payload: { subscription: { type }, event: { broadcaster_user_id: '123', ...event } },
+  });
+  const raid = chatActivity(wrap('channel.chat.notification', { notice_type: 'raid', message_id: 'raid-1', raid: { user_id: '456', user_name: 'Raider', user_login: 'raider', viewer_count: 42 } }), '123');
+  assert.equal(raid.activityType, 'raid');
+  assert.equal(raid.viewerId, 'twitch:456');
+  assert.equal(raid.text, 'привёл 42 зрителей');
+  const sub = chatActivity(wrap('channel.chat.notification', { notice_type: 'resub', message_id: 'resub-1', chatter_user_id: '456', chatter_user_name: 'Viewer', color: '#12AB34', resub: { cumulative_months: 8 } }), '123');
+  assert.equal(sub.text, 'продлил подписку · 8 мес.');
+  assert.equal(sub.nameColor, '#12AB34');
+  const announcement = chatActivity(wrap('channel.chat.notification', { notice_type: 'announcement', message_id: 'announcement-1', chatter_user_id: '123', chatter_user_name: 'Streamer', message: { text: 'Начинаем!' } }), '123');
+  assert.equal(announcement.text, 'Начинаем!');
+  const shoutout = chatActivity(wrap('channel.shoutout.create', { to_broadcaster_user_id: '789', to_broadcaster_user_name: 'Guest', to_broadcaster_user_login: 'guest' }), '123');
+  assert.equal(shoutout.viewerId, 'twitch:789');
+  assert.equal(shoutout.text, 'получил шотаут');
+  assert.equal(chatActivity(wrap('channel.chat.notification', { notice_type: 'sub', message_id: 'shared', source_broadcaster_user_id: '999' }), '123'), null);
+  assert.equal(chatActivity(wrap('channel.chat.notification', { notice_type: 'unknown', message_id: 'unknown' }), '123'), null);
 });
 test('Twitch session migration keeps old connection until welcome without resubscribing', async t => {
   const f = await fixture(t); await f.authorize(); const old = f.sockets[0];
@@ -107,14 +174,14 @@ test('Twitch session migration keeps old connection until welcome without resubs
   assert.equal(f.sockets.length, 2); assert.equal(old.closed, undefined);
   await f.sockets[1].message(welcome('session2'));
   assert.equal(old.closed, true); assert.equal(f.twitch.snapshot().phase, 'connected');
-  assert.equal(f.calls.filter(c => c.url.endsWith('/subscriptions')).length, 1);
+  assert.equal(f.calls.filter(c => c.url.endsWith('/subscriptions')).length, 4);
 });
 test('network loss resubscribes, reports gap, and disconnect cancels retries', async t => {
   const f = await fixture(t); await f.authorize();
   f.sockets[0].close(); assert.equal(f.twitch.snapshot().phase, 'reconnecting');
   await f.advance(1000);
   await f.sockets[1].message(welcome('fresh-session'));
-  assert.equal(f.calls.filter(c => c.url.endsWith('/subscriptions')).length, 2);
+  assert.equal(f.calls.filter(c => c.url.endsWith('/subscriptions')).length, 8);
   assert.equal(f.twitch.snapshot().phase, 'connected');
   assert.ok(f.twitch.snapshot().lastGapAt);
   f.sockets[1].close();
@@ -208,3 +275,44 @@ for (const error of [new Error('Disk failed'), new PollError('Storage failed', 5
     assert.equal(f.sockets[0].closed, true);
   });
 }
+
+test('personal Twitch emotes use permission-scoped pagination and preserve valid animated IDs', async t => {
+  const f = await fixture(t, url => {
+    if (url.endsWith('/validate')) return response({ ...account, scopes: [...account.scopes, 'user:read:emotes'] });
+    if (url.includes('/helix/chat/emotes/user?')) {
+      const query = new URL(url).searchParams;
+      assert.equal(query.get('user_id'), '123');
+      assert.equal(query.get('broadcaster_id'), '123');
+      return query.has('after') ? response({ data: [{ id: 'emotesv2_test', name: 'customWave' }], pagination: {} }) : response({ data: [{ id: '25', name: 'Kappa' }, { id: '../bad', name: 'bad' }], pagination: { cursor: 'next' } });
+    }
+  });
+  await f.authorize();
+  assert.equal(f.twitch.snapshot().canReadEmotes, true);
+  const result = await f.twitch.emotes();
+  assert.equal(result.requiresReconnect, false);
+  assert.deepEqual(result.emotes.map(emote => emote.code), ['Kappa', 'customWave']);
+  assert.equal(f.calls.filter(call => call.url.includes('/emotes/user?')).length, 2);
+  await f.twitch.command({ type: 'disconnect' });
+  assert.equal(f.twitch.snapshot().canReadEmotes, false);
+});
+
+test('existing Twitch logins keep global and own-channel emotes until the new permission is granted', async t => {
+  const f = await fixture(t, url => {
+    if (url.endsWith('/helix/chat/emotes/global')) return response({ data: [{ id: '25', name: 'Kappa' }] });
+    if (url.includes('/helix/chat/emotes?')) return response({ data: [{ id: 'emotesv2_own', name: 'ownWave' }] });
+  });
+  await f.authorize();
+  const result = await f.twitch.emotes();
+  assert.equal(result.requiresReconnect, true);
+  assert.deepEqual(result.emotes.map(emote => emote.code), ['Kappa', 'ownWave']);
+});
+
+test('sending emoji and emote codes preserves text including joined Unicode emoji', async t => {
+  const f = await fixture(t, url => url.endsWith('/helix/chat/messages') ? response({ data: [{ message_id: 'emoji-1', is_sent: true }] }) : null);
+  await f.authorize();
+  const text = '👨‍👩‍👧‍👦 Kappa monkaS';
+  const sent = await f.twitch.sendMessage(text);
+  assert.equal(sent.text, text);
+  assert.equal(JSON.parse(f.calls.find(call => call.url.endsWith('/helix/chat/messages')).options.body).message, text);
+  await assert.rejects(f.twitch.sendMessage('hi\u202E'), /500 символов/);
+});

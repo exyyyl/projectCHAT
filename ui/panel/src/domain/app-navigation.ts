@@ -1,4 +1,5 @@
 export type AppView =
+  | "home"
   | "polls"
   | "presets"
   | "widget"
@@ -24,7 +25,7 @@ export type NavigationAction =
 export function initialNavigation(): NavigationState {
   return {
     tabs: [
-      { id: "initial", history: ["polls"], position: 0, visited: ["polls"] },
+      { id: "initial", history: ["home"], position: 0, visited: ["home"] },
     ],
     activeId: "initial",
   }

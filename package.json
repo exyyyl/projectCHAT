@@ -1,14 +1,14 @@
 {
   "name": "projectchat",
   "productName": "Cue",
-  "version": "0.8.2",
+  "version": "0.8.3-beta.1",
   "private": true,
   "type": "module",
   "main": "desktop/main.mjs",
   "author": "exyyyl",
   "description": "Live interaction tools and OBS overlays for streamers",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "scripts": {
     "start": "node server/index.mjs",
@@ -27,7 +27,8 @@
     "release:win": "node scripts/package-desktop.mjs --win --release"
   },
   "dependencies": {
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "yauzl": "3.4.0"
   },
   "devDependencies": {
     "electron": "^44.2.0",

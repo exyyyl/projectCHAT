@@ -1,3 +1,5 @@
+import type { ContestOverlaySettings } from "../../../../public/contest-overlay-model.js"
+import type { ChatOverlaySettings } from "../../../../public/chat-overlay-model.js"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import {
@@ -46,6 +48,8 @@ export function usePollController() {
   const draftRevisionRef = useRef(0)
   const queueRef = useRef<Promise<unknown>>(Promise.resolve())
   const automaticDemoRef = useRef<string | null>(null)
+  const pendingContestOverlayRef = useRef<ContestOverlaySettings | null>(null)
+  const pendingChatOverlayRef = useRef<ChatOverlaySettings | null>(null)
   const pendingWidgetRef = useRef<WidgetSettings | null>(null)
 
   useEffect(() => {
@@ -58,9 +62,13 @@ export function usePollController() {
   const accept = useCallback((incoming: ServerState, takeDraft = false) => {
     if (stateRef.current && incoming.revision < stateRef.current.revision)
       return
-    const next = pendingWidgetRef.current
+    let next = pendingWidgetRef.current
       ? { ...incoming, widget: pendingWidgetRef.current }
       : incoming
+    if (pendingChatOverlayRef.current)
+      next = { ...next, chatOverlay: pendingChatOverlayRef.current }
+    if (pendingContestOverlayRef.current)
+      next = { ...next, contestOverlay: pendingContestOverlayRef.current }
     stateRef.current = next
     setState(next)
     draftRevisionRef.current = incoming.draftRevision
@@ -178,6 +186,70 @@ export function usePollController() {
       return null
     } finally {
       setBusy(false)
+    }
+  }
+
+  const updateContestOverlay = async (
+    patch: Partial<ContestOverlaySettings>
+  ) => {
+    if (!connected || !stateRef.current) return
+    const settings = { ...stateRef.current.contestOverlay, ...patch }
+    pendingContestOverlayRef.current = settings
+    const optimistic = { ...stateRef.current, contestOverlay: settings }
+    stateRef.current = optimistic
+    setState(optimistic)
+    try {
+      const result = await send("contest-overlay-update", { settings: patch })
+      if (pendingContestOverlayRef.current === settings) {
+        pendingContestOverlayRef.current = null
+        accept(result.state)
+      }
+    } catch (failure) {
+      if (pendingContestOverlayRef.current === settings) {
+        pendingContestOverlayRef.current = null
+        try {
+          const response = await fetch("/api/state")
+          if (response.ok) accept((await response.json()) as ServerState)
+        } catch {
+          /* Restore on reconnect. */
+        }
+      }
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : "Не удалось сохранить оформление конкурса."
+      )
+    }
+  }
+
+  const updateChatOverlay = async (patch: Partial<ChatOverlaySettings>) => {
+    if (!connected || !stateRef.current) return
+    const settings = { ...stateRef.current.chatOverlay, ...patch }
+    pendingChatOverlayRef.current = settings
+    const optimistic = { ...stateRef.current, chatOverlay: settings }
+    stateRef.current = optimistic
+    setState(optimistic)
+    try {
+      const result = await send("chat-overlay-update", { settings: patch })
+      if (pendingChatOverlayRef.current === settings) {
+        pendingChatOverlayRef.current = null
+        accept(result.state)
+      }
+    } catch (failure) {
+      if (pendingChatOverlayRef.current === settings) {
+        pendingChatOverlayRef.current = null
+        try {
+          const response = await fetch("/api/state")
+          if (response.ok) accept((await response.json()) as ServerState)
+        } catch {
+          /* Restore on reconnect. */
+        }
+      }
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : "Не удалось сохранить оформление чата."
+      )
     }
   }
 
@@ -405,6 +477,8 @@ export function usePollController() {
     changeDraft,
     run,
     updateWidget,
+    updateChatOverlay,
+    updateContestOverlay,
     start,
     clear,
     setOutput,

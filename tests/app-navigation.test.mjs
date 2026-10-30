@@ -20,8 +20,8 @@ test('each tab owns history; a new navigation replaces the forward branch but ke
   state = reduce(state, { type: 'navigate', view: 'widget' });
   state = reduce(state, { type: 'history', offset: -1 });
   state = reduce(state, { type: 'navigate', view: 'settings' });
-  assert.deepEqual(state.tabs[0].history, ['polls', 'presets', 'settings']);
-  assert.deepEqual(state.tabs[0].visited, ['polls', 'presets', 'widget', 'settings']);
+  assert.deepEqual(state.tabs[0].history, ['home', 'presets', 'settings']);
+  assert.deepEqual(state.tabs[0].visited, ['home', 'presets', 'widget', 'settings']);
   state = reduce(state, { type: 'create', id: 'second' });
   state = reduce(state, { type: 'history', offset: -1 });
   assert.equal(state.tabs[1].position, 0);
@@ -45,5 +45,5 @@ test('late navigation targets its originating tab rather than the currently sele
   state = reduce(state, { type: 'navigate', tabId: 'initial', view: 'presets' });
   assert.equal(state.activeId, 'second');
   assert.deepEqual(state.tabs[1].history, ['new']);
-  assert.deepEqual(state.tabs[0].history, ['polls', 'presets']);
+  assert.deepEqual(state.tabs[0].history, ['home', 'presets']);
 });

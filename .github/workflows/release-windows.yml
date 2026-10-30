@@ -44,6 +44,8 @@ jobs:
           $channel = if ($version -match "-") { "beta" } else { "latest" }
           "APP_VERSION=$version" >> $env:GITHUB_ENV
           "UPDATE_CHANNEL=$channel" >> $env:GITHUB_ENV
+          $runtimeChannel = if ($channel -eq "beta") { "beta" } else { "stable" }
+          "RUNTIME_CHANNEL=$runtimeChannel" >> $env:GITHUB_ENV
 
       - name: Install dependencies
         run: |
@@ -66,7 +68,9 @@ jobs:
           $files = @(
             "release/Cue-Setup-$env:APP_VERSION.exe",
             "release/Cue-Setup-$env:APP_VERSION.exe.blockmap",
-            "release/$env:UPDATE_CHANNEL.yml"
+            "release/$env:UPDATE_CHANNEL.yml",
+            "release/Cue-Setup-$env:APP_VERSION.zip",
+            "release/${env:RUNTIME_CHANNEL}-win32-x64.json"
           )
           foreach ($file in $files) {
             if (-not (Test-Path $file)) {
@@ -86,6 +90,8 @@ jobs:
             release/Cue-Setup-${{ env.APP_VERSION }}.exe
             release/Cue-Setup-${{ env.APP_VERSION }}.exe.blockmap
             release/*.yml
+            release/*.zip
+            release/*-win32-x64.json
           if-no-files-found: error
           retention-days: 14
 
@@ -97,7 +103,9 @@ jobs:
           $assets = @(
             "release/Cue-Setup-$env:APP_VERSION.exe",
             "release/Cue-Setup-$env:APP_VERSION.exe.blockmap",
-            "release/$env:UPDATE_CHANNEL.yml"
+            "release/$env:UPDATE_CHANNEL.yml",
+            "release/Cue-Setup-$env:APP_VERSION.zip",
+            "release/${env:RUNTIME_CHANNEL}-win32-x64.json"
           )
           if ($env:UPDATE_CHANNEL -eq "beta") {
             gh release create $env:GITHUB_REF_NAME @assets `

@@ -24,5 +24,13 @@ export default defineConfig({
   build: {
     outDir: "../../public/panel-build",
     emptyOutDir: true,
+    rolldownOptions: {
+      input: {
+        panel: new URL("./index.html", import.meta.url).pathname,
+        contestOverlay: new URL("./contest-overlay.html", import.meta.url)
+          .pathname,
+        chatOverlay: new URL("./chat-overlay.html", import.meta.url).pathname,
+      },
+    },
   },
 })

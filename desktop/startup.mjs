@@ -14,6 +14,6 @@ export function loginItemUpdate(platform, openAtLogin) {
 export function wasLaunchedAtLogin({ platform, argv, settings, packaged }) {
   if (!packaged) return false
   if (platform === 'win32') return argv.includes(LOGIN_LAUNCH_ARGUMENT)
-  if (platform === 'darwin') return settings.wasOpenedAtLogin === true
+  if (platform === 'darwin') return settings.wasOpenedAtLogin === true || argv.includes(LOGIN_LAUNCH_ARGUMENT)
   return false
 }

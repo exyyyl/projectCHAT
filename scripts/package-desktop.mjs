@@ -1,4 +1,5 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { writeRuntimeManifest } from './write-runtime-manifest.mjs'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 
 const flags = new Set(process.argv.slice(2))
@@ -8,7 +9,11 @@ const updateUrl = (process.env.STREAM_POLLS_UPDATE_URL || '').trim().replace(/\/
 if (!platform) throw new Error('Укажите --win или --mac.')
 if (release && !updateUrl) throw new Error('Для релизной сборки задайте STREAM_POLLS_UPDATE_URL.')
 
+const version = JSON.parse(await readFile('package.json','utf8')).version
+const runtimePlatform = platform === 'win' ? 'win32' : 'darwin'
+const runtimeArch = platform === 'win' ? 'x64' : process.arch
 await mkdir('build', { recursive: true })
+await writeFile('build/cue-runtime.json',JSON.stringify({schema:1,appId:'ru.projectchat.app',version,platform:runtimePlatform,arch:runtimeArch},null,2)+'\n')
 await writeFile('build/update-config.json', JSON.stringify({ url: updateUrl }, null, 2) + '\n')
 
 const appIcons = spawnSync(process.execPath, ['scripts/generate-app-icons.mjs'], { stdio: 'inherit' })
@@ -25,8 +30,8 @@ const panel = spawnSync(process.execPath, [npmCli, 'run', 'build:panel'], { stdi
 if (panel.error) throw panel.error
 if (panel.status !== 0) process.exit(panel.status || 1)
 const args = platform === 'win'
-  ? ['--config', 'electron-builder.config.cjs', '--win', 'nsis', '--x64', '--publish', 'never']
-  : ['--config', 'electron-builder.config.cjs', '--mac', 'dmg', `--${process.arch}`, '--publish', 'never']
+  ? ['--config', 'electron-builder.config.cjs', '--win', 'nsis', 'zip', '--x64', '--publish', 'never']
+  : ['--config', 'electron-builder.config.cjs', '--mac', 'dmg', 'zip', `--${process.arch}`, '--publish', 'never']
 const packaged = spawnSync(
   process.execPath,
   ['node_modules/electron-builder/out/cli/cli.js', ...args],
@@ -34,4 +39,5 @@ const packaged = spawnSync(
 )
 if (packaged.error) throw packaged.error
 if (packaged.status !== 0) process.exit(packaged.status || 1)
+await writeRuntimeManifest({version,platform:runtimePlatform,arch:runtimeArch})
 console.log(`Готово: release/ содержит ${platform === 'win' ? 'Windows-установщик' : 'macOS-сборку'}.`)

@@ -1,11 +1,28 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { PollError } from './polls.mjs';
+import { nativeEmotes, twitchEmoteSpans } from './chat-emotes.mjs';
 
 const AUTH = 'https://id.twitch.tv/oauth2/';
 const SOCKET = 'wss://eventsub.wss.twitch.tv/ws';
-const SCOPE = 'user:read:chat';
+const READ_SCOPE = 'user:read:chat';
+const WRITE_SCOPE = 'user:write:chat';
+const SHOUTOUT_SCOPE = 'moderator:read:shoutouts';
+const EMOTE_SCOPE = 'user:read:emotes';
+const SCOPE = `${READ_SCOPE} ${WRITE_SCOPE} ${SHOUTOUT_SCOPE} ${EMOTE_SCOPE}`;
 const pauseError = () => new PollError('Подключение отменено.', 409);
+const chatColor = value => typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value) ? value : '';
+const cleanChatText = value => typeof value === 'string' ? value.normalize('NFKC').replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, 500) : '';
+const cleanChatName = value => cleanChatText(value).slice(0, 50);
+const countLabel = (count, forms) => {
+  const n = Math.max(0, count);
+  const form = n % 10 === 1 && n % 100 !== 11 ? forms[0] : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? forms[1] : forms[2];
+  return `${n} ${form}`;
+};
+const chatBadges = value => (Array.isArray(value) ? value : []).slice(0, 20)
+  .filter(badge => typeof badge?.set_id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(badge.set_id)
+    && typeof badge?.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(badge.id))
+  .map(badge => ({ setId: badge.set_id, id: badge.id }));
 
 export function chatVote(message, poll, userId) {
   const event = message?.payload?.event;
@@ -40,24 +57,81 @@ export function chatMessage(message, userId) {
   const viewerLogin = typeof event.chatter_user_login === 'string'
     ? event.chatter_user_login.normalize('NFKC').replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, 50)
     : viewerName;
-  const badges = new Set((Array.isArray(event.badges) ? event.badges : [])
+  const badges = chatBadges(event.badges);
+  const badgeSets = new Set((Array.isArray(event.badges) ? event.badges : [])
     .map(badge => badge?.set_id)
     .filter(value => typeof value === 'string'));
   const roles = [];
-  if (badges.has('subscriber') || badges.has('founder')) roles.push('subscriber');
-  if (badges.has('vip')) roles.push('vip');
-  if (badges.has('moderator') || badges.has('broadcaster')) roles.push('moderator');
+  if (badgeSets.has('subscriber') || badgeSets.has('founder')) roles.push('subscriber');
+  if (badgeSets.has('vip')) roles.push('vip');
+  if (badgeSets.has('moderator') || badgeSets.has('broadcaster')) roles.push('moderator');
   if (!roles.length) roles.push('viewer');
-  return { broadcasterId: userId, viewerId: `twitch:${event.chatter_user_id}`, viewerName, viewerLogin, roles, eventId: event.message_id, text: event.message.text, sentAt };
+  const cheerBits = Number.isSafeInteger(event.cheer?.bits) && event.cheer.bits > 0 ? Math.min(event.cheer.bits, 1_000_000_000) : 0;
+  return { broadcasterId: userId, viewerId: `twitch:${event.chatter_user_id}`, viewerName, viewerLogin, roles, badges, nameColor: chatColor(event.color), cheerBits, emotes: twitchEmoteSpans(event.message), eventId: event.message_id, text: event.message.text, sentAt };
+}
+
+export function chatActivity(message, userId) {
+  const event = message?.payload?.event;
+  if (message?.metadata?.message_type !== 'notification' || !event || !userId || event.broadcaster_user_id !== userId) return null;
+  const type = message.payload?.subscription?.type;
+  if (event.source_broadcaster_user_id && event.source_broadcaster_user_id !== userId) return null;
+  const sentAt = Date.parse(message.metadata.message_timestamp);
+  if (!Number.isFinite(sentAt)) return null;
+  const notice = type === 'channel.chat.notification' ? event.notice_type : type;
+  const named = (id, name, login) => ({
+    viewerId: typeof id === 'string' && /^[0-9]{1,30}$/.test(id) ? `twitch:${id}` : 'system',
+    viewerName: cleanChatName(name || login) || 'Анонимный зритель',
+    viewerLogin: cleanChatName(login || name),
+  });
+  let actor, text, activityType;
+  if (type === 'channel.chat.notification') {
+    if (typeof event.message_id !== 'string' || !event.message_id) return null;
+    actor = named(event.chatter_user_id, event.chatter_user_name, event.chatter_user_login);
+    switch (notice) {
+      case 'raid':
+        actor = named(event.raid?.user_id, event.raid?.user_name, event.raid?.user_login);
+        activityType = 'raid'; text = Number.isSafeInteger(event.raid?.viewer_count) ? `привёл ${countLabel(event.raid.viewer_count, ['зрителя', 'зрителей', 'зрителей'])}` : 'начал рейд'; break;
+      case 'unraid': activityType = 'raid'; text = 'завершил рейд'; break;
+      case 'sub': activityType = 'subscription'; text = 'оформил подписку'; break;
+      case 'resub': activityType = 'subscription'; text = `продлил подписку${Number.isSafeInteger(event.resub?.cumulative_months) ? ` · ${event.resub.cumulative_months} мес.` : ''}`; break;
+      case 'community_sub_gift': activityType = 'gift'; text = `подарил ${countLabel(Number.isSafeInteger(event.community_sub_gift?.total) ? event.community_sub_gift.total : 1, ['подписку', 'подписки', 'подписок'])}`; break;
+      case 'sub_gift':
+        if (event.sub_gift?.community_gift_id) return null;
+        activityType = 'gift'; text = `подарил подписку${event.sub_gift?.recipient_user_name ? ` для ${cleanChatName(event.sub_gift.recipient_user_name)}` : ''}`; break;
+      case 'gift_paid_upgrade': activityType = 'subscription'; text = 'продлил подаренную подписку'; break;
+      case 'prime_paid_upgrade': activityType = 'subscription'; text = 'обновил подписку Prime'; break;
+      case 'pay_it_forward': activityType = 'gift'; text = 'передал подписку дальше'; break;
+      case 'announcement': activityType = 'announcement'; text = cleanChatText(event.message?.text) || 'отправил объявление'; break;
+      case 'bits_badge_tier': activityType = 'milestone'; text = `получил значок за ${Number.isSafeInteger(event.bits_badge_tier?.tier) ? event.bits_badge_tier.tier : 0} Bits`; break;
+      case 'watch_streak': activityType = 'milestone'; text = `смотрит стримы подряд: ${Number.isSafeInteger(event.watch_streak?.streak_count) ? event.watch_streak.streak_count : 0}`; break;
+      case 'modiversary': activityType = 'milestone'; text = `модератор уже ${Number.isSafeInteger(event.modiversary?.months) ? event.modiversary.months : 0} мес.`; break;
+      case 'charity_donation': activityType = 'charity'; text = `поддержал сбор${event.charity_donation?.charity_name ? ` «${cleanChatName(event.charity_donation.charity_name)}»` : ''}`; break;
+      case 'gifted_drops_summary': activityType = 'gift'; text = `подарил Drops ${Number.isSafeInteger(event.gifted_drops_summary?.recipient_count) ? event.gifted_drops_summary.recipient_count : 0} зрителям`; break;
+      default: return null;
+    }
+  } else if (type === 'channel.shoutout.create' || type === 'channel.shoutout.receive') {
+    activityType = 'shoutout';
+    if (type === 'channel.shoutout.create') {
+      actor = named(event.to_broadcaster_user_id, event.to_broadcaster_user_name, event.to_broadcaster_user_login);
+      text = 'получил шотаут';
+    } else {
+      actor = named(event.from_broadcaster_user_id, event.from_broadcaster_user_name, event.from_broadcaster_user_login);
+      text = 'сделал шотаут вашему каналу';
+    }
+  } else return null;
+  const rawId = type === 'channel.chat.notification' ? event.message_id : message.metadata.message_id;
+  if (typeof rawId !== 'string' || !/^[A-Za-z0-9_-]{1,70}$/.test(rawId)) return null;
+  return { broadcasterId: userId, ...actor, eventId: `activity:${rawId}`, kind: 'activity', activityType, roles: [], badges: [], nameColor: chatColor(event.color), text, sentAt };
 }
 
 export async function createTwitch({ filename, store, clientId, onChatMessage, fetcher = fetch, Socket = WebSocket, now = Date.now, later = setTimeout, cancel = clearTimeout }) {
   if (typeof clientId !== 'string' || !/^[a-zA-Z0-9]{10,100}$/.test(clientId)) throw new Error('Не настроен Client ID приложения Twitch.');
-  let credentials = {}, status = { phase: 'disconnected', login: '', displayName: '', profileImageUrl: '', userId: '', error: '', device: null, lastGapAt: null };
+  let credentials = {}, status = { phase: 'disconnected', login: '', displayName: '', profileImageUrl: '', userId: '', canSend: false, canShowShoutouts: false, canReadEmotes: false, error: '', device: null, lastGapAt: null };
   let epoch = 0, stopped = false, timer, maintenance, retry, retryCount = 0;
   let pending = null, currentSocket = null, work = Promise.resolve(), disk = Promise.resolve();
   const sockets = new Set(), listeners = new Set();
   const avatarCache = new Map(), avatarQueue = new Map();
+  let badgeCache = { channelId: '', expiresAt: 0, badges: {} }, badgeRequest = null;
   let avatarTimer = null;
   try {
     const saved = JSON.parse(await readFile(filename, 'utf8'));
@@ -82,6 +156,7 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
   function reset() {
     epoch++; cancel(timer); cancel(maintenance); cancel(retry); cancel(avatarTimer); timer = maintenance = retry = avatarTimer = null;
     avatarQueue.clear();
+    badgeCache = { channelId: '', expiresAt: 0, badges: {} }; badgeRequest = null;
     pending = null; currentSocket = null;
     for (const entry of [...sockets]) { sockets.delete(entry); cancel(entry.watchdog); entry.ws.close(); }
   }
@@ -154,7 +229,7 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
     try { account = await request(AUTH + 'validate', { headers: { Authorization: `OAuth ${credentials.accessToken}` } }); }
     catch (error) { ensure(version); if (error.remoteStatus !== 401) throw error; await refresh(version); account = await request(AUTH + 'validate', { headers: { Authorization: `OAuth ${credentials.accessToken}` } }); }
     ensure(version);
-    if (account.client_id !== clientId || !account.scopes?.includes(SCOPE) || !account.user_id || !account.login) throw new PollError('Нужен вход с доступом к чтению чата.', 401);
+    if (account.client_id !== clientId || !account.scopes?.includes(READ_SCOPE) || !account.user_id || !account.login) throw new PollError('Нужен вход с доступом к чтению чата.', 401);
     let profile;
     try {
       const users = await request(`https://api.twitch.tv/helix/users?id=${encodeURIComponent(account.user_id)}`, {
@@ -164,7 +239,7 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
       profile = Array.isArray(users.data) ? users.data.find(user => user?.id === account.user_id) : null;
     } catch { ensure(version); }
     const image = typeof profile?.profile_image_url === 'string' && profile.profile_image_url.startsWith('https://') ? profile.profile_image_url : '';
-    update({ userId: account.user_id, login: account.login, displayName: typeof profile?.display_name === 'string' ? profile.display_name : account.login, profileImageUrl: image });
+    update({ userId: account.user_id, login: account.login, displayName: typeof profile?.display_name === 'string' ? profile.display_name : account.login, profileImageUrl: image, canSend: account.scopes.includes(WRITE_SCOPE), canShowShoutouts: account.scopes.includes(SHOUTOUT_SCOPE), canReadEmotes: account.scopes.includes(EMOTE_SCOPE) });
     if (account.expires_in < 300) await refresh(version);
     cancel(maintenance);
     maintenance = later(() => serial(async () => {
@@ -213,10 +288,18 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
             if (!session?.id) throw new PollError('Неполный ответ Twitch.', 502);
             entry.timeout = (session.keepalive_timeout_seconds || 30) * 1000 + 1000; watch();
             if (!previous) {
-              await request('https://api.twitch.tv/helix/eventsub/subscriptions', {
+              const subscribe = (type, condition) => request('https://api.twitch.tv/helix/eventsub/subscriptions', {
                 method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': clientId, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type: 'channel.chat.message', version: '1', condition: { broadcaster_user_id: status.userId, user_id: status.userId }, transport: { method: 'websocket', session_id: session.id } }),
+                body: JSON.stringify({ type, version: '1', condition, transport: { method: 'websocket', session_id: session.id } }),
               });
+              const chatCondition = { broadcaster_user_id: status.userId, user_id: status.userId };
+              await subscribe('channel.chat.message', chatCondition);
+              const optional = [subscribe('channel.chat.notification', chatCondition)];
+              if (status.canShowShoutouts) {
+                const shoutoutCondition = { broadcaster_user_id: status.userId, moderator_user_id: status.userId };
+                optional.push(subscribe('channel.shoutout.create', shoutoutCondition), subscribe('channel.shoutout.receive', shoutoutCondition));
+              }
+              await Promise.allSettled(optional);
             }
             if (!valid()) return;
             currentSocket = entry;
@@ -227,6 +310,10 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
             const chat = chatMessage(message, status.userId);
             if (chat && onChatMessage) {
               try { await onChatMessage(chat); } catch { /* other chat tools must not interrupt Twitch */ }
+            }
+            const activity = chatActivity(message, status.userId);
+            if (activity && onChatMessage) {
+              try { await onChatMessage(activity); } catch { /* other chat tools must not interrupt Twitch */ }
             }
             const vote = chatVote(message, store.snapshot().poll, status.userId);
             if (vote) {
@@ -267,6 +354,95 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
   }
   return {
     snapshot, subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+    async sendMessage(rawText) {
+      if (status.phase !== 'connected') throw new PollError('Чат Twitch пока не подключён.', 409);
+      if (!status.canSend) throw new PollError('Переподключите Twitch, чтобы разрешить отправку сообщений.', 409);
+      if (typeof rawText !== 'string' || !rawText.trim() || rawText.length > 500 || /[\p{Cc}\p{Cf}]/u.test(rawText.replace(/\u200d/g, ''))) throw new PollError('Сообщение должно содержать от 1 до 500 символов.', 400);
+      const text = rawText.trim();
+      let result;
+      try {
+        result = await request('https://api.twitch.tv/helix/chat/messages', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': clientId, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ broadcaster_id: status.userId, sender_id: status.userId, message: text }),
+        });
+      } catch (error) {
+        if (error.remoteStatus === 429) throw new PollError('Слишком много сообщений. Подождите немного.', 429);
+        throw error;
+      }
+      const sent = result?.data?.[0];
+      if (!sent?.is_sent || typeof sent.message_id !== 'string' || !sent.message_id) throw new PollError(sent?.drop_reason?.message || 'Twitch не отправил сообщение.', 409);
+      return { broadcasterId: status.userId, viewerId: `twitch:${status.userId}`, viewerName: status.displayName || status.login, viewerLogin: status.login, roles: ['moderator'], eventId: sent.message_id, text, sentAt: now() };
+    },
+    async avatars(viewerIds) {
+      if (!status.userId || !credentials.accessToken) return {};
+      const ids = [...new Set(viewerIds.filter(id => typeof id === 'string' && /^twitch:[0-9]{1,30}$/.test(id)).map(id => id.slice(7)))].slice(0, 100);
+      const missing = ids.filter(id => !avatarCache.has(id));
+      if (missing.length) {
+        const query = new URLSearchParams(missing.map(id => ['id', id]));
+        const users = await request(`https://api.twitch.tv/helix/users?${query}`, { headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': clientId } });
+        const profiles = new Map((Array.isArray(users.data) ? users.data : []).map(user => [user?.id, avatarUrl(user?.profile_image_url)]));
+        for (const id of missing) avatarCache.set(id, profiles.get(id) || '');
+      }
+      return Object.fromEntries(ids.map(id => [`twitch:${id}`, avatarCache.get(id) || '']));
+    },
+    async emotes() {
+      if (!status.userId || !credentials.accessToken) return { emotes: [], requiresReconnect: false };
+      const channelId = status.userId;
+      const headers = { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': clientId };
+      if (status.canReadEmotes) {
+        const emotes = [];
+        const cursors = new Set();
+        let cursor = '';
+        for (let page = 0; page < 20; page++) {
+          const query = new URLSearchParams({ user_id: channelId, broadcaster_id: channelId });
+          if (cursor) query.set('after', cursor);
+          const response = await request(`https://api.twitch.tv/helix/chat/emotes/user?${query}`, { headers });
+          emotes.push(...nativeEmotes(response.data));
+          cursor = response.pagination?.cursor;
+          if (typeof cursor !== 'string' || !cursor || cursors.has(cursor) || emotes.length >= 10000) break;
+          cursors.add(cursor);
+        }
+        return { emotes: emotes.slice(0, 10000), requiresReconnect: false };
+      }
+      const results = await Promise.allSettled([
+        request('https://api.twitch.tv/helix/chat/emotes/global', { headers }),
+        request(`https://api.twitch.tv/helix/chat/emotes?broadcaster_id=${channelId}`, { headers }),
+      ]);
+      if (results.every(result => result.status === 'rejected')) throw results[0].reason;
+      return { emotes: results.flatMap(result => result.status === 'fulfilled' ? nativeEmotes(result.value.data) : []), requiresReconnect: true };
+    },
+    async badges() {
+      if (!status.userId || !credentials.accessToken) return {};
+      if (badgeCache.channelId === status.userId && badgeCache.expiresAt > now()) return badgeCache.badges;
+      if (badgeRequest) return badgeRequest;
+      const channelId = status.userId;
+      const headers = { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': clientId };
+      const load = async url => {
+        const response = await request(url, { headers });
+        const result = {};
+        for (const set of Array.isArray(response.data) ? response.data : []) {
+          if (typeof set?.set_id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(set.set_id)) continue;
+          for (const badge of Array.isArray(set.versions) ? set.versions : []) {
+            if (typeof badge?.id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(badge.id)) continue;
+            const url = avatarUrl(badge.image_url_2x) || avatarUrl(badge.image_url_1x);
+            if (url) result[`${set.set_id}/${badge.id}`] = { url, title: String(badge.title || set.set_id).slice(0, 100) };
+          }
+        }
+        return result;
+      };
+      badgeRequest = (async () => {
+        const [global, channel] = await Promise.allSettled([
+          load('https://api.twitch.tv/helix/chat/badges/global'),
+          load(`https://api.twitch.tv/helix/chat/badges?broadcaster_id=${encodeURIComponent(channelId)}`),
+        ]);
+        if (global.status === 'rejected' && channel.status === 'rejected') throw global.reason;
+        const badges = { ...(global.status === 'fulfilled' ? global.value : {}), ...(channel.status === 'fulfilled' ? channel.value : {}) };
+        if (status.userId === channelId) badgeCache = { channelId, expiresAt: now() + 60 * 60 * 1000, badges };
+        return badges;
+      })();
+      try { return await badgeRequest; } finally { badgeRequest = null; }
+    },
     start() { return serial(async () => {
       if (!credentials.accessToken || stopped) return;
       const version = epoch; update({ phase: 'connecting', error: '' });
@@ -275,11 +451,11 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, f
     command(command) { return serial(async () => {
       if (command.type === 'disconnect') {
         reset(); credentials = {}; await persist();
-        update({ phase: 'disconnected', userId: '', login: '', displayName: '', profileImageUrl: '', device: null, error: '', lastGapAt: null });
+        update({ phase: 'disconnected', userId: '', login: '', displayName: '', profileImageUrl: '', canSend: false, canShowShoutouts: false, canReadEmotes: false, device: null, error: '', lastGapAt: null });
       } else if (command.type === 'connect') {
         reset(); const version = epoch;
         credentials = {}; await persist();
-        update({ phase: 'connecting', userId: '', login: '', displayName: '', profileImageUrl: '', device: null, error: '', lastGapAt: null });
+        update({ phase: 'connecting', userId: '', login: '', displayName: '', profileImageUrl: '', canSend: false, canShowShoutouts: false, canReadEmotes: false, device: null, error: '', lastGapAt: null });
         try {
           const device = await form('device', { client_id: clientId, scopes: SCOPE }); ensure(version);
           const uri = new URL(device.verification_uri);

@@ -1,3 +1,30 @@
+type DesktopVersionState = {
+  supported: boolean
+  currentChannel: "stable" | "beta"
+  currentVersion: string
+  phase:
+    | "development"
+    | "unsupported"
+    | "idle"
+    | "checking"
+    | "downloading"
+    | "unpacking"
+    | "restarting"
+    | "error"
+  target: "stable" | "beta" | null
+  progress: number
+  message: string
+  errors: Partial<Record<"stable" | "beta", string>>
+  slots: Record<
+    "stable" | "beta",
+    {
+      installedVersion: string | null
+      availableVersion: string | null
+      updateAvailable: boolean
+      current: boolean
+    }
+  >
+}
 type DesktopUpdatePhase =
   | "development"
   | "unconfigured"
@@ -23,6 +50,7 @@ type DesktopInfo = {
   version: string
   platform: string
   development: boolean
+  versions?: DesktopVersionState
   update: DesktopUpdateState
 }
 
@@ -96,6 +124,12 @@ interface Window {
   streamPollsDesktop?: {
     getInfo(): Promise<DesktopInfo>
     setWindowTheme(theme: "lime" | "violet" | "ice" | "mono"): Promise<void>
+    getVersions(): Promise<DesktopVersionState>
+    checkVersions(): Promise<DesktopVersionState>
+    downloadVersion(branch: "stable" | "beta"): Promise<DesktopVersionState>
+    activateVersion(branch: "stable" | "beta"): Promise<boolean>
+    markVersionHealthy(): Promise<void>
+    onVersionState(callback: (state: DesktopVersionState) => void): () => void
     checkForUpdates(): Promise<DesktopUpdateState>
     downloadUpdate(): Promise<DesktopUpdateState>
     installUpdate(): Promise<boolean>

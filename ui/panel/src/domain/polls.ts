@@ -1,3 +1,5 @@
+import type { ContestOverlaySettings } from "../../../../public/contest-overlay-model.js"
+import type { ChatOverlaySettings } from "../../../../public/chat-overlay-model.js"
 export type PollOption = {
   id: string
   name: string
@@ -53,9 +55,9 @@ export type WidgetSettings = {
   radius: "small" | "medium" | "large"
   titleSize: "small" | "medium" | "large"
   width: "narrow" | "medium" | "wide"
-  opacity: 70 | 85 | 100
+  opacity: number
   font: "geist" | "system" | "mono"
-  optionStyle: "rows" | "cards" | "outline"
+  optionStyle: "rows" | "cards" | "outline" | "fill"
   optionSize: "small" | "medium" | "large"
   keywordStyle: "outline" | "filled" | "text"
   barSize: "thin" | "medium" | "thick"
@@ -64,6 +66,21 @@ export type WidgetSettings = {
   showBars: boolean
   showVotes: boolean
   showPercentages: boolean
+  layout: "vertical" | "horizontal"
+  panelColor: string
+  textColor: string
+  mutedColor: string
+  trackColor: string
+  panelWidth: number
+  padding: number
+  gap: number
+  cornerRadius: number
+  titleFontSize: number
+  optionFontSize: number
+  barHeight: number
+  showTotal: boolean
+  showNumbers: boolean
+  highlightWinner: boolean
 }
 
 export type ServerState = {
@@ -73,6 +90,8 @@ export type ServerState = {
   draft: Draft
   presets: Preset[]
   widget: WidgetSettings
+  contestOverlay: ContestOverlaySettings
+  chatOverlay: ChatOverlaySettings
   poll: Poll | null
 }
 
@@ -82,6 +101,9 @@ export type TwitchState = {
   displayName?: string
   profileImageUrl?: string
   userId?: string
+  canReadEmotes?: boolean
+  canSend?: boolean
+  canShowShoutouts?: boolean
   error?: string
   lastGapAt?: number | null
   device?: { code: string; url: string } | null

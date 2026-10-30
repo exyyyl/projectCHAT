@@ -26,6 +26,7 @@ module.exports = {
   ],
   extraResources: [
     { from: 'build/update-config.json', to: 'update-config.json' },
+    { from: 'build/cue-runtime.json', to: 'cue-runtime.json' },
     { from: 'build/stream-dock-plugins', to: 'stream-dock-plugins' },
   ],
   publish: {
@@ -38,7 +39,7 @@ module.exports = {
   win: {
     icon: 'build/icon.png',
     legalTrademarks: 'Cue © 2026 exyyyl',
-    target: [{ target: 'nsis', arch: ['x64'] }],
+    target: [{ target: 'nsis', arch: ['x64'] }, { target: 'zip', arch: ['x64'] }],
     artifactName: 'Cue-Setup-${version}.${ext}',
   },
   nsis: {
@@ -51,7 +52,7 @@ module.exports = {
   },
   mac: {
     icon: 'build/icon.png',
-    target: [{ target: 'dmg', arch: [process.arch] }],
+    target: [{ target: 'dmg', arch: [process.arch] }, { target: 'zip', arch: [process.arch] }],
     artifactName: 'Cue-${version}-${arch}.${ext}',
   },
 }

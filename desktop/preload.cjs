@@ -2,6 +2,16 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('streamPollsDesktop', {
   getInfo: () => ipcRenderer.invoke('desktop:get-info'),
+  getVersions: () => ipcRenderer.invoke('versions:get'),
+  checkVersions: () => ipcRenderer.invoke('versions:check'),
+  downloadVersion: branch => ipcRenderer.invoke('versions:download', branch),
+  activateVersion: branch => ipcRenderer.invoke('versions:activate', branch),
+  markVersionHealthy: () => ipcRenderer.invoke('versions:healthy'),
+  onVersionState(callback) {
+    const listener = (_event, state) => callback(state)
+    ipcRenderer.on('versions:state', listener)
+    return () => ipcRenderer.removeListener('versions:state', listener)
+  },
   setWindowTheme: theme => ipcRenderer.invoke('desktop:theme:set', theme),
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   downloadUpdate: () => ipcRenderer.invoke('updates:download'),

@@ -269,11 +269,12 @@ test('settings import rejects active polls and malformed backups', () => {
 test('widget settings are validated, migrated, persisted and included in imports', () => {
   const initial = initialState();
   const widget = { accent: '#a970ff', surface: 'accent', density: 'compact', radius: 'large', titleSize: 'small', width: 'wide', opacity: 85, font: 'mono', optionStyle: 'cards', optionSize: 'large', keywordStyle: 'filled', barSize: 'thick', showTimer: false, showKeywords: false, showBars: false, showVotes: false, showPercentages: false };
+  const migrated = { ...defaultWidget(), ...widget, panelWidth: 640, padding: 16, gap: 8, cornerRadius: 28, titleFontSize: 24, optionFontSize: 20, barHeight: 10 };
   let state = applyCommand(initial, { type: 'widget-update', widget }).state;
-  assert.deepEqual(state.widget, widget);
+  assert.deepEqual(state.widget, migrated);
   assert.throws(() => applyCommand(state, { type: 'widget-update', widget: { ...widget, accent: 'purple' } }), /цвет/);
   state = applyCommand(initial, { type: 'settings-import', draftRevision: 0, settings: { schema: 1, app: 'projectCHAT', draft: initial.draft, presets: [], widget } }).state;
-  assert.deepEqual(state.widget, widget);
+  assert.deepEqual(state.widget, migrated);
   const legacy = { accent: '#d3fb75', surface: 'solid', density: 'comfortable', showTimer: true, showKeywords: true };
   assert.deepEqual(validateStoredState({ ...initialState(), widget: legacy }).widget, defaultWidget());
   const legacyGlass = { ...widget, surface: 'glass' };

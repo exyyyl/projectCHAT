@@ -1,22 +1,40 @@
-import { useState } from "react"
-import { Check, Gift, ListChecks } from "lucide-react"
-
-import { FormColor, FormSelect, FormSwitch } from "@/components/form-controls"
-import type { Contest } from "@/domain/contest"
-
-import { PollResults } from "@/components/poll-results"
+import type { ContestOverlaySettings } from "../../../../public/contest-overlay-model.js"
+import { useId, useLayoutEffect, useRef, useState } from "react"
 import {
-  StudioRail,
-  StudioStage,
-  StudioWorkspace,
-} from "@/components/page-layout"
-import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useCopyLink } from "@/hooks/use-copy-link"
+  ListChecks,
+  Palette,
+  RectangleHorizontal,
+  RotateCcw,
+  SlidersHorizontal,
+  Type,
+  X,
+} from "lucide-react"
+import {
+  resolveWidget,
+  widgetDefaults,
+} from "../../../../public/widget-model.js"
+import { FormSelect, FormSwitch } from "@/components/form-controls"
+import { PollOverlay } from "@/components/poll-overlay"
+import { NumberProperty, ColorProperty } from "./widget-properties"
+import type { Contest } from "@/domain/contest"
 import type { Draft, Poll, WidgetSettings } from "@/domain/polls"
-import { SHOW_CONTEST_WIDGET } from "@/domain/release-features"
+import { ChatWidgetEditor } from "./chat-widget-editor"
+import { WidgetStudioToolbar } from "./widget-studio-toolbar"
+import { ContestWidgetEditor } from "./contest-widget-editor"
+import type { WidgetKind } from "./widget-kind-tabs"
+import type { ChatOverlaySettings } from "../../../../public/chat-overlay-model.js"
+import "./widget-studio.css"
+
+/* Widget studio · Operate
+   A quiet canvas comes first. Selecting a part opens one small property tray below it.
+   Cue controls and overlay customization remain independent; no permanent inspector.
+*/
 
 type WidgetPageProps = {
+  contestOverlay: ContestOverlaySettings
+  onUpdateContestOverlay: (patch: Partial<ContestOverlaySettings>) => void
+  chatOverlay: ChatOverlaySettings
+  onUpdateChatOverlay: (patch: Partial<ChatOverlaySettings>) => void
   contest?: Contest | null
   poll: Poll | null
   draft: Draft
@@ -26,92 +44,45 @@ type WidgetPageProps = {
   onSetOutput: (visible: boolean) => void
 }
 
-const colors = [
-  { value: "#d3fb75", label: "Лайм" },
-  { value: "#a970ff", label: "Фиолетовый" },
-  { value: "#6ee7f2", label: "Голубой" },
-  { value: "#ff8fab", label: "Розовый" },
-  { value: "#f8c86b", label: "Янтарный" },
-  { value: "#f5f5f5", label: "Белый" },
-]
-
-const defaults: WidgetSettings = {
-  accent: "#d3fb75",
-  surface: "solid",
-  density: "comfortable",
-  radius: "medium",
-  titleSize: "medium",
-  width: "medium",
-  opacity: 100,
-  font: "geist",
-  optionStyle: "rows",
-  optionSize: "medium",
-  keywordStyle: "outline",
-  barSize: "medium",
-  showTimer: true,
-  showKeywords: true,
-  showBars: true,
-  showVotes: true,
-  showPercentages: true,
-}
-
-const widgetKinds = [
-  { id: "polls", label: "Опросы", icon: ListChecks },
-  ...(SHOW_CONTEST_WIDGET
-    ? [{ id: "contests" as const, label: "Конкурсы", icon: Gift }]
-    : []),
+type PreviewMode = "results" | "empty" | "ended" | "live"
+const colorFields = [
+  ["accent", "Акцент"],
+  ["panelColor", "Фон"],
+  ["textColor", "Основной текст"],
+  ["mutedColor", "Вторичный текст"],
+  ["trackColor", "Подложка полос"],
+] as const
+const contentFields = [
+  ["showTimer", "Таймер"],
+  ["showKeywords", "Ключевые слова"],
+  ["showVotes", "Количество голосов"],
+  ["showPercentages", "Проценты"],
+  ["showBars", "Полосы результатов"],
+  ["showTotal", "Общее число голосов"],
+  ["showNumbers", "Нумерация вариантов"],
+  ["highlightWinner", "Выделять победителя"],
 ] as const
 
 export function WidgetPage(props: WidgetPageProps) {
-  const [selected, setSelected] =
-    useState<(typeof widgetKinds)[number]["id"]>("polls")
-  return (
-    <section
-      className="flex h-full min-h-0 flex-col overflow-hidden"
-      aria-label="Виджеты"
-    >
-      <div
-        className="flex min-h-14 shrink-0 flex-wrap items-center gap-1 px-5 py-2"
-        role="group"
-        aria-label="Выбор виджета"
-      >
-        {widgetKinds.map(({ id, label, icon: Icon }) => (
-          <Button
-            key={id}
-            variant={selected === id ? "secondary" : "ghost"}
-            className="h-8 gap-2 rounded-md px-2.5 text-xs"
-            aria-pressed={selected === id}
-            onClick={() => setSelected(id)}
-          >
-            <Icon className="size-4" />
-            {label}
-          </Button>
-        ))}
-      </div>
-      <div className={selected === "polls" ? "min-h-0 flex-1" : "hidden"}>
-        <PollWidgetEditor {...props} />
-      </div>
-      {SHOW_CONTEST_WIDGET && selected === "contests" && (
-        <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-8">
-          <div className="max-w-sm text-center">
-            <Gift className="mx-auto mb-4 size-7 text-muted-foreground" />
-            <h2 className="text-lg font-medium">
-              Виджет конкурса ещё в разработке
-            </h2>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              Рулетка и победитель доступны в разделе «Конкурсы». Отдельного
-              источника для OBS пока нет.
-            </p>
-            {props.contest && (
-              <div className="mt-5 rounded-xl bg-surface-subtle px-4 py-3 text-sm">
-                {props.contest.participants.length} участников
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </section>
-  )
+  const [selected, setSelected] = useState<WidgetKind>("polls")
+  if (selected === "chat")
+    return (
+      <ChatWidgetEditor
+        settings={props.chatOverlay}
+        onUpdate={props.onUpdateChatOverlay}
+        onSelectKind={setSelected}
+      />
+    )
+  if (selected === "contests")
+    return (
+      <ContestWidgetEditor
+        contest={props.contest ?? null}
+        settings={props.contestOverlay}
+        onUpdate={props.onUpdateContestOverlay}
+        onSelectKind={setSelected}
+      />
+    )
+  return <PollWidgetEditor {...props} onSelectKind={setSelected} />
 }
 
 function PollWidgetEditor({
@@ -121,267 +92,425 @@ function PollWidgetEditor({
   busy,
   onUpdate,
   onSetOutput,
-}: WidgetPageProps) {
-  const widget = { ...defaults, ...savedWidget }
+  onSelectKind,
+}: WidgetPageProps & { onSelectKind: (kind: WidgetKind) => void }) {
+  const controlId = useId()
+  const widget = resolveWidget(savedWidget)
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("results")
+  const [background, setBackground] = useState("dark")
+  const [zoom, setZoom] = useState("fit")
+  const [panel, setPanel] = useState<
+    "layout" | "text" | "options" | "colors" | "content" | null
+  >(null)
+  const [measurement, setMeasurement] = useState({ width: 600, height: 500 })
+  const [objectHeight, setObjectHeight] = useState(500)
+  const stageRef = useRef<HTMLDivElement>(null)
+  const objectRef = useRef<HTMLDivElement>(null)
   const visible = poll ? poll.visible : draft.showOverlay
   const overlayOrigin = import.meta.env.DEV
     ? "http://127.0.0.1:4317"
     : location.origin
-  const overlayUrl = `${overlayOrigin}/overlay`
-  const overlaySize = widget.width === "wide" ? "640 × 640" : "480 × 640"
-  const update = onUpdate
-  const { copied, copy } = useCopyLink(overlayUrl)
-  return (
-    <StudioWorkspace
-      aria-label="Виджет опроса"
-      className="xl:grid-cols-[minmax(0,1fr)_21rem]"
-    >
-      <StudioStage className="preview-stage bg-panel-muted px-6 py-5 lg:px-6 xl:overflow-y-auto">
-        <div className="mb-6 flex justify-end text-xs text-muted-foreground">
-          <span>{overlaySize} px</span>
-        </div>
-        <div className="flex min-h-96 flex-1 items-center justify-center py-6">
-          <div
-            className={`w-full ${widget.width === "wide" ? "max-w-xl" : widget.width === "narrow" ? "max-w-sm" : "max-w-md"}`}
-          >
-            <PollResults poll={poll || draft} compact widget={widget} />
-          </div>
-        </div>
-      </StudioStage>
-      <StudioRail className="flex min-w-0 flex-col bg-panel px-5 py-5">
-        <div className="min-w-0 rounded-lg bg-surface-subtle px-3">
-          <FormSwitch
-            label="Показывать в OBS"
-            checked={visible}
-            disabled={busy}
-            onCheckedChange={onSetOutput}
+  const overlayUrl = overlayOrigin + "/overlay"
+  const synthetic = previewMode !== "live"
+  const preview: Draft | Poll = synthetic
+    ? {
+        ...draft,
+        secret: false,
+        duration: previewMode === "ended" ? 0 : 42,
+        options: draft.options.map((option, index) => ({
+          ...option,
+          votes:
+            previewMode === "empty" ? 0 : [148, 92, 56, 31, 18, 9][index] || 0,
+        })),
+      }
+    : poll || draft
+
+  useLayoutEffect(() => {
+    const stage = stageRef.current,
+      object = objectRef.current
+    if (!stage || !object) return
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (
+          entry.target === stage &&
+          entry.contentRect.width > 0 &&
+          entry.contentRect.height > 0
+        )
+          setMeasurement({
+            width: entry.contentRect.width,
+            height: entry.contentRect.height,
+          })
+        if (entry.target === object && entry.contentRect.height > 0)
+          setObjectHeight(Math.ceil(entry.contentRect.height))
+      }
+    })
+    observer.observe(stage)
+    observer.observe(object)
+    return () => observer.disconnect()
+  }, [])
+
+  const sourceWidth = widget.panelWidth + 48
+  const sourceHeight = objectHeight + 48
+  const fit = Math.min(
+    1,
+    Math.max(0.1, (measurement.width - 48) / sourceWidth),
+    Math.max(0.1, (measurement.height - 48) / sourceHeight)
+  )
+  const scale = zoom === "fit" ? fit : Number(zoom)
+  const updateFormat = (layout: WidgetSettings["layout"]) =>
+    onUpdate({ layout, panelWidth: layout === "horizontal" ? 960 : 440 })
+
+  const sections = [
+    ["layout", "Макет", RectangleHorizontal],
+    ["text", "Текст", Type],
+    ["options", "Варианты", ListChecks],
+    ["colors", "Цвета", Palette],
+    ["content", "Состав", SlidersHorizontal],
+  ] as const
+
+  const properties = {
+    layout: (
+      <>
+        <FormSelect
+          disabled={false}
+          label="Формат"
+          value={widget.layout}
+          options={[
+            ["vertical", "Вертикальный"],
+            ["horizontal", "Горизонтальный"],
+          ]}
+          onChange={(value) => {
+            if (value !== widget.layout)
+              updateFormat(value as WidgetSettings["layout"])
+          }}
+        />
+        <NumberProperty
+          label="Ширина"
+          value={widget.panelWidth}
+          min={widget.layout === "horizontal" ? 640 : 280}
+          max={1600}
+          onChange={(panelWidth) => onUpdate({ panelWidth })}
+        />
+        <NumberProperty
+          label="Внутренний отступ"
+          value={widget.padding}
+          min={8}
+          max={64}
+          onChange={(padding) => onUpdate({ padding })}
+        />
+        <NumberProperty
+          label="Скругление"
+          value={widget.cornerRadius}
+          min={0}
+          max={48}
+          onChange={(cornerRadius) => onUpdate({ cornerRadius })}
+        />
+      </>
+    ),
+    text: (
+      <>
+        <FormSelect
+          disabled={false}
+          label="Шрифт"
+          value={widget.font}
+          options={[
+            ["geist", "Geist"],
+            ["system", "Системный"],
+            ["mono", "Моноширинный"],
+          ]}
+          onChange={(font) =>
+            onUpdate({ font: font as WidgetSettings["font"] })
+          }
+        />
+        <NumberProperty
+          label="Размер вопроса"
+          value={widget.titleFontSize}
+          min={16}
+          max={64}
+          onChange={(titleFontSize) => onUpdate({ titleFontSize })}
+        />
+        <NumberProperty
+          label="Размер вариантов"
+          value={widget.optionFontSize}
+          min={12}
+          max={32}
+          onChange={(optionFontSize) => onUpdate({ optionFontSize })}
+        />
+      </>
+    ),
+    options: (
+      <>
+        <FormSelect
+          disabled={false}
+          label="Оформление"
+          value={widget.optionStyle}
+          options={[
+            ["cards", "Карточки"],
+            ["fill", "Заливка по голосам"],
+            ["rows", "Строки"],
+            ["outline", "Контур"],
+          ]}
+          onChange={(optionStyle) =>
+            onUpdate({
+              optionStyle: optionStyle as WidgetSettings["optionStyle"],
+            })
+          }
+        />
+        <FormSelect
+          disabled={false}
+          label="Ключевые слова"
+          value={widget.keywordStyle}
+          options={[
+            ["filled", "Мягкая заливка"],
+            ["outline", "Контур"],
+            ["text", "Только текст"],
+          ]}
+          onChange={(keywordStyle) =>
+            onUpdate({
+              keywordStyle: keywordStyle as WidgetSettings["keywordStyle"],
+            })
+          }
+        />
+        <NumberProperty
+          label="Толщина полос"
+          value={widget.barHeight}
+          min={2}
+          max={20}
+          onChange={(barHeight) => onUpdate({ barHeight })}
+        />
+        <NumberProperty
+          label="Между вариантами"
+          value={widget.gap}
+          min={4}
+          max={40}
+          onChange={(gap) => onUpdate({ gap })}
+        />
+      </>
+    ),
+    colors: (
+      <>
+        <FormSelect
+          disabled={false}
+          label="Поверхность"
+          value={widget.surface}
+          options={[
+            ["solid", "Сплошной фон"],
+            ["accent", "Тонированный"],
+            ["minimal", "Прозрачный"],
+          ]}
+          onChange={(surface) =>
+            onUpdate({ surface: surface as WidgetSettings["surface"] })
+          }
+        />
+        <NumberProperty
+          label="Непрозрачность фона"
+          unit="%"
+          value={widget.opacity}
+          min={0}
+          max={100}
+          onChange={(opacity) => onUpdate({ opacity })}
+        />
+        {colorFields.map(([key, label]) => (
+          <ColorProperty
+            key={key}
+            label={label}
+            value={widget[key]}
+            onChange={(value) => onUpdate({ [key]: value })}
           />
-        </div>
-        <div className="mt-6 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-medium">Оформление</h2>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs text-muted-foreground"
-            onClick={() => onUpdate(defaults)}
-          >
-            Сбросить
-          </Button>
-        </div>
-        <Tabs defaultValue="style" className="mt-4 min-w-0">
-          <TabsList className="widget-editor-tabs grid h-9 w-full min-w-0 grid-cols-3 border-0 bg-surface-subtle p-1">
-            <TabsTrigger value="style" className="min-w-0 rounded-md px-1">
-              Стиль
-            </TabsTrigger>
-            <TabsTrigger value="options" className="min-w-0 rounded-md px-1">
-              Варианты
-            </TabsTrigger>
-            <TabsTrigger value="content" className="min-w-0 rounded-md px-1">
-              Состав
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="style" className="mt-5">
-            <div className="mb-5">
-              <FormColor
-                value={widget.accent}
-                colors={colors}
-                disabled={false}
-                onChange={(accent) => update({ accent })}
-              />
-            </div>
-            {styleChoices.map((field) => (
-              <FormSelect
-                key={field.key}
-                label={field.label}
-                value={String(widget[field.key])}
-                options={field.options.map(([value, label]) => [
-                  String(value),
-                  label,
-                ])}
-                disabled={
-                  field.key === "opacity" && widget.surface === "minimal"
-                }
-                onChange={(value) => {
-                  const option = field.options.find(
-                    (option) => String(option[0]) === value
-                  )
-                  if (option) update({ [field.key]: option[0] })
-                }}
-              />
-            ))}
-          </TabsContent>
-          <TabsContent value="options" className="mt-5">
-            {optionChoices.map((field) => (
-              <FormSelect
-                key={field.key}
-                label={field.label}
-                value={String(widget[field.key])}
-                options={field.options.map(([value, label]) => [value, label])}
-                disabled={false}
-                onChange={(value) => {
-                  const option = field.options.find(
-                    (option) => option[0] === value
-                  )
-                  if (option) update({ [field.key]: option[0] })
-                }}
-              />
-            ))}
-          </TabsContent>
-          <TabsContent value="content" className="mt-5">
-            {contentFields.map(([key, label]) => (
-              <FormSwitch
-                key={key}
-                label={label}
-                checked={widget[key]}
-                onCheckedChange={(checked) => update({ [key]: checked })}
-              />
-            ))}
-          </TabsContent>
-        </Tabs>
-        <div className="mt-auto pt-8">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-medium">Источник OBS</span>
-            <span className="text-muted-foreground">{overlaySize} px</span>
-          </div>
+        ))}
+      </>
+    ),
+    content: (
+      <>
+        {contentFields.map(([key, label]) => (
+          <FormSwitch
+            key={key}
+            label={label}
+            checked={widget[key]}
+            onCheckedChange={(checked) => onUpdate({ [key]: checked })}
+          />
+        ))}
+      </>
+    ),
+  }
+
+  return (
+    <section className="widget-studio" aria-label="Редактор виджета опроса">
+      <WidgetStudioToolbar
+        kind="polls"
+        enabled={visible}
+        disabled={busy}
+        url={overlayUrl}
+        dimensions={`${sourceWidth} × ${sourceHeight} px`}
+        scene={background}
+        onSceneChange={setBackground}
+        onToggleOutput={() => onSetOutput(!visible)}
+        onSelectKind={onSelectKind}
+        previewControls={
           <div
-            className="mt-2 truncate rounded-md bg-surface-subtle px-2.5 py-2 font-mono text-[11px] text-muted-foreground"
-            title={overlayUrl}
+            className="studio-toolbar-modes"
+            role="group"
+            aria-label="Источник опроса на холсте"
           >
-            {overlayUrl}
-          </div>
-          <div className="mt-2 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-2">
-            <Button variant="outline" size="sm" asChild>
-              <a href={overlayUrl} target="_blank" rel="noreferrer">
-                Открыть
-              </a>
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="min-w-0"
-              onClick={() => void copy()}
+            <button
+              type="button"
+              aria-pressed={synthetic}
+              onClick={() => {
+                if (!synthetic) setPreviewMode("results")
+              }}
             >
-              <span
-                aria-live="polite"
-                className="inline-flex items-center gap-1.5"
+              Демо
+            </button>
+            <button
+              type="button"
+              aria-pressed={!synthetic}
+              onClick={() => setPreviewMode("live")}
+            >
+              {poll ? "Текущий опрос" : "Черновик"}
+            </button>
+          </div>
+        }
+        testControls={
+          <>
+            {(
+              [
+                ["results", "С голосами"],
+                ["empty", "Без голосов"],
+                ["ended", "Финал"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={previewMode === value}
+                onClick={() => setPreviewMode(value)}
               >
-                {copied && <Check className="size-3.5" />}
-                {copied ? "Скопировано" : "Копировать ссылку"}
-              </span>
-            </Button>
+                {label}
+              </button>
+            ))}
+            <div
+              className="studio-toolbar-samples"
+              role="group"
+              aria-label="Масштаб холста"
+            >
+              {[
+                ["fit", "Авто"],
+                ["0.5", "50%"],
+                ["0.75", "75%"],
+                ["1", "100%"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={zoom === value}
+                  onClick={() => setZoom(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onUpdate({ ...widgetDefaults })
+                setPanel(null)
+              }}
+            >
+              <RotateCcw aria-hidden="true" />
+              Сбросить оформление
+            </button>
+          </>
+        }
+      />
+      <div className="widget-canvas-workspace">
+        <div
+          className="widget-canvas"
+          ref={stageRef}
+          data-background={background}
+        >
+          <div
+            className="widget-artboard-wrap"
+            style={{ width: sourceWidth * scale, height: sourceHeight * scale }}
+          >
+            <div
+              className="widget-artboard"
+              style={{ width: sourceWidth, transform: "scale(" + scale + ")" }}
+            >
+              <div ref={objectRef}>
+                <PollOverlay
+                  poll={preview}
+                  widget={widget}
+                  endedPreview={previewMode === "ended"}
+                  selectedPart={
+                    panel === "text"
+                      ? "question"
+                      : panel === "options"
+                        ? "options"
+                        : panel === "colors"
+                          ? "background"
+                          : undefined
+                  }
+                  onSelectPart={(part) =>
+                    setPanel(
+                      part === "question"
+                        ? "text"
+                        : part === "options"
+                          ? "options"
+                          : "colors"
+                    )
+                  }
+                />
+              </div>
+            </div>
           </div>
         </div>
-      </StudioRail>
-    </StudioWorkspace>
+      </div>
+      <div className="widget-edit-dock">
+        <div
+          className="widget-edit-navigation"
+          role="group"
+          aria-label="Настроить виджет"
+        >
+          {sections.map(([id, label, Icon]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={panel === id}
+              aria-expanded={panel === id}
+              aria-controls={controlId + "-properties"}
+              data-active={panel === id || undefined}
+              onClick={() =>
+                setPanel((current) => (current === id ? null : id))
+              }
+            >
+              <Icon aria-hidden="true" />
+              <span>{label}</span>
+            </button>
+          ))}
+          {panel && (
+            <button
+              className="widget-close-properties"
+              type="button"
+              aria-label="Закрыть настройки"
+              onClick={() => setPanel(null)}
+            >
+              <X aria-hidden="true" />
+            </button>
+          )}
+        </div>
+        {panel && (
+          <div
+            className="widget-property-tray"
+            id={controlId + "-properties"}
+            role="region"
+            aria-label={
+              "Настройки: " + sections.find((item) => item[0] === panel)![1]
+            }
+          >
+            <div className="widget-property-grid">{properties[panel]}</div>
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
-
-const styleChoices = [
-  {
-    key: "surface",
-    label: "Фон",
-    options: [
-      ["solid", "Обычный"],
-      ["accent", "Акцентный"],
-      ["minimal", "Без фона"],
-    ],
-  },
-  {
-    key: "width",
-    label: "Ширина",
-    options: [
-      ["narrow", "Узкая"],
-      ["medium", "Средняя"],
-      ["wide", "Широкая"],
-    ],
-  },
-  {
-    key: "font",
-    label: "Шрифт",
-    options: [
-      ["geist", "Geist"],
-      ["system", "Системный"],
-      ["mono", "Моно"],
-    ],
-  },
-  {
-    key: "opacity",
-    label: "Прозрачность",
-    options: [
-      [70, "70%"],
-      [85, "85%"],
-      [100, "100%"],
-    ],
-  },
-  {
-    key: "density",
-    label: "Плотность",
-    options: [
-      ["comfortable", "Обычная"],
-      ["compact", "Компактная"],
-    ],
-  },
-  {
-    key: "radius",
-    label: "Скругление",
-    options: [
-      ["small", "Малое"],
-      ["medium", "Среднее"],
-      ["large", "Большое"],
-    ],
-  },
-  {
-    key: "titleSize",
-    label: "Заголовок",
-    options: [
-      ["small", "Меньше"],
-      ["medium", "Обычно"],
-      ["large", "Крупнее"],
-    ],
-  },
-] as const
-const optionChoices = [
-  {
-    key: "optionStyle",
-    label: "Форма",
-    options: [
-      ["rows", "Строки"],
-      ["cards", "Карточки"],
-      ["outline", "Контур"],
-    ],
-  },
-  {
-    key: "optionSize",
-    label: "Размер текста",
-    options: [
-      ["small", "Меньше"],
-      ["medium", "Обычно"],
-      ["large", "Крупнее"],
-    ],
-  },
-  {
-    key: "keywordStyle",
-    label: "Ключевые слова",
-    options: [
-      ["outline", "Контур"],
-      ["filled", "Заливка"],
-      ["text", "Текст"],
-    ],
-  },
-  {
-    key: "barSize",
-    label: "Полосы",
-    options: [
-      ["thin", "Тонкие"],
-      ["medium", "Средние"],
-      ["thick", "Толстые"],
-    ],
-  },
-] as const
-const contentFields = [
-  ["showTimer", "Таймер"],
-  ["showKeywords", "Ключевые слова"],
-  ["showVotes", "Количество голосов"],
-  ["showPercentages", "Проценты"],
-  ["showBars", "Полосы результатов"],
-] as const

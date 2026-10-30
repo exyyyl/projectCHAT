@@ -11,6 +11,8 @@ test('HTTP commands, independent SSE clients, reconnect, and static routes', asy
   const panelDir = join(dataDir, 'panel');
   await mkdir(join(panelDir, 'assets'), { recursive: true });
   await Promise.all([
+    writeFile(join(panelDir, 'contest-overlay.html'), '<div id="root"></div>'),
+    writeFile(join(panelDir, 'chat-overlay.html'), '<div id="root"></div>'),
     writeFile(join(panelDir, 'index.html'), '<link href="/assets/app.css"><script src="/assets/app.js"></script>'),
     writeFile(join(panelDir, 'assets', 'app.css'), 'body{}'),
     writeFile(join(panelDir, 'assets', 'app.js'), ''),
@@ -20,13 +22,15 @@ test('HTTP commands, independent SSE clients, reconnect, and static routes', asy
   t.after(() => app.close());
   const request = (body, headers = {}) => fetch(url + '/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Poll-Client': 'panel', ...headers }, body: JSON.stringify(body) });
   const control = (action, data = {}, headers = {}) => fetch(url + '/api/stream-dock', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-projectCHAT-Control': 'stream-dock-v1', ...headers }, body: JSON.stringify({ action, ...data }) });
-  for (const path of ['/', '/overlay', '/overlay.js', '/shared.js', '/style.css', '/fonts/geist-cyrillic.woff2', '/fonts/geist-latin.woff2']) {
+  for (const path of ['/', '/contest-overlay', '/chat-overlay', '/overlay', '/overlay.js', '/shared.js', '/widget-model.js', '/widget.css', '/style.css', '/fonts/geist-cyrillic.woff2', '/fonts/geist-latin.woff2']) {
     const response = await fetch(url + path);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('cache-control'), 'no-store');
   }
   const panelResponse = await fetch(url + '/');
   assert.match(panelResponse.headers.get('content-security-policy'), /https:\/\/static-cdn\.jtvnw\.net/);
+  assert.match(panelResponse.headers.get('content-security-policy'), /https:\/\/cdn\.7tv\.app https:\/\/cdn\.betterttv\.net/);
+  assert.equal((await fetch(url + '/api/chat/emotes')).status, 409);
   const panelHtml = await panelResponse.text();
   const assets = [...panelHtml.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map(match => match[1]);
   assert.equal(assets.length, 2);

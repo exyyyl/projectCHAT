@@ -1,4 +1,7 @@
+import { contestOverlayDefaults, contestOverlayRanges } from '../public/contest-overlay-model.js';
 import { randomUUID } from 'node:crypto';
+import { widgetDefaults, resolveWidget } from '../public/widget-model.js';
+import { chatOverlayDefaults, chatOverlayRanges } from '../public/chat-overlay-model.js';
 
 export class PollError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -14,8 +17,40 @@ function validatePresetName(value) {
   requireThat(typeof value === 'string' && value.trim().length > 0 && value.trim().length <= 50, 'Название шаблона должно содержать от 1 до 50 символов.');
   return value.trim();
 }
+export function validateChatOverlay(input) {
+  requireThat(input && typeof input === 'object' && !Array.isArray(input), 'Некорректные настройки чата.');
+  const settings = { ...chatOverlayDefaults };
+  for (const [key, value] of Object.entries(input)) {
+    requireThat(Object.hasOwn(settings, key), 'Неизвестная настройка оверлея чата.');
+    if (chatOverlayRanges[key]) {
+      const [min, max] = chatOverlayRanges[key];
+      requireThat(Number.isInteger(value) && value >= min && value <= max, `Настройка ${key}: от ${min} до ${max}.`);
+    } else if (typeof settings[key] === 'boolean') requireThat(typeof value === 'boolean', 'Некорректный переключатель чата.');
+    else if (key.endsWith('Color')) requireThat(typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value), 'Укажите цвет в формате HEX.');
+    else {
+      const variants = { style: ['cards', 'minimal', 'bubble'], font: ['geist', 'system', 'mono'], animation: ['slide', 'fade', 'none'], alignment: ['left', 'right'], emoteProvider: ['ffz', '7tv', 'bttv'] };
+      requireThat(variants[key]?.includes(value), 'Некорректный вариант оформления чата.');
+    }
+    settings[key] = value;
+  }
+  return settings;
+}
+export function validateContestOverlay(input) {
+  requireThat(input && typeof input === 'object' && !Array.isArray(input), 'Некорректные настройки конкурса.');
+  const settings = { ...contestOverlayDefaults };
+  for (const [key,value] of Object.entries(input)) {
+    requireThat(Object.hasOwn(settings,key), 'Неизвестная настройка оверлея конкурса.');
+    if (contestOverlayRanges[key]) {
+      const [min,max] = contestOverlayRanges[key];
+      requireThat(Number.isInteger(value) && value >= min && value <= max, `Настройка ${key}: от ${min} до ${max}.`);
+    } else if (typeof settings[key] === 'boolean') requireThat(typeof value === 'boolean', 'Некорректный переключатель конкурса.');
+    else requireThat(typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value), 'Укажите цвет в формате HEX.');
+    settings[key] = value;
+  }
+  return settings;
+}
 export function defaultWidget() {
-  return { accent: '#d3fb75', surface: 'solid', density: 'comfortable', radius: 'medium', titleSize: 'medium', width: 'medium', opacity: 100, font: 'geist', optionStyle: 'rows', optionSize: 'medium', keywordStyle: 'outline', barSize: 'medium', showTimer: true, showKeywords: true, showBars: true, showVotes: true, showPercentages: true };
+  return { ...widgetDefaults };
 }
 export function validateWidget(input) {
   requireThat(input && typeof input === 'object', 'Некорректные настройки виджета.');
@@ -39,15 +74,38 @@ export function validateWidget(input) {
   requireThat(['small', 'medium', 'large'].includes(radius), 'Некорректное скругление виджета.');
   requireThat(['small', 'medium', 'large'].includes(titleSize), 'Некорректный размер заголовка виджета.');
   requireThat(['narrow', 'medium', 'wide'].includes(width), 'Некорректная ширина виджета.');
-  requireThat([70, 85, 100].includes(opacity), 'Некорректная прозрачность виджета.');
+  requireThat(Number.isInteger(opacity) && opacity >= 0 && opacity <= 100, 'Прозрачность — от 0 до 100%.');
   requireThat(['geist', 'system', 'mono'].includes(font), 'Некорректный шрифт виджета.');
-  requireThat(['rows', 'cards', 'outline'].includes(optionStyle), 'Некорректная форма вариантов виджета.');
+  requireThat(['rows', 'cards', 'outline', 'fill'].includes(optionStyle), 'Некорректная форма вариантов виджета.');
   requireThat(['small', 'medium', 'large'].includes(optionSize), 'Некорректный размер вариантов виджета.');
   requireThat(['outline', 'filled', 'text'].includes(keywordStyle), 'Некорректный стиль ключевых слов виджета.');
   requireThat(['thin', 'medium', 'thick'].includes(barSize), 'Некорректная толщина полос виджета.');
   requireThat(typeof input.showTimer === 'boolean' && typeof input.showKeywords === 'boolean', 'Некорректные элементы виджета.');
   requireThat(typeof showBars === 'boolean' && typeof showVotes === 'boolean' && typeof showPercentages === 'boolean', 'Некорректные результаты виджета.');
-  return { accent: input.accent.toLowerCase(), surface, density: input.density, radius, titleSize, width, opacity, font, optionStyle, optionSize, keywordStyle, barSize, showTimer: input.showTimer, showKeywords: input.showKeywords, showBars, showVotes, showPercentages };
+  const settings = { accent: input.accent.toLowerCase(), surface, density: input.density, radius, titleSize, width, opacity, font, optionStyle, optionSize, keywordStyle, barSize, showTimer: input.showTimer, showKeywords: input.showKeywords, showBars, showVotes, showPercentages };
+  const numeric = { panelWidth: [280, 1600], padding: [8, 64], gap: [4, 40], cornerRadius: [0, 48], titleFontSize: [16, 64], optionFontSize: [12, 32], barHeight: [2, 20] };
+  for (const [key, [minimum, maximum]] of Object.entries(numeric)) {
+    if (input[key] === undefined) continue;
+    requireThat(Number.isInteger(input[key]) && input[key] >= minimum && input[key] <= maximum, `Некорректный размер виджета: ${key}.`);
+    settings[key] = input[key];
+  }
+  for (const key of ['panelColor', 'textColor', 'mutedColor', 'trackColor']) {
+    if (input[key] === undefined) continue;
+    requireThat(typeof input[key] === 'string' && /^#[0-9a-f]{6}$/iu.test(input[key]), 'Некорректный цвет виджета.');
+    settings[key] = input[key].toLowerCase();
+  }
+  for (const key of ['showTotal', 'showNumbers', 'highlightWinner']) {
+    if (input[key] === undefined) continue;
+    requireThat(typeof input[key] === 'boolean', 'Некорректные элементы виджета.');
+    settings[key] = input[key];
+  }
+  if (input.layout !== undefined) {
+    requireThat(['vertical', 'horizontal'].includes(input.layout), 'Некорректный формат виджета.');
+    settings.layout = input.layout;
+  }
+  const resolved = resolveWidget(settings);
+  requireThat(resolved.layout !== 'horizontal' || resolved.panelWidth >= 640, 'Ширина горизонтального виджета — от 640 px.');
+  return resolved;
 }
 export function validateDraft(input) {
   requireThat(input && typeof input === 'object', 'Некорректный опрос.');
@@ -75,6 +133,8 @@ export function initialState() {
     draft: { question: 'Во что играем дальше?', options: [{ id: '1', name: 'Minecraft', word: 'майн' }, { id: '2', name: 'Valorant', word: 'вало' }, { id: '3', name: 'Hollow Knight', word: 'холлоу' }], duration: 60, secret: false, allowChange: false, showOverlay: true, source: 'test' },
     presets: [],
     widget: defaultWidget(),
+    chatOverlay: { ...chatOverlayDefaults },
+    contestOverlay: { ...contestOverlayDefaults },
     poll: null,
   };
 }
@@ -89,6 +149,8 @@ export function validateStoredState(state) {
     presetIds.add(preset.id);
     return { id: preset.id, name: validatePresetName(preset.name), draft: validateDraft(preset.draft), pinned: preset.pinned === true, createdAt: Number.isFinite(preset.createdAt) ? preset.createdAt : 0, updatedAt: Number.isFinite(preset.updatedAt) ? preset.updatedAt : 0 };
   }).sort((a, b) => Number(b.pinned) - Number(a.pinned));
+  state.chatOverlay = validateChatOverlay(state.chatOverlay ?? chatOverlayDefaults);
+  state.contestOverlay = validateContestOverlay(state.contestOverlay ?? contestOverlayDefaults);
   state.widget = validateWidget(state.widget ?? defaultWidget());
   if (state.poll) {
     const p = state.poll;
@@ -257,7 +319,21 @@ export function applyCommand(state, command, now = Date.now()) {
         updatedAt: now,
       }));
       next.widget = validateWidget(settings.widget ?? defaultWidget());
+      next.chatOverlay = validateChatOverlay(settings.chatOverlay ?? chatOverlayDefaults);
+      next.contestOverlay = validateContestOverlay(settings.contestOverlay ?? contestOverlayDefaults);
       next.draftRevision++;
+      changed = true;
+      break;
+    }
+    case 'contest-overlay-update': {
+      requireThat(command.settings && typeof command.settings === 'object' && !Array.isArray(command.settings), 'Некорректные настройки конкурса.');
+      next.contestOverlay = validateContestOverlay({ ...next.contestOverlay, ...command.settings });
+      changed = true;
+      break;
+    }
+    case 'chat-overlay-update': {
+      requireThat(command.settings && typeof command.settings === 'object' && !Array.isArray(command.settings), 'Некорректные настройки чата.');
+      next.chatOverlay = validateChatOverlay({ ...next.chatOverlay, ...command.settings });
       changed = true;
       break;
     }

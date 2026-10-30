@@ -1,0 +1,23 @@
+.cue-contest-frame { display:flex; width:100%; min-width:0; padding:24px; justify-content:center; }
+.cue-contest { max-width:100%; min-width:0; padding:1.15em; border-radius:var(--contest-radius); background:var(--contest-background); color:var(--contest-text); font-family:'Geist Variable',Geist,system-ui,sans-serif; line-height:1.4; overflow-wrap:anywhere; }
+.cue-contest header { display:flex; align-items:center; justify-content:space-between; gap:16px; font-size:.65em; }
+.cue-contest header > span { display:flex; align-items:center; gap:8px; opacity:.7; }
+.cue-contest header svg { width:1.1em; height:1.1em; }
+.cue-contest time { color:var(--contest-accent); font-variant-numeric:tabular-nums; }
+.cue-contest-entry { padding-block:1.35em 1em; }
+.cue-contest h2 { margin:0 0 .45em; font-size:1.2em; line-height:1.2; font-weight:650; letter-spacing:-.02em; }
+.cue-contest p { margin:0; font-size:.8em; }
+.cue-contest-keyword { display:inline-block; max-width:100%; padding:.12em .4em; border-radius:.3em; color:var(--contest-accent); background:color-mix(in srgb,var(--contest-accent) 12%,transparent); }
+.cue-contest-count { display:flex; align-items:center; gap:8px; font-size:.65em; opacity:.7; }
+.cue-contest-count svg { width:1em; height:1em; }
+.cue-contest-recent { display:flex; flex-wrap:wrap; gap:.5em 1em; margin-top:1em; font-size:.55em; opacity:.55; }
+.cue-contest-recent span { max-width:100%; }
+.cue-contest-result { display:flex; min-width:0; flex-direction:column; align-items:center; padding:1.3em 0; text-align:center; gap:.4em; }
+.cue-contest-result > svg { width:1.7em; height:1.7em; margin-bottom:.3em; color:var(--contest-accent); }
+.cue-contest-result > p { opacity:.65; }
+.cue-contest-name { max-width:100%; font-size:1.65em; letter-spacing:-.025em; line-height:1.15; }
+.cue-contest-result > span { font-size:.7em; opacity:.7; }
+.cue-contest[data-phase='drawing'] .cue-contest-name { color:var(--contest-accent); }
+.cue-contest[data-phase='winner'] .cue-contest-result { animation:contest-winner-appear .32s cubic-bezier(.16,1,.3,1); }
+@keyframes contest-winner-appear { from {opacity:0;transform:translateY(8px)} to {opacity:1;transform:translateY(0)} }
+@media (prefers-reduced-motion:reduce) { .cue-contest[data-phase='winner'] .cue-contest-result {animation:none} }

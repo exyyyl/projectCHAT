@@ -1,3 +1,5 @@
+import { createVersionManager, seedBetaData, versionDataDirectory } from './versions/manager.mjs'
+import { createVersionSource, versionChannel } from './versions/source.mjs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -37,8 +39,24 @@ const userDataPath = !app.isPackaged && process.env.STREAM_POLLS_USER_DATA ? res
 app.setPath('userData', userDataPath)
 if (!app.isPackaged && process.env.STREAM_POLLS_DEBUG_PORT) app.commandLine.appendSwitch('remote-debugging-port', process.env.STREAM_POLLS_DEBUG_PORT)
 trace('main loaded')
+let runtimeSource
+const versions = createVersionManager({
+  root: join(userDataPath, 'versions'), currentVersion: app.getVersion(), executable: process.execPath,
+  isPackaged: app.isPackaged,
+  source: { describe: branch => {if (!runtimeSource) throw new Error('Источник версий ещё не настроен.'); return runtimeSource.describe(branch)}, download: (...args) => runtimeSource.download(...args) },
+  emit: state => {if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('versions:state',state)},
+})
 if (!app.requestSingleInstanceLock()) { trace('another instance owns the lock'); app.quit() }
 else {
+  let redirectTarget = null
+  try { redirectTarget = await versions.initialize() }
+  catch (error) { trace(`local versions unavailable: ${error instanceof Error ? error.message : String(error)}`) }
+  if (redirectTarget) {
+    await app.whenReady()
+    const loginLaunch = process.argv.includes('--started-at-login') || (process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin)
+    app.relaunch({execPath:redirectTarget,args:loginLaunch?['--started-at-login']:[]})
+    app.exit(0)
+  } else {
   app.setAppUserModelId('ru.projectchat.app')
   app.on('second-instance', () => {
     revealMainWindow?.()
@@ -110,15 +128,19 @@ else {
     )
   } catch { /* release notes are optional for local development */ }
   const updateUrl = process.env.STREAM_POLLS_UPDATE_URL?.trim().replace(/\/$/u, '') || configuredUrl
+  if (app.isPackaged && updateUrl) runtimeSource = createVersionSource(updateUrl)
   const sendUpdate = state => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('updates:state', state)
   }
-  const updates = createUpdateController({ autoUpdater, currentVersion: app.getVersion(), currentReleaseNotes, channel: desktopPreferences.updateChannel, isPackaged: app.isPackaged, updateUrl, emit: sendUpdate })
+  const updates = createUpdateController({ autoUpdater, currentVersion: app.getVersion(), currentReleaseNotes, channel: versionChannel(app.getVersion()), isPackaged: app.isPackaged, updateUrl, emit: sendUpdate })
 
   try {
     trace('starting local server')
+    const branch = versionChannel(app.getVersion())
+    if (app.isPackaged && branch === 'beta') await seedBetaData(userDataPath)
     serverApp = await createApp({
-      dataDir: join(app.getPath('userData'), 'app-data'),
+      dataDir: versionDataDirectory(userDataPath, app.isPackaged ? branch : 'stable'),
+      twitchOptions: { filename: join(userDataPath, 'app-data', 'twitch.json') },
       allowedOrigins: developmentOrigins,
     })
     const port = Number(process.env.PORT || 4317)
@@ -200,7 +222,20 @@ else {
     const handleDesktop = (channel, handler) => {
       ipcMain.handle(channel, secureHandler(handler))
     }
-    handleDesktop('desktop:get-info', () => ({ version: app.getVersion(), platform: process.platform, development: !app.isPackaged, update: updates.snapshot() }))
+    handleDesktop('desktop:get-info', () => ({ version: app.getVersion(), platform: process.platform, development: !app.isPackaged, update: updates.snapshot(), versions: versions.snapshot() }))
+    handleDesktop('versions:get', () => versions.snapshot())
+    handleDesktop('versions:check', () => versions.check())
+    handleDesktop('versions:download', branch => versions.download(branch))
+    handleDesktop('versions:healthy', () => versions.markHealthy())
+    handleDesktop('versions:activate', async branch => {
+      const target = await versions.activate(branch)
+      if (!target) return false
+      isQuitting = true
+      if (serverApp) {await serverApp.close(); serverApp = undefined}
+      app.relaunch({execPath:target,args:[]})
+      app.quit()
+      return true
+    })
     handleDesktop('updates:check', () => updates.check())
     handleDesktop('updates:download', () => updates.download())
     handleDesktop('updates:install', () => updates.install())
@@ -304,7 +339,7 @@ else {
       const image = await mainWindow.webContents.capturePage()
       await writeFile(process.env.STREAM_POLLS_SCREENSHOT, image.toPNG())
     }
-    if (app.isPackaged && updateUrl) setTimeout(() => void updates.check(), 4000)
+    // Downloads and version changes are always explicit in Settings.
   } catch (error) {
     const message = error?.code === 'EADDRINUSE'
       ? 'Порт 4317 уже занят. Закройте другую копию сервера опросов и запустите приложение снова.'
@@ -323,4 +358,6 @@ else {
     isQuitting = true
     if (serverApp) void serverApp.close()
   })
+}
+
 }

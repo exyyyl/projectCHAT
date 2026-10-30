@@ -13,6 +13,7 @@ import {
   PanelsTopLeft,
   Settings2,
   X,
+  MessageCircle,
 } from "lucide-react"
 
 import type { TabView, WorkspaceTab } from "@/domain/app-navigation"
@@ -26,6 +27,7 @@ import {
 const sections: Partial<
   Record<TabView, { label: string; icon: typeof ListChecks }>
 > = {
+  home: { label: "Главная", icon: MessageCircle },
   polls: { label: "Опросы", icon: ListChecks },
   presets: { label: "Шаблоны", icon: LayoutTemplate },
   widget: { label: "Виджеты", icon: PanelsTopLeft },

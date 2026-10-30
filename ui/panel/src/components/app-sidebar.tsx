@@ -7,6 +7,7 @@ import {
   ListChecks,
   PanelsTopLeft,
   WifiOff,
+  MessageCircle,
   type LucideIcon,
 } from "lucide-react"
 
@@ -31,6 +32,7 @@ type AppSidebarProps = {
 }
 
 const navigation = [
+  { id: "home", label: "Главная", icon: MessageCircle },
   { id: "polls", label: "Опросы", icon: ListChecks },
   { id: "presets", label: "Шаблоны", icon: LayoutTemplate },
   { id: "widget", label: "Виджеты", icon: PanelsTopLeft },
