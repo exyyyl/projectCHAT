@@ -18,21 +18,27 @@ export function FormField({
   label,
   htmlFor,
   labelId,
+  hideLabel,
   children,
 }: {
   label: string
   htmlFor?: string
   labelId?: string
+  hideLabel?: boolean
   children: ReactNode
 }) {
   const Label = htmlFor ? "label" : "span"
 
   return (
-    <div className="space-y-2">
+    <div className={hideLabel ? undefined : "space-y-2"}>
       <Label
         {...(htmlFor ? { htmlFor } : {})}
         id={labelId}
-        className="block text-xs font-medium text-muted-foreground"
+        className={
+          hideLabel
+            ? "sr-only"
+            : "block text-xs font-medium text-muted-foreground"
+        }
       >
         {label}
       </Label>
@@ -49,12 +55,14 @@ export function FormStack({
 
 export function FormSegmented({
   label,
+  hideLabel,
   value,
   options,
   disabled,
   onChange,
 }: {
   label: string
+  hideLabel?: boolean
   value: string
   options: ReadonlyArray<readonly [string, string]>
   disabled?: boolean
@@ -110,7 +118,7 @@ export function FormSegmented({
   }, [value, options.length])
 
   return (
-    <FormField label={label} labelId={labelId}>
+    <FormField label={label} labelId={labelId} hideLabel={hideLabel}>
       <ToggleGroup
         ref={root}
         type="single"

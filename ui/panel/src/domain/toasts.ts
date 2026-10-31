@@ -1,6 +1,7 @@
 export type ToastTone = "default" | "success" | "warning" | "error"
 export type ToastInput = {
   message: string
+  description?: string
   tone?: ToastTone
   duration?: number
 }

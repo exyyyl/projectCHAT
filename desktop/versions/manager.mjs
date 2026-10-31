@@ -1,4 +1,5 @@
-import {
+import { nativeFs } from "./native-fs.mjs";
+const {
   cp,
   lstat,
   mkdir,
@@ -8,7 +9,7 @@ import {
   rename,
   rm,
   writeFile,
-} from "node:fs/promises";
+} = nativeFs.promises;
 import { basename, isAbsolute, join, resolve } from "node:path";
 import {
   extractRuntime,

@@ -12,6 +12,8 @@ import gsap from "gsap"
 import { useGSAP } from "@gsap/react"
 
 import { cn } from "@/lib/utils"
+import { presentError } from "../../../../../public/error-messages.js"
+import { recordClientError } from "@/domain/diagnostics"
 import {
   createToastStore,
   type ToastTone,
@@ -43,12 +45,57 @@ const toneStyles: Record<
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [store] = useState(() => createToastStore())
+  const [store] = useState(() => {
+    const base = createToastStore()
+    return {
+      ...base,
+      show(input: Parameters<typeof base.show>[0]) {
+        const toast = typeof input === "string" ? { message: input } : input
+        if (toast.tone !== "error") return base.show(input)
+        recordClientError(toast.message)
+        const notice = presentError(toast.message)
+        base.show({
+          ...toast,
+          message: notice.title,
+          description: notice.description || toast.description,
+          duration: toast.duration ?? 6500,
+        })
+      },
+    }
+  })
   useEffect(() => () => store.dispose(), [store])
+  useEffect(() => {
+    const onError = (event: ErrorEvent) =>
+      store.show({
+        message:
+          event.error instanceof Error
+            ? event.error.stack || event.error.message
+            : event.message,
+        tone: "error",
+      })
+    const onRejection = (event: PromiseRejectionEvent) =>
+      store.show({
+        message:
+          event.reason instanceof Error
+            ? event.reason.stack || event.reason.message
+            : String(event.reason),
+        tone: "error",
+      })
+    window.addEventListener("error", onError)
+    window.addEventListener("unhandledrejection", onRejection)
+    return () => {
+      window.removeEventListener("error", onError)
+      window.removeEventListener("unhandledrejection", onRejection)
+    }
+  }, [store])
   return <ToastContext.Provider value={store}>{children}</ToastContext.Provider>
 }
 
-export function ToastViewport() {
+export function ToastViewport({
+  onOpenDiagnostics,
+}: {
+  onOpenDiagnostics?: () => void
+}) {
   const store = useContext(ToastContext)!
   const toasts = useSyncExternalStore(
     store.subscribe,
@@ -68,6 +115,7 @@ export function ToastViewport() {
           toast={toast}
           dismiss={store.dismiss}
           onExit={store.finishDismiss}
+          onOpenDiagnostics={onOpenDiagnostics}
         />
       ))}
     </div>
@@ -78,10 +126,12 @@ function ToastNotice({
   toast,
   dismiss,
   onExit,
+  onOpenDiagnostics,
 }: {
   toast: ToastItem
   dismiss: (id: number) => void
   onExit: (id: number) => void
+  onOpenDiagnostics?: () => void
 }) {
   const element = useRef<HTMLDivElement>(null)
   useGSAP(
@@ -144,9 +194,20 @@ function ToastNotice({
       >
         <StatusIcon className="size-3.5" strokeWidth={2} />
       </span>
-      <span className="min-w-0 flex-1 leading-snug [overflow-wrap:anywhere] text-foreground/90">
-        {toast.message}
-      </span>
+      <div className="min-w-0 flex-1 leading-snug [overflow-wrap:anywhere]">
+        <span
+          className={
+            tone === "error" ? "block font-medium" : "block text-foreground/90"
+          }
+        >
+          {toast.message}
+        </span>
+        {toast.description && (
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            {toast.description}
+          </p>
+        )}
+      </div>
       {toast.count > 1 && (
         <span
           className="rounded-md bg-surface-raised px-1.5 py-0.5 text-xs text-muted-foreground tabular-nums"
@@ -154,6 +215,18 @@ function ToastNotice({
         >
           ×{toast.count}
         </span>
+      )}
+      {tone === "error" && onOpenDiagnostics && (
+        <button
+          type="button"
+          className="shrink-0 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-surface-raised hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          onClick={() => {
+            dismiss(toast.id)
+            onOpenDiagnostics()
+          }}
+        >
+          Журнал
+        </button>
       )}
       <button
         type="button"

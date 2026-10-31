@@ -1,8 +1,10 @@
-import { createWriteStream } from "node:fs";
-import { chmod, mkdir, readFile, realpath, symlink } from "node:fs/promises";
+import { nativeFs } from "./native-fs.mjs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import yauzl from "yauzl";
+
+const { createWriteStream } = nativeFs;
+const { chmod, mkdir, readFile, realpath, symlink, lstat } = nativeFs.promises;
 
 export const inside = (root, path) => {
   const value = relative(resolve(root), resolve(path));
@@ -130,7 +132,6 @@ export async function verifyRuntime(directory, descriptor) {
     marker.arch !== descriptor.arch
   )
     throw new Error("Сборка не соответствует описанию версии.");
-  const { lstat } = await import("node:fs/promises");
   const actualRoot = await realpath(directory);
   for (const file of [
     runtimeExecutable(descriptor.platform),

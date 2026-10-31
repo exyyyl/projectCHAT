@@ -123,6 +123,7 @@ type StreamDockOperation = {
 interface Window {
   streamPollsDesktop?: {
     getInfo(): Promise<DesktopInfo>
+    recordError?(message: string): Promise<void>
     setWindowTheme(theme: "lime" | "violet" | "ice" | "mono"): Promise<void>
     getVersions(): Promise<DesktopVersionState>
     checkVersions(): Promise<DesktopVersionState>

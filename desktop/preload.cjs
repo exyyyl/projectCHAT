@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('streamPollsDesktop', {
   getInfo: () => ipcRenderer.invoke('desktop:get-info'),
+  recordError: message => ipcRenderer.invoke('diagnostics:record', message),
   getVersions: () => ipcRenderer.invoke('versions:get'),
   checkVersions: () => ipcRenderer.invoke('versions:check'),
   downloadVersion: branch => ipcRenderer.invoke('versions:download', branch),

@@ -23,6 +23,7 @@ import { SettingsPage } from "@/components/settings-page"
 import { TwitchAccount } from "@/components/twitch-account"
 import { WidgetPage } from "@/components/widget-page"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { revealErrorJournal } from "@/domain/diagnostics"
 import { ToastProvider, ToastViewport, useToast } from "@/components/ui/toast"
 import { useContestController } from "@/hooks/use-contest-controller"
 import { usePollController } from "@/hooks/use-poll-controller"
@@ -121,6 +122,10 @@ function AppContent() {
   )!
   const view = activeTab.history[activeTab.position]
   const navigate = (next: AppView) => dispatch({ type: "navigate", view: next })
+  const openDiagnostics = () => {
+    navigate("settings")
+    window.setTimeout(revealErrorJournal, 0)
+  }
   const [sidebarManuallyCollapsed, setSidebarManuallyCollapsed] = useState(
     () => localStorage.getItem("vela-sidebar-collapsed") === "true"
   )
@@ -202,7 +207,7 @@ function AppContent() {
         <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
           Подключение…
         </div>
-        <ToastViewport />
+        <ToastViewport onOpenDiagnostics={openDiagnostics} />
       </div>
     )
 
@@ -299,7 +304,7 @@ function AppContent() {
           }}
         />
       </div>
-      <ToastViewport />
+      <ToastViewport onOpenDiagnostics={openDiagnostics} />
     </div>
   )
 }

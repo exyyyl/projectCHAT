@@ -7,6 +7,7 @@ import { type AppTheme, useTheme } from "@/components/theme-provider"
 import { TwitchSettings } from "@/components/twitch-settings"
 import { UpdateSettings } from "@/components/update-control"
 import { StreamDockPage } from "@/components/stream-dock-page"
+import { DiagnosticsSettings } from "@/components/diagnostics-settings"
 import { Button } from "@/components/ui/button"
 import { FormSwitch } from "@/components/form-controls"
 import { useToast } from "@/components/ui/toast"
@@ -170,91 +171,100 @@ export function SettingsPage({
             onCommand={onTwitchCommand}
           />
         </div>
-        <div className="mt-5 grid min-w-0 gap-5 lg:grid-cols-2">
+        <div className="mt-4 grid min-w-0 items-start gap-4 lg:grid-cols-2">
           <SettingsBlock title="Оформление" wide>
             <ThemeSettings />
           </SettingsBlock>
-          <SettingsBlock title="Приложение">
-            <div className="space-y-1">
-              <PreferenceRow
-                label="Автозапуск"
-                hint={
-                  preferenceHint(
+          <div className="min-w-0 space-y-4">
+            <SettingsBlock title="Приложение">
+              <div className="space-y-1">
+                <PreferenceRow
+                  label="Автозапуск"
+                  hint={
+                    preferenceHint(
+                      bridge,
+                      preferences,
+                      preferences?.openAtLoginSupported
+                    ) ??
+                    (preferences?.openAtLogin
+                      ? "Запускается в трее"
+                      : undefined)
+                  }
+                  checked={preferences?.openAtLogin ?? false}
+                  disabled={
+                    !preferences?.openAtLoginSupported ||
+                    preferenceBusy !== undefined
+                  }
+                  onCheckedChange={(checked) =>
+                    void updatePreference("openAtLogin", checked)
+                  }
+                />
+                <PreferenceRow
+                  label="Работа в трее"
+                  hint={preferenceHint(
                     bridge,
                     preferences,
-                    preferences?.openAtLoginSupported
-                  ) ??
-                  (preferences?.openAtLogin ? "Запускается в трее" : undefined)
-                }
-                checked={preferences?.openAtLogin ?? false}
-                disabled={
-                  !preferences?.openAtLoginSupported ||
-                  preferenceBusy !== undefined
-                }
-                onCheckedChange={(checked) =>
-                  void updatePreference("openAtLogin", checked)
-                }
-              />
-              <PreferenceRow
-                label="Работа в трее"
-                hint={preferenceHint(
-                  bridge,
-                  preferences,
-                  preferences?.runInBackgroundSupported
-                )}
-                checked={preferences?.runInBackground ?? false}
-                disabled={
-                  !preferences?.runInBackgroundSupported ||
-                  preferenceBusy !== undefined
-                }
-                onCheckedChange={(checked) =>
-                  void updatePreference("runInBackground", checked)
-                }
-              />
-              <PreferenceRow
-                label="Демо-режим"
-                checked={demoEnabled}
-                disabled={false}
-                onCheckedChange={setDemoEnabled}
-              />
-            </div>
-          </SettingsBlock>
-          <SettingsBlock title="Обновления">
-            <UpdateSettings />
-          </SettingsBlock>
-          <SettingsBlock title="Данные">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" onClick={exportSettings}>
-                <Download />
-                Экспортировать
-              </Button>
-              <Button
-                variant="outline"
-                disabled={!canImport || busy}
-                onClick={() => inputRef.current?.click()}
-              >
-                <FileUp />
-                Импортировать
-              </Button>
-              <input
-                ref={inputRef}
-                type="file"
-                accept="application/json,.json"
-                className="hidden"
-                onChange={(event) => void importSettings(event)}
-              />
-            </div>
-            {!canImport && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Завершите опрос для импорта.
-              </p>
-            )}
+                    preferences?.runInBackgroundSupported
+                  )}
+                  checked={preferences?.runInBackground ?? false}
+                  disabled={
+                    !preferences?.runInBackgroundSupported ||
+                    preferenceBusy !== undefined
+                  }
+                  onCheckedChange={(checked) =>
+                    void updatePreference("runInBackground", checked)
+                  }
+                />
+                <PreferenceRow
+                  label="Демо-режим"
+                  checked={demoEnabled}
+                  disabled={false}
+                  onCheckedChange={setDemoEnabled}
+                />
+              </div>
+            </SettingsBlock>
+            <SettingsBlock title="Данные">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" onClick={exportSettings}>
+                  <Download />
+                  Экспортировать
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={!canImport || busy}
+                  onClick={() => inputRef.current?.click()}
+                >
+                  <FileUp />
+                  Импортировать
+                </Button>
+                <input
+                  ref={inputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(event) => void importSettings(event)}
+                />
+              </div>
+              {!canImport && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Завершите опрос для импорта.
+                </p>
+              )}
+            </SettingsBlock>
+          </div>
+          <div className="min-w-0 space-y-4">
+            <SettingsBlock title="Обновления">
+              <UpdateSettings />
+            </SettingsBlock>
+            <SettingsBlock title="О Cue" action={<TelegramLink />}>
+              <ProjectInfo />
+            </SettingsBlock>
+          </div>
+          <SettingsBlock title="Журнал ошибок" full>
+            <DiagnosticsSettings />
           </SettingsBlock>
           <SettingsBlock title="Stream Dock" full>
-            <StreamDockPage />
-          </SettingsBlock>
-          <SettingsBlock title="О Cue" action={<TelegramLink />}>
-            <ProjectInfo />
+            <StreamDockPage compact />
           </SettingsBlock>
         </div>
       </div>
@@ -311,7 +321,7 @@ function ThemeSettings() {
           >
             <span
               aria-hidden="true"
-              className={`flex aspect-[1.6] gap-1.5 overflow-hidden rounded-lg p-2 ring-1 transition-[box-shadow] ring-inset ${selected ? "ring-foreground/50" : "ring-border-subtle group-hover:ring-border-strong"}`}
+              className={`flex aspect-[2.1] gap-1.5 overflow-hidden rounded-lg p-2 ring-1 transition-[box-shadow] ring-inset ${selected ? "ring-foreground/50" : "ring-border-subtle group-hover:ring-border-strong"}`}
               style={{ background: option.background }}
             >
               <span className="flex w-1/4 flex-col gap-1.5 pt-1">
@@ -360,10 +370,10 @@ function SettingsBlock({
   return (
     <section
       aria-label={title}
-      className={`min-w-0 rounded-xl bg-surface-subtle p-5 ${wide ? "grid gap-4 lg:col-span-2 lg:grid-cols-[9rem_minmax(0,1fr)] lg:gap-6" : "space-y-4"} ${full ? "lg:col-span-2" : ""}`}
+      className={`min-w-0 rounded-xl bg-surface-subtle p-4 ${wide ? "grid gap-4 lg:col-span-2 lg:grid-cols-[9rem_minmax(0,1fr)] lg:gap-6" : "space-y-3"} ${full ? "lg:col-span-2" : ""}`}
     >
       <div className="flex min-h-5 items-center justify-between gap-3">
-        <h2 className="text-sm font-medium">{title}</h2>
+        <h2 className="text-base font-semibold tracking-[-0.015em]">{title}</h2>
         {action}
       </div>
       <div className="@container min-w-0">{children}</div>

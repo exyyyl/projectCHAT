@@ -2,6 +2,7 @@ import { useState } from "react"
 import { ExternalLink, UserRound } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { ErrorNotice } from "@/components/error-notice"
 import type { TwitchState } from "@/domain/polls"
 
 type TwitchSettingsProps = {
@@ -67,14 +68,7 @@ export function TwitchSettings({
           {connected ? "Отключить" : authorizing ? "Отменить" : "Подключить"}
         </Button>
       </div>
-      {state.error && (
-        <p
-          role="status"
-          className="text-xs leading-relaxed break-words text-destructive"
-        >
-          {state.error}
-        </p>
-      )}
+      {state.error && <ErrorNotice error={state.error} context="twitch" />}
 
       {state.device && (
         <div className="flex items-center justify-between gap-4 rounded-xl border border-twitch/20 bg-twitch/8 px-4 py-3">

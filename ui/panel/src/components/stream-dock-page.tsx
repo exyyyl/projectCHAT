@@ -58,7 +58,7 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Операция не выполнена"
 }
 
-export function StreamDockPage() {
+export function StreamDockPage({ compact = false }: { compact?: boolean }) {
   const api = window.streamPollsDesktop?.streamDock
   const showToast = useToast()
   const [plugins, setPlugins] = useState<StreamDockPlugin[]>([])
@@ -130,12 +130,13 @@ export function StreamDockPage() {
     <>
       <div className="grid gap-4 @min-[36rem]:grid-cols-2">
         <ProjectChatPluginCard
+          compact={compact}
           plugin={projectChatPlugin}
           loading={loading}
           operation={operation}
           onRemove={() => setConfirmRemove(true)}
         />
-        <TwitchPluginCard plugin={twitchPlugin} />
+        <TwitchPluginCard plugin={twitchPlugin} compact={compact} />
       </div>
 
       <AlertDialog
@@ -172,17 +173,49 @@ export function StreamDockPage() {
 }
 
 function ProjectChatPluginCard({
+  compact,
   plugin,
   loading,
   operation,
   onRemove,
 }: {
+  compact?: boolean
   plugin?: StreamDockPlugin
   loading: boolean
   operation?: "remove"
   onRemove: () => void
 }) {
   const installed = Boolean(plugin?.isInstalled)
+
+  if (compact)
+    return (
+      <article className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg bg-background/50 p-3">
+        <img
+          src={projectChatIcon}
+          alt=""
+          className="size-9 shrink-0 rounded-lg"
+        />
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-medium">Плагин опросов</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {installed
+              ? `Версия ${plugin?.installedVersion || PROJECTCHAT_PLUGIN_VERSION}`
+              : "В разработке"}
+          </p>
+        </div>
+        {installed && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={Boolean(operation) || loading}
+            onClick={onRemove}
+          >
+            <Trash2 />
+            Удалить
+          </Button>
+        )}
+      </article>
+    )
 
   return (
     <article className="flex min-h-[260px] flex-col overflow-hidden rounded-xl bg-background">
@@ -239,8 +272,31 @@ function DevelopmentBadge() {
   )
 }
 
-function TwitchPluginCard({ plugin }: { plugin?: StreamDockPlugin }) {
+function TwitchPluginCard({
+  plugin,
+  compact,
+}: {
+  plugin?: StreamDockPlugin
+  compact?: boolean
+}) {
   const installed = Boolean(plugin?.isInstalled)
+  if (compact)
+    return (
+      <article className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg bg-background/50 p-3">
+        <img src={twitchIcon} alt="" className="size-9 shrink-0 rounded-lg" />
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-medium">Twitch для AJAZZ</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {installed ? "Установлен" : "Плагин для стримдека"}
+          </p>
+        </div>
+        <Button asChild size="sm" variant="secondary">
+          <a href={TWITCH_PLUGIN_DOWNLOAD} target="_blank" rel="noreferrer">
+            Скачать
+          </a>
+        </Button>
+      </article>
+    )
   return (
     <article className="flex min-h-[260px] flex-col overflow-hidden rounded-xl bg-background">
       <div className="flex items-start gap-4 p-5 pb-4 lg:p-6 lg:pb-4">

@@ -14,6 +14,8 @@ import { loadDesktopPreferences, saveDesktopPreferences } from './preferences.mj
 import { loginItemQuery, loginItemUpdate, wasLaunchedAtLogin } from './startup.mjs'
 import { windowThemes } from './window-theme.mjs'
 import { createDesktopIpcHandler, isTrustedPanelUrl } from './security.mjs'
+import { createErrorJournal } from '../server/diagnostics.mjs'
+import { presentError } from '../public/error-messages.js'
 
 const { autoUpdater } = updaterModule
 const preload = fileURLToPath(new URL('./preload.cjs', import.meta.url))
@@ -37,6 +39,8 @@ protocol.registerSchemesAsPrivileged([
 
 const userDataPath = !app.isPackaged && process.env.STREAM_POLLS_USER_DATA ? resolve(process.env.STREAM_POLLS_USER_DATA) : join(app.getPath('appData'), 'Stream Polls')
 app.setPath('userData', userDataPath)
+const diagnostics = await createErrorJournal(join(userDataPath, 'logs', 'errors.json'), { version: app.getVersion() })
+process.on('uncaughtExceptionMonitor', error => { diagnostics.record({ source: 'desktop:crash', error }); diagnostics.flushSync() })
 if (!app.isPackaged && process.env.STREAM_POLLS_DEBUG_PORT) app.commandLine.appendSwitch('remote-debugging-port', process.env.STREAM_POLLS_DEBUG_PORT)
 trace('main loaded')
 let runtimeSource
@@ -44,13 +48,16 @@ const versions = createVersionManager({
   root: join(userDataPath, 'versions'), currentVersion: app.getVersion(), executable: process.execPath,
   isPackaged: app.isPackaged,
   source: { describe: branch => {if (!runtimeSource) throw new Error('Источник версий ещё не настроен.'); return runtimeSource.describe(branch)}, download: (...args) => runtimeSource.download(...args) },
-  emit: state => {if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('versions:state',state)},
+  emit: state => {
+    for (const [branch, message] of Object.entries(state.errors)) diagnostics.record({ source: `versions:${branch}`, error: message })
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('versions:state',state)
+  },
 })
 if (!app.requestSingleInstanceLock()) { trace('another instance owns the lock'); app.quit() }
 else {
   let redirectTarget = null
   try { redirectTarget = await versions.initialize() }
-  catch (error) { trace(`local versions unavailable: ${error instanceof Error ? error.message : String(error)}`) }
+  catch (error) { diagnostics.record({ source: 'versions:initialize', error }); trace(`local versions unavailable: ${error instanceof Error ? error.message : String(error)}`) }
   if (redirectTarget) {
     await app.whenReady()
     const loginLaunch = process.argv.includes('--started-at-login') || (process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin)
@@ -130,6 +137,7 @@ else {
   const updateUrl = process.env.STREAM_POLLS_UPDATE_URL?.trim().replace(/\/$/u, '') || configuredUrl
   if (app.isPackaged && updateUrl) runtimeSource = createVersionSource(updateUrl)
   const sendUpdate = state => {
+    if (state.phase === 'error') diagnostics.record({ source: 'updates', error: state.message })
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('updates:state', state)
   }
   const updates = createUpdateController({ autoUpdater, currentVersion: app.getVersion(), currentReleaseNotes, channel: versionChannel(app.getVersion()), isPackaged: app.isPackaged, updateUrl, emit: sendUpdate })
@@ -142,6 +150,7 @@ else {
       dataDir: versionDataDirectory(userDataPath, app.isPackaged ? branch : 'stable'),
       twitchOptions: { filename: join(userDataPath, 'app-data', 'twitch.json') },
       allowedOrigins: developmentOrigins,
+      diagnostics,
     })
     const port = Number(process.env.PORT || 4317)
     const url = await serverApp.listen(port)
@@ -168,6 +177,7 @@ else {
         sandbox: true,
       },
     })
+    mainWindow.webContents.on('render-process-gone', (_event, details) => diagnostics.record({ source: 'renderer', error: `Renderer stopped: ${details.reason}, exit ${details.exitCode}` }))
     const showMainWindow = () => {
       if (!mainWindow || mainWindow.isDestroyed()) return
       startupTrayActive = false
@@ -220,9 +230,22 @@ else {
     })
     const secureHandler = createDesktopIpcHandler(() => mainWindow, panelUrl)
     const handleDesktop = (channel, handler) => {
-      ipcMain.handle(channel, secureHandler(handler))
+      ipcMain.handle(channel, secureHandler(async (...args) => {
+        try { return await handler(...args) }
+        catch (error) {
+          diagnostics.record({ source: channel, error })
+          await diagnostics.flush()
+          const notice = presentError(error, channel)
+          throw new Error([notice.title, notice.description].filter(Boolean).join('. '))
+        }
+      }))
     }
     handleDesktop('desktop:get-info', () => ({ version: app.getVersion(), platform: process.platform, development: !app.isPackaged, update: updates.snapshot(), versions: versions.snapshot() }))
+    handleDesktop('diagnostics:record', async message => {
+      if (typeof message !== 'string' || message.length > 12000) throw new Error('Некорректная запись журнала.')
+      diagnostics.record({ source: 'panel', error: message })
+      await diagnostics.flush()
+    })
     handleDesktop('versions:get', () => versions.snapshot())
     handleDesktop('versions:check', () => versions.check())
     handleDesktop('versions:download', branch => versions.download(branch))
@@ -341,9 +364,11 @@ else {
     }
     // Downloads and version changes are always explicit in Settings.
   } catch (error) {
+    diagnostics.record({ source: 'startup', error })
+    await diagnostics.flush()
     const message = error?.code === 'EADDRINUSE'
-      ? 'Порт 4317 уже занят. Закройте другую копию сервера опросов и запустите приложение снова.'
-      : error instanceof Error ? error.message : String(error)
+      ? 'Другая копия Cue уже работает. Закройте её и попробуйте запустить приложение снова.'
+      : Object.values(presentError(error, 'startup')).filter(Boolean).join('. ')
     await dialog.showMessageBox({ type: 'error', title: 'Cue', message: 'Не удалось запустить приложение', detail: message })
     app.quit()
   }

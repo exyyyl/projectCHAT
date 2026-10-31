@@ -2,7 +2,8 @@ import { useEffect, useState, type ReactNode } from "react"
 import { Download, LoaderCircle, RefreshCw, RotateCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/toast"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { FormSegmented } from "@/components/form-controls"
+import { ErrorNotice } from "@/components/error-notice"
 
 export function VersionSwitcher({ children }: { children?: ReactNode }) {
   const [state, setState] = useState<DesktopVersionState | null>(null)
@@ -21,7 +22,16 @@ export function VersionSwitcher({ children }: { children?: ReactNode }) {
           setBranch(value.currentChannel)
         }
       })
-      .catch(() => {})
+      .catch((error) => {
+        if (active)
+          toast({
+            tone: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Не удалось загрузить версии",
+          })
+      })
     const unsubscribe = bridge.onVersionState((value) => {
       if (active) setState(value)
     })
@@ -29,13 +39,15 @@ export function VersionSwitcher({ children }: { children?: ReactNode }) {
       active = false
       unsubscribe()
     }
-  }, [bridge])
+  }, [bridge, toast])
   const busy =
     pending ||
-    (!!state &&
+    Boolean(
+      state &&
       ["checking", "downloading", "unpacking", "restarting"].includes(
         state.phase
-      ))
+      )
+    )
   const perform = async (action: () => Promise<unknown>) => {
     setPending(true)
     try {
@@ -56,159 +68,135 @@ export function VersionSwitcher({ children }: { children?: ReactNode }) {
   const downloading =
     state?.target === branch &&
     ["downloading", "unpacking"].includes(state.phase)
-  const newer = slot?.updateAvailable
   const running = state?.currentChannel === branch
+  const newer = slot?.updateAvailable
   const version =
-    slot?.installedVersion || (running ? state?.currentVersion : null)
-
+    slot?.installedVersion ||
+    (running ? state?.currentVersion : null) ||
+    slot?.availableVersion
+  const needsDownload = !slot?.installedVersion || newer
+  const canRestart = Boolean(slot?.installedVersion && !slot.current)
+  const subtitle = !state?.supported
+    ? bridge
+      ? "Режим разработки"
+      : "Только в приложении"
+    : downloading
+      ? state.phase === "unpacking"
+        ? "Подготавливаем файлы"
+        : "Скачиваем обновление"
+      : state.phase === "restarting"
+        ? "Перезапускаем Cue…"
+        : newer
+          ? `Доступна ${slot?.availableVersion}`
+          : slot?.current
+            ? "Установлена"
+            : canRestart
+              ? "Готова к запуску"
+              : "Не скачана"
+  const failure =
+    state?.errors[branch] ||
+    (state?.phase === "error" && (!state.target || state.target === branch)
+      ? state.message
+      : "")
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <ToggleGroup
-          type="single"
-          value={branch}
-          onValueChange={(value) => {
-            if (value === "stable" || value === "beta") setBranch(value)
-          }}
-          aria-label="Версия приложения"
-          className="gap-1 rounded-lg bg-background/50 p-1"
-        >
-          <ToggleGroupItem value="stable" className="h-8 px-3">
-            Стабильная
-          </ToggleGroupItem>
-          <ToggleGroupItem value="beta" className="h-8 px-3">
-            Бета
-          </ToggleGroupItem>
-        </ToggleGroup>
-        <div className="flex flex-wrap items-center gap-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-muted-foreground"
-            disabled={!state?.supported || busy}
-            onClick={() => void perform(() => bridge!.checkVersions())}
-          >
-            <RefreshCw
-              className={
-                state?.phase === "checking" ? "animate-spin" : undefined
-              }
-            />
-            Проверить
-          </Button>
-          {children}
-        </div>
-      </div>
-      <div className="flex min-h-12 flex-wrap items-center justify-between gap-3 py-2">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-          <div className="flex items-center gap-2">
-            <span
-              className={
-                version
-                  ? "text-sm font-medium tabular-nums"
-                  : "text-sm font-medium"
-              }
-            >
-              {version ||
-                (state
-                  ? "Не скачана"
-                  : bridge
-                    ? "Загрузка…"
-                    : "Не установлена")}
-            </span>
+    <div className="space-y-4">
+      <FormSegmented
+        label="Версия приложения"
+        hideLabel
+        value={branch}
+        options={[
+          ["stable", "Стабильная"],
+          ["beta", "Бета"],
+        ]}
+        disabled={busy}
+        onChange={(value) => {
+          if (value === "stable" || value === "beta") setBranch(value)
+        }}
+      />
+      <div className="flex min-h-12 flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xl font-semibold tracking-tight tabular-nums">
+            {version || "—"}
           </div>
-          {(running || newer || version) && (
-            <p className="text-xs text-muted-foreground">
-              {newer
-                ? `Доступна ${slot.availableVersion}`
-                : running
-                  ? slot?.current || !state?.supported
-                    ? "Текущая версия"
-                    : `Сейчас ${state.currentVersion}`
-                  : "Готова к запуску"}
-            </p>
-          )}
+          <p role="status" className="mt-1 text-xs text-muted-foreground">
+            {subtitle}
+          </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {downloading ? (
-            <Button size="sm" variant="outline" disabled>
+        {state?.supported &&
+          (downloading ? (
+            <Button size="sm" variant="secondary" disabled>
               <LoaderCircle className="animate-spin" />
               {state.phase === "unpacking"
                 ? "Подготовка"
                 : `${state.progress}%`}
             </Button>
-          ) : (
-            <>
-              {(!slot?.installedVersion || newer) &&
-                (state?.supported || !running) && (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={!state?.supported || busy}
-                    onClick={() =>
-                      void perform(() => bridge!.downloadVersion(branch))
-                    }
-                  >
-                    <Download />
-                    {newer ? "Скачать новую" : "Скачать"}
-                  </Button>
-                )}
-              {slot?.installedVersion && !slot.current && (
-                <Button
-                  size="sm"
-                  disabled={busy || !state?.supported}
-                  onClick={() =>
-                    void perform(() => bridge!.activateVersion(branch))
-                  }
-                >
-                  <RotateCw />
-                  Перезапустить
-                </Button>
-              )}
-            </>
-          )}
-        </div>
+          ) : needsDownload ? (
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                void perform(() => bridge!.downloadVersion(branch))
+              }
+            >
+              <Download />
+              Скачать
+            </Button>
+          ) : canRestart ? (
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                void perform(() => bridge!.activateVersion(branch))
+              }
+            >
+              <RotateCw />
+              Перезапустить
+            </Button>
+          ) : null)}
       </div>
-      {state?.errors[branch] && !downloading && (
-        <p
-          role="status"
-          className="pb-3 text-xs leading-relaxed break-words text-destructive"
+      {downloading && (
+        <div
+          className="h-1 overflow-hidden rounded-full bg-track"
+          role="progressbar"
+          aria-label="Загрузка версии"
+          aria-valuenow={state.progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
         >
-          {state.errors[branch]}
-        </p>
-      )}
-      {state?.phase === "downloading" && (
-        <div className="my-2 h-1 overflow-hidden rounded-full bg-track">
           <div
-            className="h-full bg-brand transition-[width]"
+            className="h-full bg-brand transition-[width] motion-reduce:transition-none"
             style={{ width: `${state.progress}%` }}
           />
         </div>
       )}
-      {(!state?.supported || state.phase === "restarting") && (
-        <div className="flex flex-wrap items-center justify-between gap-2 py-1">
-          {!state?.supported && (
-            <span className="text-xs text-muted-foreground">
-              {state?.phase === "development"
-                ? "Режим разработки"
-                : "Только в приложении"}
-            </span>
-          )}
-          {state?.phase === "restarting" && (
-            <span role="status" className="text-xs text-muted-foreground">
-              Перезапускаем…
-            </span>
-          )}
-        </div>
-      )}
-      {branch === "beta" && (
-        <p className="pt-1 text-xs text-muted-foreground">
-          Данные беты хранятся отдельно.
-        </p>
-      )}
-      {state?.message && state.phase !== "error" && (
-        <p role="status" className="pb-2 text-xs text-muted-foreground">
-          {state.message}
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-1">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="-ml-2 text-muted-foreground"
+          disabled={!state?.supported || busy}
+          onClick={() => void perform(() => bridge!.checkVersions())}
+        >
+          <RefreshCw
+            className={state?.phase === "checking" ? "animate-spin" : undefined}
+          />
+          Проверить
+        </Button>
+        {canRestart && newer ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy || !state?.supported}
+            onClick={() => void perform(() => bridge!.activateVersion(branch))}
+          >
+            Запустить установленную
+          </Button>
+        ) : (
+          children
+        )}
+      </div>
+      {failure && !downloading && (
+        <ErrorNotice error={failure} context="versions" />
       )}
     </div>
   )

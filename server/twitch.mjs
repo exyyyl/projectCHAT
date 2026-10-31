@@ -126,7 +126,7 @@ export function chatActivity(message, userId) {
   return { broadcasterId: userId, ...actor, eventId: `activity:${rawId}`, kind: 'activity', activityType, roles: [], badges: [], nameColor: chatColor(event.color), text, sentAt };
 }
 
-export async function createTwitch({ filename, store, clientId, onChatMessage, onChatModeration, fetcher = fetch, Socket = WebSocket, now = Date.now, later = setTimeout, cancel = clearTimeout }) {
+export async function createTwitch({ filename, store, clientId, onChatMessage, onChatModeration, onError = () => {}, fetcher = fetch, Socket = WebSocket, now = Date.now, later = setTimeout, cancel = clearTimeout }) {
   if (typeof clientId !== 'string' || !/^[a-zA-Z0-9]{10,100}$/.test(clientId)) throw new Error('Не настроен Client ID приложения Twitch.');
   let credentials = {}, status = { phase: 'disconnected', login: '', displayName: '', profileImageUrl: '', userId: '', canSend: false, canShowShoutouts: false, canReadEmotes: false, canDeleteMessages: false, canTimeout: false, error: '', device: null, lastGapAt: null };
   let epoch = 0, stopped = false, timer, maintenance, retry, retryCount = 0;
@@ -167,12 +167,14 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, o
   async function request(url, options = {}) {
     let response;
     try { response = await fetcher(url, { ...options, signal: AbortSignal.timeout(10000) }); }
-    catch { throw new PollError('Нет связи с Twitch. Проверьте подключение к интернету.', 502); }
+    catch (error) { onError(error); throw new PollError('Нет связи с Twitch. Проверьте подключение к интернету.', 502); }
     let data;
     try { data = await response.json(); } catch { data = {}; }
     if (!response.ok) {
       const error = new PollError(response.status === 401 || response.status === 403 ? 'Twitch отклонил доступ. Подключите аккаунт заново.' : 'Twitch отклонил запрос. Проверьте Client ID и тип Public.', response.status === 429 || response.status >= 500 ? 502 : 400);
-      error.remoteStatus = response.status; error.code = data.message || data.error; throw error;
+      error.remoteStatus = response.status; error.code = data.message || data.error;
+      if (!['authorization_pending', 'slow_down'].includes(error.code)) onError(new Error(`Twitch HTTP ${response.status}: ${String(error.code || 'Запрос отклонён')}`));
+      throw error;
     }
     return data;
   }

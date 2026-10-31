@@ -10,18 +10,21 @@ import { TWITCH_CLIENT_ID } from './config.mjs';
 import { createContest } from './contest.mjs';
 import { createChatArchive } from './chat-archive.mjs';
 import { createChatEmotes } from './chat-emotes.mjs';
+import { createErrorJournal } from './diagnostics.mjs';
 
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
 const productionPanelDir = join(publicDir, 'panel-build');
 const staticFiles = panelDir => ({ '/': [join(panelDir, 'index.html'), 'text/html', true], '/overlay': ['overlay.html', 'text/html'], '/chat-overlay': [join(panelDir, 'chat-overlay.html'), 'text/html', true], '/contest-overlay': [join(panelDir, 'contest-overlay.html'), 'text/html', true], '/overlay.js': ['overlay.js', 'text/javascript'], '/shared.js': ['shared.js', 'text/javascript'], '/widget-model.js': ['widget-model.js', 'text/javascript'], '/widget.css': ['widget.css', 'text/css'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/favicon.png': ['favicon.png', 'image/png'], '/fonts/geist-cyrillic.woff2': ['fonts/geist-cyrillic.woff2', 'font/woff2'], '/fonts/geist-latin.woff2': ['fonts/geist-latin.woff2', 'font/woff2'] });
 const assetTypes = { '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png' };
 const requireThat = (condition, message, status) => { if (!condition) throw new PollError(message, status); };
-export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, emoteOptions = {}, allowedOrigins = [], panelDir = productionPanelDir } = {}) {
+export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, emoteOptions = {}, allowedOrigins = [], panelDir = productionPanelDir, diagnostics, appVersion = '' } = {}) {
+  const journal = diagnostics || await createErrorJournal(join(dataDir, 'errors.json'), { version: appVersion || JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version, now });
   const store = await createStore(join(dataDir, 'state.json'), { now });
   const contest = await createContest(join(dataDir, 'contest.json'), { now });
   const chat = await createChatArchive(join(dataDir, 'chat.sqlite'), { now });
-  const twitch = await createTwitch({ filename: join(dataDir, 'twitch.json'), store, now, clientId: TWITCH_CLIENT_ID, onChatModeration: (channelId, target) => chat.markDeleted(channelId, target), onChatMessage: message => Promise.allSettled([message.kind === 'activity' ? Promise.resolve() : contest.chat(message), Promise.resolve().then(() => chat.add(message))]), ...twitchOptions });
+  const twitch = await createTwitch({ filename: join(dataDir, 'twitch.json'), store, now, clientId: TWITCH_CLIENT_ID, onError: error => journal.record({ source: 'twitch', error }), onChatModeration: (channelId, target) => chat.markDeleted(channelId, target), onChatMessage: message => Promise.allSettled([message.kind === 'activity' ? Promise.resolve() : contest.chat(message), Promise.resolve().then(() => chat.add(message))]), ...twitchOptions });
   const emotes = createChatEmotes({ twitch, now, ...emoteOptions });
+  if (twitch.snapshot().error) journal.record({ source: 'twitch:startup', error: twitch.snapshot().error });
   const streams = new Set();
   let allowedHosts;
   const trustedOrigins = new Set(allowedOrigins);
@@ -38,6 +41,7 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
       const requestUrl = new URL(request.url, `http://${host}`);
       const path = requestUrl.pathname;
       if (request.method === 'GET' && path === '/api/state') return json(response, 200, store.snapshot());
+      if (request.method === 'GET' && path === '/api/diagnostics') return json(response, 200, journal.snapshot());
       if (request.method === 'GET' && path === '/api/twitch') return json(response, 200, twitch.snapshot());
       if (request.method === 'GET' && path === '/api/twitch/stream') return json(response, 200, await twitch.stream());
       if (request.method === 'GET' && path === '/api/contest') return json(response, 200, contest.snapshot());
@@ -173,7 +177,7 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
         const result = await store.command(command);
         return json(response, 200, { ok: true, message: message || `Выбран шаблон «${result.outcome}»`, state: result.state });
       }
-      if (request.method === 'POST' && ['/api/command', '/api/twitch', '/api/contest', '/api/chat/notes', '/api/chat/memo', '/api/chat/send', '/api/chat/moderate'].includes(path)) {
+      if (request.method === 'POST' && ['/api/command', '/api/twitch', '/api/contest', '/api/chat/notes', '/api/chat/memo', '/api/chat/send', '/api/chat/moderate', '/api/diagnostics'].includes(path)) {
         if (!request.headers['content-type']?.startsWith('application/json') || request.headers['x-poll-client'] !== 'panel') return json(response, 415, { error: 'Ожидается JSON-команда панели.' });
         let bytes = 0, text = '';
         for await (const chunk of request) {
@@ -207,6 +211,12 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
           if (command.type === 'delete') { chat.deleteNote(channelId, command.viewerId, command.noteId); return json(response, 200, { ok: true }); }
           throw new PollError('Неизвестная команда заметок.');
         }
+        if (path === '/api/diagnostics') {
+          if (command.type === 'clear') return json(response, 200, await journal.clear());
+          requireThat(command.type === 'record' && typeof command.message === 'string' && command.message.length <= 12000, 'Некорректная запись журнала.', 400);
+          journal.record({ source: 'panel', error: command.message });
+          return json(response, 200, { ok: true });
+        }
         if (path === '/api/twitch') return json(response, 200, await twitch.command(command));
         if (path === '/api/contest') {
           if (command.type === 'start' && command.setup?.source !== 'test') {
@@ -239,6 +249,7 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
       }
       json(response, 404, { error: 'Страница не найдена.' });
     } catch (error) {
+      journal.record({ source: `server:${request.method} ${String(request.url || '').split(/[?#]/u)[0].slice(0, 100)}`, error });
       if (!error.status) console.error(error);
       if (!response.headersSent) json(response, error.status || 500, { error: error.status ? error.message : 'Не удалось сохранить изменение. Проверьте доступ к папке data.' });
       else response.end();
@@ -256,12 +267,12 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
       const actual = server.address().port;
       allowedHosts = new Set([`127.0.0.1:${actual}`, `localhost:${actual}`]);
       ticker = setInterval(() => {
-        store.command({ type: 'tick' }).catch(error => console.error('Не удалось завершить опрос:', error.message));
-        contest.tick().catch(error => console.error('Не удалось завершить набор конкурса:', error.message));
+        store.command({ type: 'tick' }).catch(error => { journal.record({ source: 'poll:tick', error }); console.error('Не удалось завершить опрос:', error.message); });
+        contest.tick().catch(error => { journal.record({ source: 'contest:tick', error }); console.error('Не удалось завершить набор конкурса:', error.message); });
       }, 250);
       void twitch.start();
       return `http://127.0.0.1:${actual}`;
     },
-    async close() { clearInterval(ticker); await twitch.close(); for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); await store.drain(); await contest.drain(); chat.close(); },
+    async close() { clearInterval(ticker); await twitch.close(); for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); await store.drain(); await contest.drain(); chat.close(); await journal.flush(); },
   };
 }
