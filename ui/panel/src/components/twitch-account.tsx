@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Settings2, UserRound } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -68,9 +69,9 @@ export function TwitchAccount({ state, active, onClick }: TwitchAccountProps) {
     >
       {loading ? (
         <>
-          <span className="size-7 shrink-0 animate-pulse rounded-lg bg-surface-raised" />
+          <Skeleton className="size-7 shrink-0 rounded-lg" />
           <span className="min-w-0 flex-1">
-            <span className="block h-2.5 w-18 animate-pulse rounded-full bg-surface-raised" />
+            <Skeleton className="h-2.5 w-18" />
           </span>
         </>
       ) : (

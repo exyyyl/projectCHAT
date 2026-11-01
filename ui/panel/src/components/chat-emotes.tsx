@@ -1,4 +1,5 @@
 import { memo, useMemo, useRef, useState } from "react"
+import { EmoteLoadingSkeleton } from "@/components/loading-skeletons"
 import { Popover } from "radix-ui"
 import { RefreshCw, Search, Smile, X } from "lucide-react"
 import { messageParts } from "@/domain/chat-emotes"
@@ -179,9 +180,7 @@ export function ChatEmotePicker({
           </div>
           <div className="chat-emote-results" key={`${filter}:${query}`}>
             {loading && !catalog ? (
-              <p className="chat-emote-empty" role="status">
-                Загружаем смайлики…
-              </p>
+              <EmoteLoadingSkeleton />
             ) : emotes.length ? (
               <>
                 <div className="chat-emote-grid">

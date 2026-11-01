@@ -2,6 +2,7 @@ import { useState } from "react"
 import { ExternalLink, UserRound } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton"
 import { ErrorNotice } from "@/components/error-notice"
 import type { TwitchState } from "@/domain/polls"
 
@@ -23,13 +24,17 @@ export function TwitchSettings({
 
   if (loading) {
     return (
-      <div className="flex h-11 animate-pulse items-center gap-3">
-        <div className="size-9 rounded-lg bg-surface-raised" />
-        <div className="space-y-2">
-          <div className="h-3 w-28 rounded bg-surface-raised" />
-          <div className="h-2.5 w-20 rounded bg-surface-subtle" />
+      <SkeletonGroup
+        label="Загрузка аккаунта Twitch"
+        className="flex min-h-11 items-center gap-3"
+      >
+        <Skeleton className="size-9 shrink-0 rounded-lg" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <Skeleton className="h-3 w-28 max-w-full" />
+          <Skeleton className="h-2.5 w-20 max-w-full" />
         </div>
-      </div>
+        <Skeleton className="h-8 w-24 shrink-0 rounded-lg" />
+      </SkeletonGroup>
     )
   }
 

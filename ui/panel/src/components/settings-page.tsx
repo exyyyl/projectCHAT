@@ -1,6 +1,13 @@
 import type { ContestOverlaySettings } from "../../../../public/contest-overlay-model.js"
 import type { ChatOverlaySettings } from "../../../../public/chat-overlay-model.js"
-import { useEffect, useRef, useState, type ChangeEvent } from "react"
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from "react"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Check, Download, FileUp } from "lucide-react"
 
 import { type AppTheme, useTheme } from "@/components/theme-provider"
@@ -389,7 +396,7 @@ function PreferenceRow({
   onCheckedChange,
 }: {
   label: string
-  hint?: string
+  hint?: ReactNode
   checked: boolean
   disabled: boolean
   onCheckedChange: (checked: boolean) => void
@@ -411,7 +418,7 @@ function preferenceHint(
   supported: boolean | undefined
 ) {
   if (!bridge) return "Только в приложении"
-  if (!preferences) return "Загрузка…"
+  if (!preferences) return <Skeleton className="my-1 h-2.5 w-28" />
   return supported ? undefined : "Недоступно на этом устройстве"
 }
 

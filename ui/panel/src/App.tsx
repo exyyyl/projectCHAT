@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useState } from "react"
+import { AppLoadingSkeleton } from "@/components/loading-skeletons"
 import {
   Gift,
   LayoutTemplate,
@@ -204,9 +205,7 @@ function AppContent() {
           sidebarCollapsed={sidebarCollapsed && !compactPinned}
           onToggleSidebar={toggleSidebar}
         />
-        <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
-          Подключение…
-        </div>
+        <AppLoadingSkeleton sidebarVisible={!sidebarCollapsed} />
         <ToastViewport onOpenDiagnostics={openDiagnostics} />
       </div>
     )

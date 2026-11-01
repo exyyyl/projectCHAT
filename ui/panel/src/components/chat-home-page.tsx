@@ -11,6 +11,10 @@ import {
 } from "@/domain/chat-delivery"
 import { useToast } from "./ui/toast"
 import {
+  ChatLoadingSkeleton,
+  ProfileLoadingSkeleton,
+} from "@/components/loading-skeletons"
+import {
   ArrowDown,
   ExternalLink,
   Gift,
@@ -707,10 +711,8 @@ export function ChatHomePage({
                     Ранние сообщения
                   </button>
                 )}
-              {loading ? (
-                <div className="chat-home-empty">
-                  <span>Загрузка чата…</span>
-                </div>
+              {loading && messages.length === 0 ? (
+                <ChatLoadingSkeleton />
               ) : messages.length === 0 ? (
                 <div className="chat-home-empty">
                   <MessageCircle aria-hidden="true" />
@@ -949,8 +951,12 @@ export function ChatHomePage({
                 <X aria-hidden="true" />
               </button>
             </header>
-            {loadingProfile || !profile ? (
-              <div className="chat-profile-loading">Загрузка…</div>
+            {loadingProfile ? (
+              <ProfileLoadingSkeleton />
+            ) : !profile ? (
+              <div className="chat-profile-loading" role="status">
+                Не удалось загрузить профиль.
+              </div>
             ) : (
               <div className="chat-profile-scroll">
                 <div className="chat-profile-identity">

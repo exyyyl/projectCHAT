@@ -1,4 +1,5 @@
-import { CircleAlert, ArrowDownRight } from "lucide-react"
+import { CircleAlert, ArrowUpRight } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { presentError } from "../../../../public/error-messages.js"
 import { revealErrorJournal } from "@/domain/diagnostics"
 
@@ -29,14 +30,16 @@ export function ErrorNotice({
           </p>
         )}
       </div>
-      <button
+      <Button
         type="button"
-        className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-surface-raised hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+        variant="ghost"
+        size="sm"
+        className="self-center text-xs text-foreground/80"
         onClick={revealErrorJournal}
       >
-        Журнал
-        <ArrowDownRight className="size-3" />
-      </button>
+        Подробнее
+        <ArrowUpRight className="size-3.5" />
+      </Button>
     </div>
   )
 }

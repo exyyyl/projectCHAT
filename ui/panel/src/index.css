@@ -5,6 +5,29 @@
 
 @custom-variant dark (&:is(.dark *));
 
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+
+.skeleton::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--foreground) 6%, transparent), transparent);
+  transform: translateX(-100%);
+  animation: cue-skeleton-sweep 1.8s ease-in-out infinite;
+}
+
+@keyframes cue-skeleton-sweep {
+  to { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { animation: none; display: none; }
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: "Geist Variable", sans-serif;

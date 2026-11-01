@@ -7,7 +7,15 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react"
-import { Check, Info, TriangleAlert, X, XCircle } from "lucide-react"
+import {
+  ArrowUpRight,
+  Check,
+  Info,
+  TriangleAlert,
+  X,
+  XCircle,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
 import gsap from "gsap"
 import { useGSAP } from "@gsap/react"
 
@@ -189,6 +197,7 @@ function ToastNotice({
       <span
         className={cn(
           "flex size-5 shrink-0 items-center justify-center rounded-md",
+          tone === "error" && "mt-0.5 self-start",
           style.iconClassName
         )}
       >
@@ -207,6 +216,21 @@ function ToastNotice({
             {toast.description}
           </p>
         )}
+        {tone === "error" && onOpenDiagnostics && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="pointer-events-auto mt-2 text-xs"
+            onClick={() => {
+              dismiss(toast.id)
+              onOpenDiagnostics()
+            }}
+          >
+            Подробнее
+            <ArrowUpRight className="size-3.5" />
+          </Button>
+        )}
       </div>
       {toast.count > 1 && (
         <span
@@ -216,21 +240,12 @@ function ToastNotice({
           ×{toast.count}
         </span>
       )}
-      {tone === "error" && onOpenDiagnostics && (
-        <button
-          type="button"
-          className="shrink-0 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-surface-raised hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-          onClick={() => {
-            dismiss(toast.id)
-            onOpenDiagnostics()
-          }}
-        >
-          Журнал
-        </button>
-      )}
       <button
         type="button"
-        className="pointer-events-auto flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground/65 transition-colors hover:bg-surface-raised hover:text-foreground"
+        className={cn(
+          "pointer-events-auto flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground/65 transition-colors hover:bg-surface-raised hover:text-foreground",
+          tone === "error" && "self-start"
+        )}
         aria-label="Закрыть уведомление"
         onClick={() => dismiss(toast.id)}
       >

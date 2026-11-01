@@ -1,7 +1,25 @@
-import { useCallback, useEffect, useState } from "react"
-import { Copy, Download, ChevronRight, FileCheck2 } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  Check,
+  Copy,
+  Download,
+  FileCheck2,
+  Trash2,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton"
+import { JournalLoadingSkeleton } from "@/components/loading-skeletons"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { loadDiagnostics, type DiagnosticReport } from "@/domain/diagnostics"
+import { presentError } from "../../../../public/error-messages.js"
 
 const date = new Intl.DateTimeFormat("ru", {
   day: "numeric",
@@ -9,7 +27,22 @@ const date = new Intl.DateTimeFormat("ru", {
   hour: "2-digit",
   minute: "2-digit",
 })
+
+function sourceLabel(source: string) {
+  if (source.startsWith("twitch")) return "Twitch"
+  if (source.includes("versions") || source.includes("updat"))
+    return "Обновления"
+  if (source.startsWith("poll")) return "Опросы"
+  if (source.startsWith("contest")) return "Конкурсы"
+  return "Приложение"
+}
+
 export function DiagnosticsSettings() {
+  const root = useRef<HTMLDivElement>(null)
+  const detailHeading = useRef<HTMLHeadingElement>(null)
+  const selectedRow = useRef<HTMLButtonElement>(null)
+  const [open, setOpen] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [report, setReport] = useState<DiagnosticReport | null>(null)
   const [failed, setFailed] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -22,6 +55,16 @@ export function DiagnosticsSettings() {
       })
       .catch(() => setFailed(true))
   }, [])
+  useEffect(() => {
+    const element = root.current
+    const show = () => {
+      setSelectedId(null)
+      setOpen(true)
+      refresh()
+    }
+    element?.addEventListener("cue:open-diagnostics", show)
+    return () => element?.removeEventListener("cue:open-diagnostics", show)
+  }, [refresh])
   useEffect(() => {
     let active = true
     void loadDiagnostics()
@@ -95,91 +138,213 @@ export function DiagnosticsSettings() {
     }
   }
   const count = report?.entries.length ?? 0
+  const selected =
+    report?.entries.find((entry) => entry.id === selectedId) ??
+    report?.entries[0]
+  const notice = selected
+    ? presentError(selected.details.split("\n")[0], selected.source)
+    : null
   return (
-    <div data-error-journal className="scroll-mt-6 space-y-4">
-      {failed ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-          <span>Журнал недоступен. Попробуйте ещё раз.</span>
-          <Button variant="outline" size="sm" onClick={refresh}>
-            Повторить
-          </Button>
+    <div ref={root} data-error-journal>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {!report && !failed ? (
+            <SkeletonGroup
+              label="Загрузка журнала"
+              className="flex min-h-8 items-center"
+            >
+              <Skeleton className="h-3 w-44" />
+            </SkeletonGroup>
+          ) : (
+            <p className="min-w-0 text-sm text-muted-foreground">
+              {failed
+                ? "Не удалось загрузить записи"
+                : count === 0
+                  ? "Ошибок пока нет"
+                  : `Последняя запись — ${date.format(report!.entries[0].lastAt)}`}
+            </p>
+          )}
+          <DialogTrigger asChild>
+            <Button variant="secondary" className="px-3" onClick={refresh}>
+              Открыть журнал
+              <ArrowUpRight />
+            </Button>
+          </DialogTrigger>
         </div>
-      ) : !report ? (
-        <p className="text-sm text-muted-foreground">Загружаем журнал…</p>
-      ) : count === 0 ? (
-        <div className="flex items-center gap-2.5 py-1 text-sm text-muted-foreground">
-          <FileCheck2 className="size-4" />
-          Ошибок пока нет
-        </div>
-      ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-2">
+        <DialogContent className="flex h-[min(580px,calc(100dvh-2rem))] min-h-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+          <header className="shrink-0 px-5 pt-5 pr-12 pb-4">
+            <DialogTitle className="text-lg font-semibold tracking-tight">
+              Журнал ошибок
+            </DialogTitle>
+            <DialogDescription className="mt-1.5 text-xs">
+              Скачайте отчёт, чтобы передать его разработчику.
+            </DialogDescription>
+            {selectedId && count > 0 && (
+              <Button
+                variant="ghost"
+                size="default"
+                className="mt-3 -ml-2 sm:hidden"
+                onClick={() => {
+                  setSelectedId(null)
+                  requestAnimationFrame(() => selectedRow.current?.focus())
+                }}
+              >
+                <ArrowLeft />
+                Все записи
+              </Button>
+            )}
+          </header>
+          {failed && (
+            <div
+              role="status"
+              className="mx-5 mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2 text-xs text-destructive"
+            >
+              Не удалось прочитать журнал или сохранить отчёт.
+              <Button variant="ghost" size="sm" onClick={refresh}>
+                Повторить
+              </Button>
+            </div>
+          )}
+          {report && !report.storageAvailable && (
+            <p role="status" className="mx-5 mb-3 text-xs text-destructive">
+              Записи не сохраняются на диск. Скачайте отчёт перед закрытием Cue.
+            </p>
+          )}
+          {!report && !failed ? (
+            <JournalLoadingSkeleton />
+          ) : !report || count === 0 ? (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-5 text-muted-foreground">
+              <FileCheck2 className="size-7" strokeWidth={1.5} />
+              <p className="text-sm">
+                {!report ? "Записи недоступны" : "Ошибок пока нет"}
+              </p>
+            </div>
+          ) : (
+            <div className="grid min-h-0 flex-1 grid-rows-1 sm:grid-cols-[240px_minmax(0,1fr)]">
+              <nav
+                aria-label="События журнала"
+                className={`min-h-0 overflow-y-auto overscroll-contain px-3 pb-3 ${selectedId ? "hidden sm:block" : ""}`}
+              >
+                {report.entries.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    aria-current={
+                      entry.id === selected?.id ? "true" : undefined
+                    }
+                    onClick={(event) => {
+                      selectedRow.current = event.currentTarget
+                      setSelectedId(entry.id)
+                      if (window.matchMedia("(max-width: 639px)").matches) {
+                        requestAnimationFrame(() =>
+                          detailHeading.current?.focus()
+                        )
+                      }
+                    }}
+                    className="mb-1 w-full rounded-lg px-3 py-3 text-left transition-colors hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-ring aria-current:bg-surface-raised"
+                  >
+                    <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                      <time
+                        dateTime={new Date(entry.lastAt).toISOString()}
+                        className="min-w-0 flex-1"
+                      >
+                        {date.format(entry.lastAt)}
+                      </time>
+                      {entry.count > 1 && (
+                        <span className="tabular-nums">×{entry.count}</span>
+                      )}
+                    </span>
+                    <span className="mt-1.5 block text-sm leading-snug font-medium [overflow-wrap:anywhere]">
+                      {entry.title}
+                    </span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {sourceLabel(entry.source)}
+                    </span>
+                  </button>
+                ))}
+              </nav>
+              {selected && notice && (
+                <section
+                  aria-label="Подробности ошибки"
+                  className={`mx-3 mb-3 min-h-0 min-w-0 overflow-y-auto overscroll-contain rounded-xl bg-background p-4 sm:ml-0 sm:p-5 ${selectedId ? "" : "hidden sm:block"}`}
+                >
+                  <h2
+                    ref={detailHeading}
+                    tabIndex={-1}
+                    className="text-base leading-snug font-semibold [overflow-wrap:anywhere] outline-none"
+                  >
+                    {selected.title}
+                  </h2>
+                  {notice.description && (
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                      {notice.description}
+                    </p>
+                  )}
+                  <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+                    <div>
+                      <dt className="text-muted-foreground">Источник</dt>
+                      <dd className="mt-1 [overflow-wrap:anywhere]">
+                        {selected.source}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Версия</dt>
+                      <dd className="mt-1 [overflow-wrap:anywhere]">
+                        {selected.version || report.version}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Последний раз</dt>
+                      <dd className="mt-1">{date.format(selected.lastAt)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Повторений</dt>
+                      <dd className="mt-1 tabular-nums">{selected.count}</dd>
+                    </div>
+                  </dl>
+                  <h3 className="mt-6 text-xs font-medium">
+                    Технические подробности
+                  </h3>
+                  <pre className="mt-2 text-xs leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap text-muted-foreground">
+                    {selected.details}
+                  </pre>
+                </section>
+              )}
+            </div>
+          )}
+          <footer className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 px-5 pt-2 pb-5 sm:flex">
             <Button
-              size="sm"
+              variant="ghost"
+              size="lg"
+              className="justify-self-start px-3 text-muted-foreground hover:bg-destructive/10 hover:text-destructive sm:mr-auto"
+              disabled={busy || !count}
+              onClick={() => void clear()}
+            >
+              <Trash2 />
+              Очистить
+            </Button>
+            <Button
               variant="secondary"
-              disabled={busy}
+              size="lg"
+              className="justify-self-end px-3 sm:min-w-36"
+              disabled={busy || !count}
+              onClick={() => void exportReport(true)}
+            >
+              {copied ? <Check /> : <Copy />}
+              {copied ? "Скопировано" : "Копировать"}
+            </Button>
+            <Button
+              size="lg"
+              className="col-span-2 px-4"
+              disabled={busy || !count}
               onClick={() => void exportReport(false)}
             >
               <Download />
-              Скачать логи
+              Скачать отчёт
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => void exportReport(true)}
-            >
-              <Copy />
-              {copied ? "Скопировано" : "Скопировать"}
-            </Button>
-            <span className="ml-auto text-xs text-muted-foreground">
-              {count} / 100
-            </span>
-          </div>
-          <div className="max-h-64 space-y-1 overflow-y-auto overscroll-contain">
-            {report.entries.map((entry) => (
-              <details
-                key={entry.id}
-                className="group rounded-lg bg-background/50 px-3 py-2.5 open:bg-background"
-              >
-                <summary className="flex cursor-pointer list-none items-start gap-2 rounded-sm focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
-                  <ChevronRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
-                  <span className="min-w-0 flex-1 text-sm leading-snug [overflow-wrap:anywhere]">
-                    {entry.title}
-                    {entry.count > 1 && (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        ×{entry.count}
-                      </span>
-                    )}
-                  </span>
-                  <time className="shrink-0 pt-0.5 text-[11px] text-muted-foreground">
-                    {date.format(entry.lastAt)}
-                  </time>
-                </summary>
-                <div className="mt-3 text-[11px] text-muted-foreground">
-                  {entry.source} · {entry.version}
-                </div>
-                <pre className="mt-2 text-[11px] leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap text-muted-foreground">
-                  {entry.details}
-                </pre>
-              </details>
-            ))}
-          </div>
-          <button
-            className="rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-            disabled={busy}
-            onClick={() => void clear()}
-          >
-            Очистить журнал
-          </button>
-        </>
-      )}
-      {report && !report.storageAvailable && (
-        <p className="text-xs text-destructive">
-          Не удалось сохранить журнал на диск. Скачайте логи перед закрытием
-          Cue.
-        </p>
-      )}
+          </footer>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/toast"
 import { FormSegmented } from "@/components/form-controls"
 import { ErrorNotice } from "@/components/error-notice"
+import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton"
 
 export function VersionSwitcher({ children }: { children?: ReactNode }) {
   const [state, setState] = useState<DesktopVersionState | null>(null)
@@ -11,6 +12,7 @@ export function VersionSwitcher({ children }: { children?: ReactNode }) {
   const [branch, setBranch] = useState<"stable" | "beta">("stable")
   const toast = useToast()
   const bridge = window.streamPollsDesktop
+  const [loading, setLoading] = useState(Boolean(bridge?.getVersions))
   useEffect(() => {
     if (!bridge?.getVersions) return
     let active = true
@@ -31,6 +33,9 @@ export function VersionSwitcher({ children }: { children?: ReactNode }) {
                 ? error.message
                 : "Не удалось загрузить версии",
           })
+      })
+      .finally(() => {
+        if (active) setLoading(false)
       })
     const unsubscribe = bridge.onVersionState((value) => {
       if (active) setState(value)
@@ -98,6 +103,20 @@ export function VersionSwitcher({ children }: { children?: ReactNode }) {
     (state?.phase === "error" && (!state.target || state.target === branch)
       ? state.message
       : "")
+  if (loading && !state)
+    return (
+      <SkeletonGroup label="Загрузка обновлений" className="space-y-4">
+        <Skeleton className="h-8 w-48 max-w-full rounded-lg" />
+        <div className="min-h-12 space-y-3">
+          <Skeleton className="h-5 w-20" />
+          <Skeleton className="h-3 w-36" />
+        </div>
+        <div className="flex gap-3">
+          <Skeleton className="h-7 w-24 rounded-lg" />
+          <Skeleton className="h-7 w-24 rounded-lg" />
+        </div>
+      </SkeletonGroup>
+    )
   return (
     <div className="space-y-4">
       <FormSegmented

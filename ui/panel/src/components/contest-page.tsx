@@ -1,3 +1,4 @@
+import { ContestLoadingSkeleton } from "@/components/loading-skeletons"
 import {
   ArrowLeft,
   ArrowRight,
@@ -85,24 +86,19 @@ export function ContestPage({
       showToast({ message: controller.error, tone: "error" })
   }, [controller.error, showToast])
 
-  if (!controller.state)
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Подключение…
-      </div>
-    )
+  if (!controller.state) return <ContestLoadingSkeleton />
 
   const activeContest = contest?.status === "finished" ? null : contest
 
   const start = () => {
     const keyword = setup.keyword.trim()
-    const invalidRange = setup.mode === "number" && (
-      !Number.isSafeInteger(setup.numberMin) ||
-      !Number.isSafeInteger(setup.numberMax) ||
-      setup.numberMin < 0 ||
-      setup.numberMax > 1_000_000 ||
-      setup.numberMin >= setup.numberMax
-    )
+    const invalidRange =
+      setup.mode === "number" &&
+      (!Number.isSafeInteger(setup.numberMin) ||
+        !Number.isSafeInteger(setup.numberMax) ||
+        setup.numberMin < 0 ||
+        setup.numberMax > 1_000_000 ||
+        setup.numberMin >= setup.numberMax)
     if (
       (setup.mode === "keyword" && (!keyword || /\s/u.test(keyword))) ||
       invalidRange ||
@@ -119,9 +115,9 @@ export function ContestPage({
               ? "Слово должно быть без пробелов."
               : invalidRange
                 ? "Укажите диапазон от 0 до 1 000 000: начало меньше конца."
-              : setup.allowedRoles.length === 0
-                ? "Выберите хотя бы одну группу зрителей."
-                : "Укажите время от 10 до 3600 секунд.",
+                : setup.allowedRoles.length === 0
+                  ? "Выберите хотя бы одну группу зрителей."
+                  : "Укажите время от 10 до 3600 секунд.",
         tone: "error",
       })
       return
@@ -398,9 +394,25 @@ function ContestSetupPanel({
                       min={0}
                       max={999999}
                       step={1}
-                      value={Number.isNaN(setup.numberMin) ? "" : setup.numberMin}
-                      aria-invalid={validation && (!Number.isSafeInteger(setup.numberMin) || setup.numberMin < 0 || setup.numberMin >= setup.numberMax) || undefined}
-                      onChange={(event) => onChange({ ...setup, numberMin: event.target.value === "" ? NaN : Number(event.target.value) })}
+                      value={
+                        Number.isNaN(setup.numberMin) ? "" : setup.numberMin
+                      }
+                      aria-invalid={
+                        (validation &&
+                          (!Number.isSafeInteger(setup.numberMin) ||
+                            setup.numberMin < 0 ||
+                            setup.numberMin >= setup.numberMax)) ||
+                        undefined
+                      }
+                      onChange={(event) =>
+                        onChange({
+                          ...setup,
+                          numberMin:
+                            event.target.value === ""
+                              ? NaN
+                              : Number(event.target.value),
+                        })
+                      }
                     />
                   </FormField>
                   <FormField label="До" htmlFor={numberMaxId}>
@@ -410,9 +422,25 @@ function ContestSetupPanel({
                       min={1}
                       max={1000000}
                       step={1}
-                      value={Number.isNaN(setup.numberMax) ? "" : setup.numberMax}
-                      aria-invalid={validation && (!Number.isSafeInteger(setup.numberMax) || setup.numberMax > 1_000_000 || setup.numberMin >= setup.numberMax) || undefined}
-                      onChange={(event) => onChange({ ...setup, numberMax: event.target.value === "" ? NaN : Number(event.target.value) })}
+                      value={
+                        Number.isNaN(setup.numberMax) ? "" : setup.numberMax
+                      }
+                      aria-invalid={
+                        (validation &&
+                          (!Number.isSafeInteger(setup.numberMax) ||
+                            setup.numberMax > 1_000_000 ||
+                            setup.numberMin >= setup.numberMax)) ||
+                        undefined
+                      }
+                      onChange={(event) =>
+                        onChange({
+                          ...setup,
+                          numberMax:
+                            event.target.value === ""
+                              ? NaN
+                              : Number(event.target.value),
+                        })
+                      }
                     />
                   </FormField>
                 </div>
@@ -588,12 +616,20 @@ function ContestControls({
         {contest.mode === "number" && (
           <ContestFact
             label="Загадано"
-            value={contest.winningNumber === null ? "Скрыто до конца" : String(contest.winningNumber)}
+            value={
+              contest.winningNumber === null
+                ? "Скрыто до конца"
+                : String(contest.winningNumber)
+            }
           />
         )}
         <ContestFact
           label={contest.mode === "number" ? "Попыток" : "Допущено"}
-          value={contest.mode === "number" ? String(contest.guessCount) : `${eligible.length} из ${contest.participants.length}`}
+          value={
+            contest.mode === "number"
+              ? String(contest.guessCount)
+              : `${eligible.length} из ${contest.participants.length}`
+          }
         />
         {winner && (
           <ContestFact
@@ -703,9 +739,13 @@ function ContestPool({
     <section className="contest-pool mt-6 flex min-h-0 min-w-0 flex-col rounded-2xl bg-surface-subtle p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-medium">{numberMode ? "Угадывают" : "Участники"}</h2>
+          <h2 className="text-sm font-medium">
+            {numberMode ? "Угадывают" : "Участники"}
+          </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {numberMode ? `${participants.length} зрителей` : `${eligible} допущено`}
+            {numberMode
+              ? `${participants.length} зрителей`
+              : `${eligible} допущено`}
           </p>
         </div>
         {!numberMode && participants.length > 0 && canEdit && (
@@ -728,22 +768,29 @@ function ContestPool({
 
       <div className="mt-3 min-h-48 flex-1 space-y-1 overflow-y-auto overscroll-contain lg:min-h-0">
         {visible.length ? (
-          visible.map((participant) => numberMode ? (
-            <div key={participant.id} className="flex min-h-11 items-center justify-between gap-3 rounded-lg px-2 text-sm">
-              <span className="min-w-0 truncate font-medium">{participant.name}</span>
-              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                {formatAttempts(participant.guessCount || 0)}
-              </span>
-            </div>
-          ) : (
-            <ParticipantRow
-              key={participant.id}
-              participant={participant}
-              drawn={drawnIds.has(participant.id)}
-              disabled={!canEdit || busy}
-              onChange={(eligible) => onEligibility(participant.id, eligible)}
-            />
-          ))
+          visible.map((participant) =>
+            numberMode ? (
+              <div
+                key={participant.id}
+                className="flex min-h-11 items-center justify-between gap-3 rounded-lg px-2 text-sm"
+              >
+                <span className="min-w-0 truncate font-medium">
+                  {participant.name}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                  {formatAttempts(participant.guessCount || 0)}
+                </span>
+              </div>
+            ) : (
+              <ParticipantRow
+                key={participant.id}
+                participant={participant}
+                drawn={drawnIds.has(participant.id)}
+                disabled={!canEdit || busy}
+                onChange={(eligible) => onEligibility(participant.id, eligible)}
+              />
+            )
+          )
         ) : (
           <div className="flex min-h-40 flex-col items-center justify-center text-center">
             <Users className="size-5 text-muted-foreground" />
@@ -752,26 +799,30 @@ function ContestPool({
             </p>
             {!query && (
               <p className="mt-1 max-w-48 text-xs text-muted-foreground">
-                {numberMode ? "Попытки появятся после чисел в чате" : "Зрители появятся после сообщения в чате"}
+                {numberMode
+                  ? "Попытки появятся после чисел в чате"
+                  : "Зрители появятся после сообщения в чате"}
               </p>
             )}
           </div>
         )}
       </div>
 
-      {!numberMode && <div className="mt-4 rounded-xl bg-panel-muted p-2">
-        <Button
-          className="h-11 w-full"
-          disabled={!contest || busy || available === 0}
-          onClick={onDraw}
-        >
-          {winner ? <RotateCcw /> : <UserRound />}
-          {winner ? "Выбрать другого" : "Выбрать победителя"}
-        </Button>
-        <p className="mt-2 pb-1 text-center text-xs text-muted-foreground">
-          Доступно для выбора: {available}
-        </p>
-      </div>}
+      {!numberMode && (
+        <div className="mt-4 rounded-xl bg-panel-muted p-2">
+          <Button
+            className="h-11 w-full"
+            disabled={!contest || busy || available === 0}
+            onClick={onDraw}
+          >
+            {winner ? <RotateCcw /> : <UserRound />}
+            {winner ? "Выбрать другого" : "Выбрать победителя"}
+          </Button>
+          <p className="mt-2 pb-1 text-center text-xs text-muted-foreground">
+            Доступно для выбора: {available}
+          </p>
+        </div>
+      )}
     </section>
   )
 }
@@ -839,11 +890,11 @@ function ContestChat({
     : contest?.mode === "number"
       ? contest.guesses
       : (contest?.participants || []).map((participant) => ({
-        id: participant.messageId,
-        text: participant.message,
-        at: participant.joinedAt,
-        name: participant.name,
-      }))
+          id: participant.messageId,
+          text: participant.message,
+          at: participant.joinedAt,
+          name: participant.name,
+        }))
   const lastMessageId = messages.at(-1)?.id
 
   useLayoutEffect(() => {

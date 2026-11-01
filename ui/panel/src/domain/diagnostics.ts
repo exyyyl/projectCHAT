@@ -20,12 +20,7 @@ export function revealErrorJournal() {
   const element = Array.from(
     document.querySelectorAll<HTMLElement>("[data-error-journal]")
   ).find((item) => item.getClientRects().length > 0)
-  element?.scrollIntoView({
-    block: "nearest",
-    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      ? "auto"
-      : "smooth",
-  })
+  element?.dispatchEvent(new Event("cue:open-diagnostics"))
 }
 
 export function recordClientError(value: unknown) {
