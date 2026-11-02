@@ -24,6 +24,7 @@
     "desktop:static": "electron .",
     "pack:win": "node scripts/package-desktop.mjs --win",
     "pack:mac": "node scripts/package-desktop.mjs --mac",
+    "pack:trula": "node scripts/package-trula-plugin.mjs",
     "release:win": "node scripts/package-desktop.mjs --win --release"
   },
   "dependencies": {
@@ -33,6 +34,7 @@
   "devDependencies": {
     "electron": "^44.2.0",
     "electron-builder": "^26.15.3",
-    "sharp": "^0.35.4"
+    "sharp": "^0.35.4",
+    "ws": "8.22.1"
   }
 }

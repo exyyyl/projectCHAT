@@ -26,7 +26,7 @@ import {
 const sections: Partial<
   Record<TabView, { label: string; icon: typeof ListChecks }>
 > = {
-  home: { label: "Главная", icon: MessageCircle },
+  home: { label: "Студия", icon: MessageCircle },
   polls: { label: "Опросы", icon: ListChecks },
   presets: { label: "Шаблоны", icon: LayoutTemplate },
   widget: { label: "Виджеты", icon: PanelsTopLeft },

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trula Audio — подключение</title>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="inspector.js"></script>
+</head>
+<body>
+  <!-- THESIS: Two independent music outputs, configured once for all keys.
+  OWN-WORLD: Inherit the compact dark Stream Dock inspector; lime denotes a primary action.
+  STORY: Paste a panel URL, connect, read the chosen output's state.
+  FIRST VIEWPORT: Output heading, connection form, live status, short routing guidance.
+  FORM: Narrow extension of the existing Cue property inspector; no new visual world.
+  FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md -->
+  <main>
+    <h1 id="output">Trula Audio</h1>
+    <p id="description">Две кнопки — для стрима и для вас.</p>
+    <form id="connection">
+      <label for="token">Токен или ссылка панели Trula</label>
+      <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Ссылка с token=…" aria-describedby="token-hint" required>
+      <p id="token-hint">Подключение общее для всех кнопок Trula Audio.</p>
+      <button id="connect" type="submit" disabled>Подключить Trula</button>
+    </form>
+    <p id="status" role="status" aria-live="polite">Ожидание Stream Dock…</p>
+    <dl id="levels" hidden>
+      <div><dt>Заказы</dt><dd id="orders"></dd></div>
+      <div><dt>Плейлист</dt><dd id="playlist"></dd></div>
+    </dl>
+    <div class="actions">
+      <button id="check" type="button" disabled>Проверить связь</button>
+      <button id="disconnect" type="button" hidden>Отключить</button>
+    </div>
+    <aside>
+      <p>Для двух независимых выходов выберите <strong>«Оба»</strong> в настройках звука Trula. Звук стрима идёт через источник Trula в OBS, ваш — через панель Trula.</p>
+      <p>Кнопка глушит заказы и плейлист. Повторное нажатие возвращает прежнюю громкость. Оповещения сохраняют свой звук.</p>
+    </aside>
+  </main>
+</body>
+</html>

@@ -10,12 +10,12 @@ type StreamSnapshot = {
   serverNow: number
 }
 
-const blurPreference = "cue-stream-hide-viewers"
+const viewerVisibilityPreference = "cue-stream-hide-viewers"
 const viewersFormat = new Intl.NumberFormat("ru")
 
-function readBlurPreference() {
+function readViewerVisibilityPreference() {
   try {
-    return localStorage.getItem(blurPreference) === "true"
+    return localStorage.getItem(viewerVisibilityPreference) === "true"
   } catch {
     return false
   }
@@ -50,7 +50,9 @@ export function StreamOverview({ channelId }: { channelId?: string }) {
   const [snapshot, setSnapshot] = useState<StreamSnapshot | null>(null)
   const [offset, setOffset] = useState(0)
   const [failed, setFailed] = useState(false)
-  const [blurred, setBlurred] = useState(readBlurPreference)
+  const [viewersHidden, setViewersHidden] = useState(
+    readViewerVisibilityPreference
+  )
 
   useEffect(() => {
     if (!channelId) return
@@ -99,17 +101,18 @@ export function StreamOverview({ channelId }: { channelId?: string }) {
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
-      if (event.key === blurPreference) setBlurred(event.newValue === "true")
+      if (event.key === viewerVisibilityPreference)
+        setViewersHidden(event.newValue === "true")
     }
     window.addEventListener("storage", onStorage)
     return () => window.removeEventListener("storage", onStorage)
   }, [])
 
-  const toggleBlur = () => {
-    const next = !blurred
-    setBlurred(next)
+  const toggleViewers = () => {
+    const next = !viewersHidden
+    setViewersHidden(next)
     try {
-      localStorage.setItem(blurPreference, String(next))
+      localStorage.setItem(viewerVisibilityPreference, String(next))
     } catch {
       /* The control also works without persistent storage. */
     }
@@ -124,17 +127,17 @@ export function StreamOverview({ channelId }: { channelId?: string }) {
         : live
           ? "В эфире"
           : "Не в эфире"
-  const VisibilityIcon = blurred ? EyeOff : Eye
+  const VisibilityIcon = viewersHidden ? EyeOff : Eye
 
   return (
     <section className="stream-overview" aria-label="Показатели стрима">
       <button
         className="stream-overview-item stream-overview-viewers"
         type="button"
-        onClick={toggleBlur}
-        aria-pressed={blurred}
-        aria-label={blurred ? "Показать онлайн" : "Скрыть онлайн"}
-        aria-describedby={blurred ? undefined : viewerCountId}
+        onClick={toggleViewers}
+        aria-pressed={viewersHidden}
+        aria-label={viewersHidden ? "Показать онлайн" : "Скрыть онлайн"}
+        aria-describedby={viewersHidden ? undefined : viewerCountId}
       >
         <span className="stream-overview-label">
           <Users aria-hidden="true" />
@@ -146,18 +149,16 @@ export function StreamOverview({ channelId }: { channelId?: string }) {
         </span>
         <strong
           id={viewerCountId}
-          className={
-            blurred
-              ? "stream-overview-number is-blurred"
-              : "stream-overview-number"
-          }
-          aria-hidden={blurred || undefined}
+          className="stream-overview-number"
+          aria-hidden={viewersHidden || undefined}
         >
-          {snapshot?.viewerCount == null
-            ? "—"
-            : viewersFormat.format(snapshot.viewerCount)}
+          {viewersHidden
+            ? "Скрыт"
+            : snapshot?.viewerCount == null
+              ? "—"
+              : viewersFormat.format(snapshot.viewerCount)}
         </strong>
-        {blurred && <span className="sr-only">Онлайн скрыт</span>}
+        {viewersHidden && <span className="sr-only">Онлайн скрыт</span>}
       </button>
       <div className="stream-overview-item">
         <span className="stream-overview-label">

@@ -71,6 +71,29 @@ test('macOS preview exposes bundled plugins without enabling device operations',
   await assert.rejects(() => manager.installSource(entry.sourceKey), /только в Windows/u)
 })
 
+test('installed Discord importer is detected alongside Twitch even with a protected Elgato manifest', async t => {
+  const { paths } = await fixture(t)
+  const discord = join(paths.ajazzPlugins, 'com.elgato.discord.sdPlugin')
+  await mkdir(discord, { recursive: true })
+  await writeFile(join(discord, 'manifest.json'), Buffer.from('ELGATO protected manifest'))
+  await writeFile(join(discord, 'Discord.exe'), 'fixture')
+  await writeFile(join(discord, 'en.json'), JSON.stringify({
+    Name: 'Discord',
+    'com.elgato.discord.mute': { Name: 'Mute' },
+    'com.elgato.discord.deafen': { Name: 'Deafen' },
+  }))
+  await plugin(join(paths.ajazzPlugins, 'com.elgato.twitch.sdPlugin'), { name: 'Twitch', uuid: 'com.elgato.twitch' })
+  const manager = createStreamDockManager({ paths, platform: 'win32' })
+  const entries = await manager.listPlugins()
+  const installedDiscord = entries.find(entry => entry.id === 'com.elgato.discord.sdPlugin')
+  assert.equal(installedDiscord.isInstalled, true)
+  assert.equal(installedDiscord.isProtected, true)
+  assert.equal(installedDiscord.actionCount, 2)
+  assert.equal(entries.find(entry => entry.id === 'com.elgato.twitch.sdPlugin').isInstalled, true)
+  await rm(discord, { recursive: true })
+  assert.equal((await manager.listPlugins()).some(entry => entry.id === 'com.elgato.discord.sdPlugin'), false)
+})
+
 test('plugin install, uninstall and restore preserve data and always restart AJAZZ', async (t) => {
   const { paths } = await fixture(t)
   const id = 'com.example.plugin.sdPlugin'

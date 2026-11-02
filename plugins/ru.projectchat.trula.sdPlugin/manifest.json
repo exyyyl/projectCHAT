@@ -1,0 +1,51 @@
+{
+  "UUID": "ru.projectchat.trula",
+  "Name": "Trula Audio",
+  "Author": "exyyyl",
+  "Version": "0.1.0",
+  "Description": "Независимое переключение музыки Trula на стриме и у стримера.",
+  "Category": "Trula Audio",
+  "Icon": "images/plugin.png",
+  "CategoryIcon": "images/plugin.png",
+  "CodePath": "plugin/index.js",
+  "CodePathWin": "plugin/index.js",
+  "CodePathMac": "plugin/index.js",
+  "SDKVersion": 1,
+  "Nodejs": { "Version": "20" },
+  "OS": [
+    { "Platform": "windows", "MinimumVersion": "10" },
+    { "Platform": "mac", "MinimumVersion": "11" }
+  ],
+  "Software": { "MinimumVersion": "3.10.191.0421" },
+  "URL": "https://trula.io/",
+  "Actions": [
+    {
+      "UUID": "ru.projectchat.trula.stream",
+      "Name": "Звук на стриме",
+      "Tooltip": "Выключить музыку в источнике Trula OBS или вернуть прежнюю громкость",
+      "Icon": "images/stream-on.png",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "DisableAutomaticStates": true,
+      "SupportedInMultiActions": false,
+      "UserTitleEnabled": false,
+      "States": [
+        { "Image": "images/stream-on.png", "ShowTitle": true, "FontSize": "11", "TitleAlignment": "bottom" },
+        { "Image": "images/stream-off.png", "ShowTitle": true, "FontSize": "11", "TitleAlignment": "bottom" }
+      ]
+    },
+    {
+      "UUID": "ru.projectchat.trula.monitor",
+      "Name": "Звук у стримера",
+      "Tooltip": "Выключить музыку в панели Trula или вернуть прежнюю громкость",
+      "Icon": "images/monitor-on.png",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "DisableAutomaticStates": true,
+      "SupportedInMultiActions": false,
+      "UserTitleEnabled": false,
+      "States": [
+        { "Image": "images/monitor-on.png", "ShowTitle": true, "FontSize": "11", "TitleAlignment": "bottom" },
+        { "Image": "images/monitor-off.png", "ShowTitle": true, "FontSize": "11", "TitleAlignment": "bottom" }
+      ]
+    }
+  ]
+}

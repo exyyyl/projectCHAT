@@ -30,10 +30,17 @@ export function initialNavigation(): NavigationState {
   }
 }
 
+export function isViewAvailable(view: AppView, production: boolean): boolean {
+  return !production || view !== "presets"
+}
+
 export function navigationReducer(
   state: NavigationState,
-  action: NavigationAction
+  action: NavigationAction,
+  production = false
 ): NavigationState {
+  if (action.type === "navigate" && !isViewAvailable(action.view, production))
+    return state
   if (action.type === "create")
     return {
       tabs: [

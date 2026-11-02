@@ -1,14 +1,11 @@
-import {
-  ModeratedMessage,
-  ModerationSettings,
-  type ModerationAction,
-} from "./chat-moderation"
+import { ModeratedMessage } from "./chat-moderation"
 import {
   failedChatMessage,
   mergeChatFeed,
   outgoingChatMessage,
   type FeedMessage,
 } from "@/domain/chat-delivery"
+import type { ModerationAction } from "@/domain/chat-moderation"
 import { useToast } from "./ui/toast"
 import {
   ChatLoadingSkeleton,
@@ -22,7 +19,7 @@ import {
   MessageCircle,
   Plus,
   Radio,
-  Send,
+  ArrowUp,
   Sparkles,
   Trash2,
   WifiOff,
@@ -155,28 +152,6 @@ export function ChatHomePage({
   onNavigate: (view: AppView) => void
 }) {
   const showToast = useToast()
-  const [moderation, setModeration] = useState(() => {
-    try {
-      const saved = JSON.parse(
-        localStorage.getItem("cue-chat-moderation") || "{}"
-      )
-      return {
-        gestures: saved?.gestures !== false,
-        duration: [60, 300, 600].includes(saved?.duration)
-          ? Number(saved.duration)
-          : 600,
-      }
-    } catch {
-      return { gestures: true, duration: 600 }
-    }
-  })
-  useEffect(() => {
-    try {
-      localStorage.setItem("cue-chat-moderation", JSON.stringify(moderation))
-    } catch {
-      /* optional local preference */
-    }
-  }, [moderation])
   const channelId = twitch.userId
   const [messages, setMessages] = useState<FeedMessage[]>([])
   const [summary, setSummary] = useState<RecentChat["archive"] | null>(null)
@@ -542,7 +517,11 @@ export function ChatHomePage({
     }
   }
 
-  const moderate = async (action: ModerationAction, message: ChatMessage) => {
+  const moderate = async (
+    action: ModerationAction,
+    message: ChatMessage,
+    duration?: number
+  ) => {
     try {
       const response = await fetch("/api/chat/moderate", {
         method: "POST",
@@ -554,7 +533,7 @@ export function ChatHomePage({
           channelId,
           messageId: message.id,
           action,
-          duration: moderation.duration,
+          duration,
         }),
       })
       const data = (await response.json()) as { error?: string }
@@ -564,7 +543,9 @@ export function ChatHomePage({
         message:
           action === "delete"
             ? "Сообщение удалено"
-            : `${message.viewerName}: тайм-аут ${moderation.duration / 60} мин`,
+            : action === "ban"
+              ? `${message.viewerName}: бан навсегда`
+              : `${message.viewerName}: мут на ${duration! < 3600 ? `${duration! / 60} мин` : duration! < 86400 ? `${duration! / 3600} ч` : `${duration! / 86400} дн`}`,
         tone: "success",
       })
     } catch (cause) {
@@ -656,21 +637,6 @@ export function ChatHomePage({
         onNavigate={onNavigate}
       />
       <div className="chat-home-main">
-        <header className="chat-home-header">
-          <h1>Чат</h1>
-          <ModerationSettings
-            twitch={twitch}
-            gestures={moderation.gestures}
-            duration={moderation.duration}
-            onGestures={(gestures) =>
-              setModeration((current) => ({ ...current, gestures }))
-            }
-            onDuration={(duration) =>
-              setModeration((current) => ({ ...current, duration }))
-            }
-            onReconnect={() => onNavigate("settings")}
-          />
-        </header>
         <StreamOverview key={channelId || "offline"} channelId={channelId} />
         {error && (
           <p className="chat-home-error" role="alert">
@@ -766,14 +732,13 @@ export function ChatHomePage({
                     <ModeratedMessage
                       key={message.localKey || message.id}
                       message={message}
-                      gestures={moderation.gestures}
-                      duration={moderation.duration}
                       canDelete={twitch.phase === "connected" && message.id > 0}
                       canTimeout={
                         twitch.phase === "connected" &&
                         message.id > 0 &&
-                        message.viewerId !== `twitch:${channelId}`
+                        Boolean(twitch.canTimeout)
                       }
+                      isSelf={message.viewerId === `twitch:${channelId}`}
                       onModerate={moderate}
                       delivery={message.delivery}
                     >
@@ -920,7 +885,7 @@ export function ChatHomePage({
               aria-label="Отправить сообщение"
               disabled={!composer.trim() || twitch.phase !== "connected"}
             >
-              <Send aria-hidden="true" />
+              <ArrowUp aria-hidden="true" />
             </button>
           </form>
         )}

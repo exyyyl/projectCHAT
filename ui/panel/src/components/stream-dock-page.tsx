@@ -1,24 +1,18 @@
 import { useCallback, useEffect, useState } from "react"
 import {
-  Check,
-  Clock3,
+  ChartNoAxesColumn,
+  ChevronRight,
   Grid2X2,
+  Puzzle,
+  X,
+  Check,
+  Download,
   LoaderCircle,
-  MessageCircle,
-  Radio,
-  Tag,
   Trash2,
-  Video,
 } from "lucide-react"
-import type { LucideIcon } from "lucide-react"
 
-import projectChatIcon from "@/assets/stream-dock/projectchat.png?inline"
-import extendIcon from "@/assets/stream-dock/projectchat-extend.png"
-import presetIcon from "@/assets/stream-dock/projectchat-preset.png"
-import startIcon from "@/assets/stream-dock/projectchat-start.png"
-import visibilityIcon from "@/assets/stream-dock/projectchat-visibility.png"
-import twitchIcon from "@/assets/stream-dock/twitch-ajazz.svg"
-
+import twitchIcon from "@/assets/stream-dock/twitch-soft.svg"
+import discordIcon from "@/assets/stream-dock/discord-ajazz.svg"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,57 +23,100 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogClose,
+  DialogDescription,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { useToast } from "@/components/ui/toast"
+import "./utility-windows.css"
+import "./stream-dock-page.css"
 
 const PROJECTCHAT_PLUGIN_ID = "ru.projectchat.control.sdplugin"
 const PROJECTCHAT_PLUGIN_VERSION = "0.5.0"
 const TWITCH_PLUGIN_ID = "com.elgato.twitch.sdplugin"
 const TWITCH_PLUGIN_VERSION = "1.11.6.15-ajazz.5"
 const TWITCH_PLUGIN_DOWNLOAD =
-  "https://github.com/exyyyl/ajazz-plugin-manager/releases/latest/download/Ajazz-Twitch-Setup.exe"
+  "https://github.com/exyyyl/ajazz-plugin-manager/releases/download/twitch-ajazz-v1.11.6.15-ajazz.5/Ajazz-Twitch-Setup.exe"
+const DISCORD_PLUGIN_ID = "com.elgato.discord.sdplugin"
+const DISCORD_PLUGIN_VERSION = "1.1.0"
+const DISCORD_PLUGIN_DOWNLOAD =
+  "https://github.com/exyyyl/ajazz-plugin-manager/releases/download/discord-ajazz-v1.1.0/Ajazz-Discord-Setup.exe"
 
-const pollActions = [
-  { image: startIcon, label: "Старт / стоп" },
-  { image: visibilityIcon, label: "Виджет" },
-  { image: extendIcon, label: "+30 секунд" },
-  { image: presetIcon, label: "Выбрать шаблон" },
-]
+type PluginDefinition = {
+  id: string
+  name: string
+  version: string
+  image?: string
+  description: string
+  actions: string[]
+  download?: string
+  requirement?: string
+  inDevelopment?: boolean
+}
 
-const twitchActions = [
-  { icon: MessageCircle, label: "Чат" },
-  { icon: Video, label: "Видео" },
-  { icon: Radio, label: "Эфир" },
-  { icon: Tag, label: "Категория" },
-  { icon: Grid2X2, label: "+12" },
+const pluginDefinitions: PluginDefinition[] = [
+  {
+    id: TWITCH_PLUGIN_ID,
+    name: "Twitch для AJAZZ",
+    version: TWITCH_PLUGIN_VERSION,
+    image: twitchIcon,
+    description: "Управление Twitch с кнопок Stream Dock.",
+    actions: ["Чат", "Клипы", "Реклама", "Название и категория"],
+    download: TWITCH_PLUGIN_DOWNLOAD,
+    requirement:
+      "Запустите установщик, затем подтвердите вход на официальной странице Twitch.",
+  },
+  {
+    id: DISCORD_PLUGIN_ID,
+    name: "Discord для AJAZZ",
+    version: DISCORD_PLUGIN_VERSION,
+    image: discordIcon,
+    description: "Управление Discord с кнопок Stream Dock.",
+    actions: ["Микрофон", "Звук", "Голосовые каналы"],
+    download: DISCORD_PLUGIN_DOWNLOAD,
+    requirement:
+      "Сначала установите официальный Discord-плагин в Elgato Stream Deck. Затем запустите этот установщик и подтвердите доступ в Discord через настройки действия в AJAZZ.",
+  },
+  {
+    id: PROJECTCHAT_PLUGIN_ID,
+    name: "Плагин опросов",
+    version: PROJECTCHAT_PLUGIN_VERSION,
+    description: "Управление опросами и виджетом Cue с кнопок Stream Dock.",
+    actions: ["Старт / стоп", "Виджет", "+30 секунд", "Выбрать шаблон"],
+    inDevelopment: true,
+  },
 ]
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Операция не выполнена"
 }
 
-export function StreamDockPage({ compact = false }: { compact?: boolean }) {
+export function StreamDockPage() {
   const api = window.streamPollsDesktop?.streamDock
   const showToast = useToast()
+  const [open, setOpen] = useState(false)
   const [plugins, setPlugins] = useState<StreamDockPlugin[]>([])
   const [loading, setLoading] = useState(Boolean(api))
-  const [operation, setOperation] = useState<"remove">()
+  const [failed, setFailed] = useState(false)
+  const [removing, setRemoving] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
 
   const refresh = useCallback(async () => {
-    if (!api) {
-      setLoading(false)
-      return
-    }
+    if (!api) return
     setLoading(true)
     try {
       setPlugins(await api.listPlugins())
-    } catch (error) {
-      showToast({ message: errorMessage(error), tone: "error" })
+      setFailed(false)
+    } catch {
+      setFailed(true)
     } finally {
       setLoading(false)
     }
-  }, [api, showToast])
+  }, [api])
 
   useEffect(() => {
     if (!api) return
@@ -87,11 +124,10 @@ export function StreamDockPage({ compact = false }: { compact?: boolean }) {
     void api
       .listPlugins()
       .then((nextPlugins) => {
-        if (!active) return
-        setPlugins(nextPlugins)
+        if (active) setPlugins(nextPlugins)
       })
-      .catch((error) => {
-        if (active) showToast({ message: errorMessage(error), tone: "error" })
+      .catch(() => {
+        if (active) setFailed(true)
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -99,49 +135,203 @@ export function StreamDockPage({ compact = false }: { compact?: boolean }) {
     return () => {
       active = false
     }
-  }, [api, showToast])
+  }, [api])
 
-  const projectChatPlugin = plugins.find(
-    (plugin) => plugin.id.toLowerCase() === PROJECTCHAT_PLUGIN_ID
-  )
-  const twitchPlugin = plugins.find(
-    (plugin) => plugin.id.toLowerCase() === TWITCH_PLUGIN_ID
-  )
+  useEffect(() => {
+    if (!open || !api) return
+    const onFocus = () => {
+      void refresh()
+    }
+    window.addEventListener("focus", onFocus)
+    return () => window.removeEventListener("focus", onFocus)
+  }, [open, api, refresh])
+
+  const isInstalled = (id: string) =>
+    plugins.some(
+      (plugin) => plugin.id.toLowerCase() === id && plugin.isInstalled
+    )
+  const installedCount = pluginDefinitions.filter((definition) =>
+    isInstalled(definition.id)
+  ).length
+  const pollInstalled = isInstalled(PROJECTCHAT_PLUGIN_ID)
 
   const removeProjectChat = async () => {
-    if (!api || !projectChatPlugin) return
-    setOperation("remove")
+    const plugin = plugins.find(
+      (item) => item.id.toLowerCase() === PROJECTCHAT_PLUGIN_ID
+    )
+    if (!api || !plugin) return
+    setRemoving(true)
     try {
-      await api.uninstallPlugin(projectChatPlugin.id)
-      showToast({
-        message: "Плагин опросов удалён",
-        tone: "success",
-      })
+      await api.uninstallPlugin(plugin.id)
+      showToast({ message: "Плагин опросов удалён", tone: "success" })
       await refresh()
     } catch (error) {
       showToast({ message: errorMessage(error), tone: "error" })
     } finally {
-      setOperation(undefined)
+      setRemoving(false)
       setConfirmRemove(false)
     }
   }
 
   return (
     <>
-      <div className="grid gap-4 @min-[36rem]:grid-cols-2">
-        <ProjectChatPluginCard
-          compact={compact}
-          plugin={projectChatPlugin}
-          loading={loading}
-          operation={operation}
-          onRemove={() => setConfirmRemove(true)}
-        />
-        <TwitchPluginCard plugin={twitchPlugin} compact={compact} />
-      </div>
-
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen)
+          if (nextOpen) void refresh()
+        }}
+      >
+        <DialogTrigger asChild>
+          <button
+            type="button"
+            className="utility-launcher stream-dock-launcher"
+            aria-label="Открыть плагины Stream Dock"
+          >
+            <span className="utility-launcher-symbol">
+              <Grid2X2 aria-hidden="true" />
+            </span>
+            <span className="utility-launcher-name">
+              <span>Stream Dock</span>
+              {(failed || installedCount > 0) && (
+                <small>
+                  {failed
+                    ? "Не удалось проверить установку"
+                    : `Установлено: ${installedCount}`}
+                </small>
+              )}
+            </span>
+            <span className="stream-dock-launcher-marks" aria-hidden="true">
+              <img src={twitchIcon} alt="" />
+              <img src={discordIcon} alt="" />
+              <span className="stream-dock-mini-poll">
+                <ChartNoAxesColumn />
+              </span>
+            </span>
+            {loading ? (
+              <LoaderCircle
+                className="utility-launcher-arrow animate-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <ChevronRight
+                className="utility-launcher-arrow"
+                aria-hidden="true"
+              />
+            )}
+          </button>
+        </DialogTrigger>
+        <DialogContent
+          className="utility-window stream-dock-window"
+          showCloseButton={false}
+        >
+          <header className="utility-window-header">
+            <Puzzle className="utility-heading-symbol" aria-hidden="true" />
+            <div className="utility-heading">
+              <DialogTitle>Плагины</DialogTitle>
+              <DialogDescription className="sr-only">
+                Установка плагинов для Stream Dock
+              </DialogDescription>
+            </div>
+            <div className="utility-window-tools">
+              <DialogClose asChild>
+                <button
+                  type="button"
+                  className="utility-tool utility-close"
+                  aria-label="Закрыть"
+                >
+                  <X />
+                </button>
+              </DialogClose>
+            </div>
+          </header>
+          <div className="stream-dock-window-body">
+            {failed && (
+              <p role="status" className="stream-dock-error">
+                Не удалось проверить установку. Откройте окно ещё раз, чтобы
+                повторить.
+              </p>
+            )}
+            <div
+              className="stream-dock-services"
+              aria-label="Плагины Stream Dock"
+            >
+              {pluginDefinitions
+                .filter((definition) => definition.download)
+                .map((definition) => {
+                  const discord = definition.id === DISCORD_PLUGIN_ID
+                  const installed = isInstalled(definition.id)
+                  return (
+                    <section
+                      key={definition.id}
+                      className={`stream-dock-service ${discord ? "stream-dock-service--discord" : "stream-dock-service--twitch"}`}
+                    >
+                      <div className="stream-dock-service-heading">
+                        <img
+                          src={definition.image}
+                          alt=""
+                          className="stream-dock-service-mark"
+                        />
+                        <div className="stream-dock-service-name">
+                          <h2>{discord ? "Discord" : "Twitch"}</h2>
+                          {discord && <p>Нужен плагин Elgato</p>}
+                          {!loading && !failed && installed && (
+                            <p className="stream-dock-installed">
+                              <Check />
+                              Установлен
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <a
+                        className="stream-dock-download"
+                        href={definition.download}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={`Скачать ${definition.name}`}
+                      >
+                        <Download aria-hidden="true" />
+                        Скачать
+                      </a>
+                    </section>
+                  )
+                })}
+            </div>
+            <div className="stream-dock-poll">
+              <span className="stream-dock-poll-mark" aria-hidden="true">
+                <ChartNoAxesColumn />
+              </span>
+              <div className="stream-dock-poll-name">
+                <h2>Опросы Cue</h2>
+                {pollInstalled && !loading && !failed && (
+                  <p>
+                    <Check />
+                    Установлен
+                  </p>
+                )}
+              </div>
+              <span className="stream-dock-poll-state">В разработке</span>
+              {pollInstalled && (
+                <button
+                  type="button"
+                  className="utility-tool"
+                  aria-label="Удалить плагин опросов"
+                  title="Удалить плагин опросов"
+                  disabled={removing || loading}
+                  onClick={() => setConfirmRemove(true)}
+                >
+                  <Trash2 />
+                </button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <AlertDialog
         open={confirmRemove}
-        onOpenChange={(open) => !open && setConfirmRemove(false)}
+        onOpenChange={(nextOpen) => {
+          if (!removing) setConfirmRemove(nextOpen)
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -152,251 +342,17 @@ export function StreamDockPage({ compact = false }: { compact?: boolean }) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={Boolean(operation)}>
-              Отмена
-            </AlertDialogCancel>
+            <AlertDialogCancel disabled={removing}>Отмена</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              disabled={Boolean(operation)}
+              disabled={removing}
               onClick={() => void removeProjectChat()}
             >
-              {operation === "remove" && (
-                <LoaderCircle className="animate-spin" />
-              )}
-              Удалить
+              {removing && <LoaderCircle className="animate-spin" />}Удалить
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </>
-  )
-}
-
-function ProjectChatPluginCard({
-  compact,
-  plugin,
-  loading,
-  operation,
-  onRemove,
-}: {
-  compact?: boolean
-  plugin?: StreamDockPlugin
-  loading: boolean
-  operation?: "remove"
-  onRemove: () => void
-}) {
-  const installed = Boolean(plugin?.isInstalled)
-
-  if (compact)
-    return (
-      <article className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg bg-background/50 p-3">
-        <img
-          src={projectChatIcon}
-          alt=""
-          className="size-9 shrink-0 rounded-lg"
-        />
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-medium">Плагин опросов</h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {installed
-              ? `Версия ${plugin?.installedVersion || PROJECTCHAT_PLUGIN_VERSION}`
-              : "В разработке"}
-          </p>
-        </div>
-        {installed && (
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={Boolean(operation) || loading}
-            onClick={onRemove}
-          >
-            <Trash2 />
-            Удалить
-          </Button>
-        )}
-      </article>
-    )
-
-  return (
-    <article className="flex min-h-[260px] flex-col overflow-hidden rounded-xl bg-background">
-      <div className="flex items-start gap-4 p-5 pb-4 lg:p-6 lg:pb-4">
-        <img
-          src={projectChatIcon}
-          alt=""
-          className="size-12 shrink-0 rounded-2xl"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-semibold tracking-[-0.02em]">
-              Плагин опросов
-            </h2>
-            <DevelopmentBadge />
-            {installed && <PluginBadge>Установлен</PluginBadge>}
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Версия{" "}
-            {plugin?.installedVersion ||
-              plugin?.version ||
-              PROJECTCHAT_PLUGIN_VERSION}
-          </p>
-        </div>
-      </div>
-
-      <PluginActionGrid actions={pollActions} tone="brand" />
-
-      <div className="mt-auto flex justify-end gap-2 p-5 lg:p-6">
-        {installed && (
-          <Button
-            size="lg"
-            variant="ghost"
-            className="text-destructive hover:text-destructive"
-            disabled={Boolean(operation) || loading}
-            onClick={onRemove}
-          >
-            <Trash2 /> Удалить
-          </Button>
-        )}
-        <Button size="lg" disabled aria-disabled="true">
-          Установить
-        </Button>
-      </div>
-    </article>
-  )
-}
-
-function DevelopmentBadge() {
-  return (
-    <span className="inline-flex h-5 items-center gap-1.5 rounded-md bg-foreground/6 px-2 text-[11px] font-medium text-muted-foreground ring-1 ring-border-subtle ring-inset">
-      <Clock3 className="size-3" />В разработке
-    </span>
-  )
-}
-
-function TwitchPluginCard({
-  plugin,
-  compact,
-}: {
-  plugin?: StreamDockPlugin
-  compact?: boolean
-}) {
-  const installed = Boolean(plugin?.isInstalled)
-  if (compact)
-    return (
-      <article className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg bg-background/50 p-3">
-        <img src={twitchIcon} alt="" className="size-9 shrink-0 rounded-lg" />
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-medium">Twitch для AJAZZ</h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {installed ? "Установлен" : "Плагин для стримдека"}
-          </p>
-        </div>
-        <Button asChild size="sm" variant="secondary">
-          <a href={TWITCH_PLUGIN_DOWNLOAD} target="_blank" rel="noreferrer">
-            Скачать
-          </a>
-        </Button>
-      </article>
-    )
-  return (
-    <article className="flex min-h-[260px] flex-col overflow-hidden rounded-xl bg-background">
-      <div className="flex items-start gap-4 p-5 pb-4 lg:p-6 lg:pb-4">
-        <img src={twitchIcon} alt="" className="size-12 shrink-0 rounded-2xl" />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-semibold tracking-[-0.02em]">
-              Twitch для AJAZZ
-            </h2>
-            {installed && <PluginBadge tone="twitch">Установлен</PluginBadge>}
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Версия {plugin?.installedVersion || TWITCH_PLUGIN_VERSION}
-          </p>
-        </div>
-      </div>
-
-      <PluginActionGrid actions={twitchActions} tone="twitch" />
-
-      <div className="mt-auto flex justify-end p-5 lg:p-6">
-        <Button asChild size="lg">
-          <a href={TWITCH_PLUGIN_DOWNLOAD} target="_blank" rel="noreferrer">
-            Скачать
-          </a>
-        </Button>
-      </div>
-    </article>
-  )
-}
-
-type PluginAction = {
-  label: string
-  image?: string
-  icon?: LucideIcon
-}
-
-function PluginActionGrid({
-  actions,
-  tone,
-}: {
-  actions: PluginAction[]
-  tone: "brand" | "twitch"
-}) {
-  return (
-    <div
-      className="mx-5 grid gap-2 rounded-xl bg-background/65 p-3 ring-1 ring-border-subtle transition-colors ring-inset lg:mx-6"
-      style={{
-        gridTemplateColumns: `repeat(${actions.length}, minmax(0, 1fr))`,
-      }}
-    >
-      {actions.map((action) => (
-        <PluginActionKey key={action.label} action={action} tone={tone} />
-      ))}
-    </div>
-  )
-}
-
-function PluginActionKey({
-  action,
-  tone,
-}: {
-  action: PluginAction
-  tone: "brand" | "twitch"
-}) {
-  const Icon = action.icon
-  return (
-    <div className="min-w-0 text-center">
-      <div
-        className={`mx-auto flex aspect-square w-full max-w-14 items-center justify-center overflow-hidden rounded-xl bg-surface-raised shadow-[inset_0_1px_var(--border-subtle)] ${tone === "twitch" ? "text-twitch" : "text-brand"}`}
-      >
-        {action.image ? (
-          <img src={action.image} alt="" className="size-full object-cover" />
-        ) : (
-          Icon && <Icon className="size-[18px]" />
-        )}
-      </div>
-      <span className="mt-2 block truncate text-[11px] text-muted-foreground">
-        {action.label}
-      </span>
-    </div>
-  )
-}
-
-function PluginBadge({
-  tone = "brand",
-  children,
-}: {
-  tone?: "brand" | "twitch"
-  children: string
-}) {
-  const className =
-    tone === "twitch"
-      ? "bg-twitch/10 text-twitch ring-twitch/18"
-      : "bg-brand/8 text-brand ring-brand/15"
-  return (
-    <span
-      className={`inline-flex h-5 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium ring-1 ring-inset ${className}`}
-    >
-      <Check className="size-3" />
-      {children}
-    </span>
   )
 }

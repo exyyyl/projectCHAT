@@ -32,7 +32,10 @@ import { useDemoMode } from "@/hooks/use-demo-mode"
 
 import {
   initialNavigation,
+  isViewAvailable,
   navigationReducer,
+  type NavigationState,
+  type NavigationAction,
   type AppView,
   type WorkspaceTab,
 } from "@/domain/app-navigation"
@@ -41,7 +44,7 @@ import type { PresetDialogState, Draft } from "@/domain/polls"
 const newTabItems = [
   {
     id: "home",
-    label: "Главная",
+    label: "Студия",
     description: "Чат и зрители",
     icon: MessageCircle,
   },
@@ -114,7 +117,8 @@ function AppContent() {
   const showToast = useToast()
   const { enabled: demoEnabled } = useDemoMode()
   const [navigation, dispatch] = useReducer(
-    navigationReducer,
+    (state: NavigationState, action: NavigationAction) =>
+      navigationReducer(state, action, import.meta.env.PROD),
     undefined,
     initialNavigation
   )
@@ -386,6 +390,7 @@ function TabWorkspace({
                     key={item.id}
                     type="button"
                     className="new-tab-tile"
+                    disabled={!isViewAvailable(item.id, import.meta.env.PROD)}
                     data-wide={item.wide || undefined}
                     data-accent={item.accent || undefined}
                     onClick={() => navigate(item.id)}
@@ -394,7 +399,12 @@ function TabWorkspace({
                       <Icon aria-hidden="true" />
                     </span>
                     <span className="new-tab-tile-copy">
-                      <span className="new-tab-tile-title">{item.label}</span>
+                      <span className="new-tab-tile-title">
+                        {item.label}
+                        {!isViewAvailable(item.id, import.meta.env.PROD) && (
+                          <span className="section-soon">Скоро</span>
+                        )}
+                      </span>
                       <span className="new-tab-tile-description">
                         {item.description}
                       </span>
@@ -421,7 +431,10 @@ function TabWorkspace({
             onRun={controller.run}
             onVote={(option) => void controller.vote(option)}
             onSimulate={controller.simulate}
-            canCreatePreset={state.presets.length < 30}
+            canCreatePreset={
+              isViewAvailable("presets", import.meta.env.PROD) &&
+              state.presets.length < 30
+            }
             onSaveAsPreset={(presetDraft) => {
               setPresetDialog({
                 mode: "create",
@@ -435,57 +448,59 @@ function TabWorkspace({
         </div>
       )}
 
-      <div
-        className={view === "presets" ? "h-full" : "hidden"}
-        aria-hidden={view === "presets" ? undefined : true}
-      >
-        <PresetLibrary
-          presets={state.presets}
-          selectedId={selectedPreset}
-          dialog={presetDialog}
-          canApply={canApplyPreset}
-          applyBlocked={poll?.status === "running"}
-          canManage={connected}
-          canCreate={state.presets.length < 30}
-          busy={busy}
-          onCreate={() =>
-            setPresetDialog({
-              mode: "create",
-              editorId: crypto.randomUUID(),
-            })
-          }
-          onApply={(preset) => {
-            void controller.applyPreset(preset).then((applied) => {
-              if (applied) {
-                if (!demoEnabled)
-                  changeDraft((current) =>
-                    current.source === "test"
-                      ? { ...current, source: "twitch" }
-                      : current
-                  )
-                navigate("polls")
-              }
-            })
-          }}
-          onEdit={(preset) => setPresetDialog({ mode: "edit", preset })}
-          onTogglePin={(preset) =>
-            void controller.run("preset-toggle-pin", {
-              presetId: preset.id,
-              pinned: !preset.pinned,
-            })
-          }
-          onReorder={(preset, target, position) =>
-            void controller.run("preset-reorder", {
-              presetId: preset.id,
-              targetId: target.id,
-              position,
-            })
-          }
-          onDelete={controller.setDeletePreset}
-          onSave={savePreset}
-          onCloseEditor={() => setPresetDialog(null)}
-        />
-      </div>
+      {isViewAvailable("presets", import.meta.env.PROD) && (
+        <div
+          className={view === "presets" ? "h-full" : "hidden"}
+          aria-hidden={view === "presets" ? undefined : true}
+        >
+          <PresetLibrary
+            presets={state.presets}
+            selectedId={selectedPreset}
+            dialog={presetDialog}
+            canApply={canApplyPreset}
+            applyBlocked={poll?.status === "running"}
+            canManage={connected}
+            canCreate={state.presets.length < 30}
+            busy={busy}
+            onCreate={() =>
+              setPresetDialog({
+                mode: "create",
+                editorId: crypto.randomUUID(),
+              })
+            }
+            onApply={(preset) => {
+              void controller.applyPreset(preset).then((applied) => {
+                if (applied) {
+                  if (!demoEnabled)
+                    changeDraft((current) =>
+                      current.source === "test"
+                        ? { ...current, source: "twitch" }
+                        : current
+                    )
+                  navigate("polls")
+                }
+              })
+            }}
+            onEdit={(preset) => setPresetDialog({ mode: "edit", preset })}
+            onTogglePin={(preset) =>
+              void controller.run("preset-toggle-pin", {
+                presetId: preset.id,
+                pinned: !preset.pinned,
+              })
+            }
+            onReorder={(preset, target, position) =>
+              void controller.run("preset-reorder", {
+                presetId: preset.id,
+                targetId: target.id,
+                position,
+              })
+            }
+            onDelete={controller.setDeletePreset}
+            onSave={savePreset}
+            onCloseEditor={() => setPresetDialog(null)}
+          />
+        </div>
+      )}
 
       {tab.visited.includes("settings") && (
         <div className={view === "settings" ? "h-full" : "hidden"}>

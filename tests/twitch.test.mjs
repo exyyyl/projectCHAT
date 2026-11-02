@@ -409,11 +409,12 @@ test('moderation uses authorized broadcaster identity, scoped permissions and an
   await assert.rejects(f.twitch.moderate('timeout', target), /тайм-аут/);
   await assert.rejects(f.twitch.moderate('timeout', target, 0), /тайм-аут/);
   await assert.rejects(f.twitch.moderate('timeout', target, 1209601), /тайм-аут/);
-  await assert.rejects(f.twitch.moderate('ban', target), /Неизвестное/);
+  await assert.rejects(f.twitch.moderate('invalid', target), /Неизвестное/);
   await assert.rejects(f.twitch.moderate('delete', { ...target, broadcasterId: '999' }), /Некорректное/);
   await assert.rejects(f.twitch.moderate('timeout', { ...target, viewerId: 'twitch:123' }, 60), /отстранить себя/);
   assert.equal(f.calls.length, calls);
   const legacy = await fixture(t); await legacy.authorize();
   await assert.rejects(legacy.twitch.moderate('delete', target), /Переподключите/);
   await assert.rejects(legacy.twitch.moderate('timeout', target, 600), /Переподключите/);
+  await assert.rejects(legacy.twitch.moderate('ban', target), /Переподключите/);
 });

@@ -59,7 +59,64 @@ test('diagnostics HTTP export and clear require the trusted panel and never expo
   assert.equal((await post({type:'record',message:'Ошибка C:\\Users\\someone\\AppData\\app.asar access_token=private-token'})).status,200);
   const report=await(await fetch(url+'/api/diagnostics')).json();
   assert.equal(report.entries.length,1);
+  const summary = await (await fetch(url+'/api/diagnostics?summary=1')).json();
+  assert.equal(summary.count, 1);
+  assert.equal(summary.totalOccurrences, 1);
+  assert.equal(summary.lastAt, report.entries[0].lastAt);
+  assert.equal('entries' in summary, false);
+  assert.equal('details' in summary, false);
   assert.doesNotMatch(JSON.stringify(report),/someone|private-token/);
   assert.equal((await post({type:'clear'})).status,200);
   assert.equal((await(await fetch(url+'/api/diagnostics')).json()).entries.length,0);
+});
+
+// A build change or another call site must not turn the same failure into many rows.
+test('repeated errors with different stack positions occupy one journal row, including after reload', async () => {
+  const { writeFile } = await import('node:fs/promises');
+  const file = join(await mkdtemp(join(tmpdir(), 'cue-errors-repeat-')), 'errors.json');
+  const frames = ['at refresh (http://localhost/assets/panel-a.js:12:3)', 'at onFocus (http://localhost/assets/panel-b.js:84:9)'];
+  const saved = frames.map((frame, index) => ({ id: `old-${index}`, source: 'panel', title: 'Нет связи', details: `TypeError: Failed to fetch\n    ${frame}`, version: 'test', firstAt: 10 + index, lastAt: 20 + index, count: 2 }));
+  await writeFile(file, JSON.stringify({ schema: 1, entries: saved }));
+  const journal = await createErrorJournal(file, { version: 'test', now: () => 100 });
+  for (const frame of frames) journal.record({ source: 'panel', error: `TypeError: Failed to fetch\n    ${frame}` });
+  const report = journal.snapshot();
+  assert.equal(report.entries.length, 1);
+  assert.equal(report.entries[0].count, 6);
+  assert.equal(report.entries[0].firstAt, 10);
+  assert.equal(report.entries[0].lastAt, 100);
+  assert.match(report.entries[0].details, /onFocus/);
+  journal.record({ source: 'twitch', error: 'TypeError: Failed to fetch' });
+  journal.record({ source: 'panel', error: 'TypeError: Different failure' });
+  assert.equal(journal.snapshot().entries.length, 3);
+  await journal.flush();
+});
+
+test('concurrent record and flush calls coalesce disk writes while retaining the latest records', async t => {
+  const fs = (await import('node:fs/promises')).default;
+  const { syncBuiltinESMExports } = await import('node:module');
+  const file = join(await mkdtemp(join(tmpdir(), 'cue-errors-burst-')), 'errors.json');
+  const journal = await createErrorJournal(file);
+  const originalWrite = fs.writeFile;
+  let writes = 0;
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const mock = t.mock.method(fs, 'writeFile', async (...args) => {
+    if (args[0] === file + '.tmp') { writes++; if (writes === 1) await gate; }
+    return originalWrite(...args);
+  });
+  syncBuiltinESMExports();
+  t.after(() => { mock.mock.restore(); syncBuiltinESMExports(); });
+  journal.record({ source: 'burst', error: 'First failure' });
+  const pending = [journal.flush()];
+  await new Promise(resolve => setImmediate(resolve));
+  for (let i = 0; i < 40; i++) {
+    journal.record({ source: 'burst', error: 'Repeated connection failure' });
+    pending.push(journal.flush());
+  }
+  release();
+  await Promise.all(pending);
+  assert.ok(writes >= 1 && writes <= 2, `Expected at most two writes for a burst, received ${writes}`);
+  const persisted = JSON.parse(await readFile(file, 'utf8'));
+  assert.equal(persisted.entries.find(entry => entry.details === 'Repeated connection failure').count, 40);
+  assert.equal(persisted.entries.length, 2);
 });

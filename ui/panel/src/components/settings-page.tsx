@@ -267,12 +267,12 @@ export function SettingsPage({
               <ProjectInfo />
             </SettingsBlock>
           </div>
-          <SettingsBlock title="Журнал ошибок" full>
+          <div className="min-w-0 lg:col-span-2">
             <DiagnosticsSettings />
-          </SettingsBlock>
-          <SettingsBlock title="Stream Dock" full>
-            <StreamDockPage compact />
-          </SettingsBlock>
+          </div>
+          <div className="min-w-0 lg:col-span-2">
+            <StreamDockPage />
+          </div>
         </div>
       </div>
     </section>

@@ -47,3 +47,13 @@ test('late navigation targets its originating tab rather than the currently sele
   assert.deepEqual(state.tabs[1].history, ['new']);
   assert.deepEqual(state.tabs[0].history, ['home', 'presets']);
 });
+
+test('packaged navigation keeps templates unavailable while development retains access', () => {
+  const start = initialNavigation();
+  assert.equal(reduce(start,{type:'navigate',view:'presets'},true),start);
+  assert.equal(reduce(start,{type:'navigate',view:'presets'},false).tabs[0].history.at(-1),'presets');
+  for (const view of ['home','polls','widget','contests','decision-wheel','settings'])
+    assert.equal(reduce(start,{type:'navigate',view},true).tabs[0].history.at(-1),view);
+  const second = reduce(start,{type:'create',id:'second'},true);
+  assert.equal(reduce(second,{type:'navigate',tabId:'initial',view:'presets'},true),second);
+});

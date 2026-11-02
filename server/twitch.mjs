@@ -392,12 +392,12 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, o
     async moderate(action, target, duration) {
       const version = epoch;
       if (status.phase !== 'connected') throw new PollError('Чат Twitch пока не подключён.', 409);
-      if (!['delete', 'timeout'].includes(action)) throw new PollError('Неизвестное действие модерации.', 400);
+      if (!['delete', 'timeout', 'ban'].includes(action)) throw new PollError('Неизвестное действие модерации.', 400);
       if (action === 'delete' ? !status.canDeleteMessages : !status.canTimeout) throw new PollError('Переподключите Twitch, чтобы разрешить модерацию чата.', 409);
       const channelId = status.userId;
       if (target?.broadcasterId !== channelId || !/^twitch:[0-9]{1,30}$/.test(target?.viewerId || '') || !/^[A-Za-z0-9_-]{1,80}$/.test(target?.eventId || '')) throw new PollError('Некорректное сообщение Twitch.', 400);
       const viewerId = target.viewerId.slice(7);
-      if (action === 'timeout' && viewerId === channelId) throw new PollError('Нельзя отстранить себя от чата.', 400);
+      if (action !== 'delete' && viewerId === channelId) throw new PollError('Нельзя отстранить себя от чата.', 400);
       if (action === 'timeout' && (!Number.isInteger(duration) || duration < 1 || duration > 1209600)) throw new PollError('Укажите тайм-аут от 1 секунды до 14 дней.', 400);
       const query = new URLSearchParams({ broadcaster_id: channelId, moderator_id: channelId });
       if (action === 'delete') query.set('message_id', target.eventId);
@@ -405,7 +405,7 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, o
         await request(`https://api.twitch.tv/helix/moderation/${action === 'delete' ? 'chat' : 'bans'}?${query}`, {
           method: action === 'delete' ? 'DELETE' : 'POST',
           headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': clientId, 'Content-Type': 'application/json' },
-          ...(action === 'timeout' ? { body: JSON.stringify({ data: { user_id: viewerId, duration } }) } : {}),
+          ...(action !== 'delete' ? { body: JSON.stringify({ data: { user_id: viewerId, ...(action === 'timeout' ? { duration } : {}) } }) } : {}),
         });
       } catch (error) {
         if (error.remoteStatus === 429) throw new PollError('Слишком много действий. Подождите немного.', 429);

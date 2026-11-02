@@ -89,6 +89,7 @@ export function ChatEmotePicker({
   const [filter, setFilter] = useState<"all" | ChatEmoteProvider>("all")
   const [visible, setVisible] = useState(80)
   const restoreComposer = useRef(false)
+  const searchInput = useRef<HTMLInputElement>(null)
   const emotes = useMemo(() => {
     const search = query.trim().toLowerCase()
     return (catalog?.emotes || []).filter(
@@ -132,6 +133,10 @@ export function ChatEmotePicker({
           sideOffset={10}
           collisionPadding={12}
           aria-label="Смайлики"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault()
+            searchInput.current?.focus()
+          }}
           onEscapeKeyDown={() => {
             restoreComposer.current = true
           }}
@@ -140,17 +145,11 @@ export function ChatEmotePicker({
             if (restoreComposer.current) onClose()
           }}
         >
-          <div className="chat-emote-search">
-            <Search aria-hidden="true" />
-            <input
-              aria-label="Найти смайлик"
-              placeholder="Найти смайлик…"
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value)
-                setVisible(80)
-              }}
-            />
+          <header className="chat-emote-heading">
+            <span>
+              <Smile aria-hidden="true" />
+              Смайлики
+            </span>
             <Popover.Close asChild>
               <button
                 type="button"
@@ -162,12 +161,26 @@ export function ChatEmotePicker({
                 <X aria-hidden="true" />
               </button>
             </Popover.Close>
+          </header>
+          <div className="chat-emote-search">
+            <Search aria-hidden="true" />
+            <input
+              ref={searchInput}
+              aria-label="Найти смайлик"
+              placeholder="Найти смайлик…"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value)
+                setVisible(80)
+              }}
+            />
           </div>
           <div className="chat-emote-filters" aria-label="Источник смайликов">
             {filters.map((provider) => (
               <button
                 key={provider}
                 type="button"
+                data-provider={provider}
                 aria-pressed={filter === provider}
                 onClick={() => {
                   setFilter(provider)

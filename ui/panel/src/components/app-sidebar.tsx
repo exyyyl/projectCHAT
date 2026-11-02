@@ -19,7 +19,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 
-import type { AppView, TabView } from "@/domain/app-navigation"
+import {
+  isViewAvailable,
+  type AppView,
+  type TabView,
+} from "@/domain/app-navigation"
 
 type AppSidebarProps = {
   view: TabView
@@ -31,7 +35,7 @@ type AppSidebarProps = {
 }
 
 const navigation = [
-  { id: "home", label: "Главная", icon: MessageCircle },
+  { id: "home", label: "Студия", icon: MessageCircle },
   { id: "polls", label: "Опросы", icon: ListChecks },
   { id: "presets", label: "Шаблоны", icon: LayoutTemplate },
   { id: "widget", label: "Виджеты", icon: PanelsTopLeft },
@@ -91,17 +95,20 @@ function SidebarNavButton({
   onClick: () => void
 }) {
   const Icon = item.icon
+  const available = isViewAvailable(item.id, import.meta.env.PROD)
   return (
     <button
       type="button"
       className="sidebar-link"
       data-active={active || undefined}
-      aria-label={item.label}
+      disabled={!available}
+      aria-label={available ? item.label : `${item.label} — Скоро`}
       aria-current={active ? "page" : undefined}
       onClick={onClick}
     >
       <Icon aria-hidden="true" />
       <span>{item.label}</span>
+      {!available && <span className="section-soon">Скоро</span>}
     </button>
   )
 }

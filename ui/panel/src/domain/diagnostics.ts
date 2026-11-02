@@ -23,12 +23,23 @@ export function revealErrorJournal() {
   element?.dispatchEvent(new Event("cue:open-diagnostics"))
 }
 
+let changeTimer: ReturnType<typeof setTimeout> | undefined
+let pendingReport: Promise<DiagnosticReport> | undefined
+
+function notifyJournalChanged() {
+  if (changeTimer !== undefined) return
+  changeTimer = window.setTimeout(() => {
+    changeTimer = undefined
+    window.dispatchEvent(new Event("cue:diagnostic"))
+  }, 250)
+}
+
 export function recordClientError(value: unknown) {
   const message =
     value instanceof Error
       ? value.stack || value.message
       : String(value || "Неизвестная ошибка")
-  const done = () => window.dispatchEvent(new Event("cue:diagnostic"))
+  const done = notifyJournalChanged
   const nativeRecord = window.streamPollsDesktop?.recordError
   // Native IPC errors have already been saved with their original stack in the main process.
   if (nativeRecord && message.includes("Error invoking remote method")) {
@@ -51,8 +62,49 @@ export function recordClientError(value: unknown) {
   void save.catch(() => {}).finally(done)
 }
 
-export async function loadDiagnostics(): Promise<DiagnosticReport> {
-  const response = await fetch("/api/diagnostics")
-  if (!response.ok) throw new Error("Не удалось прочитать журнал")
-  return response.json() as Promise<DiagnosticReport>
+export function loadDiagnostics(): Promise<DiagnosticReport> {
+  if (!pendingReport) {
+    pendingReport = fetch("/api/diagnostics")
+      .then((response) => {
+        if (!response.ok) throw new Error("Не удалось прочитать журнал")
+        return response.json() as Promise<DiagnosticReport>
+      })
+      .finally(() => {
+        pendingReport = undefined
+      })
+  }
+  return pendingReport
+}
+
+export type DiagnosticSummary = Omit<DiagnosticReport, "entries"> & {
+  count: number
+  totalOccurrences: number
+  lastAt: number | null
+}
+
+export function summarizeDiagnostics(
+  report: DiagnosticReport
+): DiagnosticSummary {
+  const { entries, ...metadata } = report
+  return {
+    ...metadata,
+    count: entries.length,
+    totalOccurrences: entries.reduce((sum, entry) => sum + entry.count, 0),
+    lastAt: entries[0]?.lastAt ?? null,
+  }
+}
+
+let pendingSummary: Promise<DiagnosticSummary> | undefined
+export function loadDiagnosticsSummary(): Promise<DiagnosticSummary> {
+  if (!pendingSummary) {
+    pendingSummary = fetch("/api/diagnostics?summary=1")
+      .then((response) => {
+        if (!response.ok) throw new Error("Не удалось прочитать журнал")
+        return response.json() as Promise<DiagnosticSummary>
+      })
+      .finally(() => {
+        pendingSummary = undefined
+      })
+  }
+  return pendingSummary
 }

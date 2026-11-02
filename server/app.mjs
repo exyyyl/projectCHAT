@@ -41,7 +41,7 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
       const requestUrl = new URL(request.url, `http://${host}`);
       const path = requestUrl.pathname;
       if (request.method === 'GET' && path === '/api/state') return json(response, 200, store.snapshot());
-      if (request.method === 'GET' && path === '/api/diagnostics') return json(response, 200, journal.snapshot());
+      if (request.method === 'GET' && path === '/api/diagnostics') return json(response, 200, requestUrl.searchParams.get('summary') === '1' ? journal.summary() : journal.snapshot());
       if (request.method === 'GET' && path === '/api/twitch') return json(response, 200, twitch.snapshot());
       if (request.method === 'GET' && path === '/api/twitch/stream') return json(response, 200, await twitch.stream());
       if (request.method === 'GET' && path === '/api/contest') return json(response, 200, contest.snapshot());

@@ -43,7 +43,7 @@ test('moderation route resolves real target IDs and propagates deletion to histo
   const other = f.add('other-channel', '456', '999');
   assert.equal((await f.post({ channelId: '123', messageId: other.id, action: 'delete' })).status, 404);
   assert.equal((await f.post({ channelId: '999', messageId: first.id, action: 'delete' })).status, 409);
-  assert.equal((await f.post({ channelId: '123', messageId: first.id, action: 'ban' })).status, 400);
+  assert.equal((await f.post({ channelId: '123', messageId: first.id, action: 'invalid' })).status, 400);
   assert.equal((await f.post({ channelId: '123', messageId: first.id, action: 'timeout' })).status, 400);
   assert.equal((await f.post({ channelId: '123', messageId: first.id, action: 'delete' }, { headers: { ...headers, Origin: 'https://untrusted.example' } })).status, 403);
   assert.equal((await f.post({ channelId: '123', messageId: first.id, action: 'delete' }, { headers: { 'Content-Type': 'application/json' } })).status, 415);
@@ -106,4 +106,22 @@ test('a Twitch refusal never hides or marks an owner message as deleted locally'
   assert.match((await response.json()).error, /владельца канала/);
   assert.equal(f.app.chat.recent('123')[0].deleted, false);
   assert.equal(f.app.chat.recent('123')[0].text, 'Message');
+});
+
+
+test('permanent ban omits duration, uses the archived identity and clears only the target channel', async t => {
+  const f = await fixture(t);
+  const message = f.add('ban-message');
+  f.add('same-viewer');
+  f.add('other-viewer', '789');
+  f.add('other-channel', '456', '999');
+  const own = f.add('self-ban', '123');
+  assert.equal((await f.post({ channelId: '123', messageId: own.id, action: 'ban' })).status, 400);
+  assert.equal(f.actions.length, 0);
+  const response = await f.post({ channelId: '123', messageId: message.id, action: 'ban', duration: 60, viewerId: 'twitch:999' });
+  assert.equal(response.status, 200);
+  assert.match(f.actions[0].url, /moderation\/bans/);
+  assert.deepEqual(JSON.parse(f.actions[0].options.body), { data: { user_id: '456' } });
+  assert.equal(f.app.chat.recent('123').filter(item => item.deleted).length, 2);
+  assert.equal(f.app.chat.recent('999')[0].deleted, false);
 });
