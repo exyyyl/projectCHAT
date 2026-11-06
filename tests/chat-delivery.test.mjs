@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { failedChatMessage, mergeChatFeed, outgoingChatMessage } from '../ui/panel/src/domain/chat-delivery.ts';
+import { failedChatMessage, mergeChatFeed, outgoingChatMessage, discardFailedChatMessage } from '../ui/panel/src/domain/chat-delivery.ts';
 
 const author = { userId: '123', displayName: 'Streamer', login: 'streamer' };
 const styled = { id: 1, viewerId: 'twitch:123', viewerName: 'Streamer', viewerLogin: 'streamer', kind: 'message', activityType: '', roles: ['moderator'], badges: [{ setId: 'broadcaster', id: '1' }, { setId: 'subscriber', id: '6' }], nameColor: '#9146FF', cheerBits: 0, text: 'Earlier', sentAt: 1000 };
@@ -60,4 +60,34 @@ test('moderation and later enrichment retain the original deleted text and local
   assert.equal(feed[0].text, 'Hello');
   assert.equal(feed[0].localKey, 'local-1');
   assert.deepEqual(feed[0].badges, styled.badges);
+});
+
+test('cleared archive rows cannot return through a late history page or send acknowledgement', async () => {
+  const { retainChatMessages } = await import('../ui/panel/src/domain/chat.ts');
+  const olderDeleted = { ...styled, id: 1, deleted: true };
+  const olderActive = { ...styled, id: 2 };
+  const newer = { ...styled, id: 3 };
+  const queued = pending();
+  const messages = [olderDeleted, olderActive, newer, queued];
+  assert.deepEqual(retainChatMessages(messages, { allThrough: 0, deletedThrough: 2 }), [olderActive, newer, queued]);
+  assert.deepEqual(retainChatMessages(messages, { allThrough: 2, deletedThrough: 2 }), [newer, queued]);
+  const acknowledged = mergeChatFeed([queued], [{ ...delivered, id: 2 }], { confirmedKey: queued.localKey });
+  assert.deepEqual(retainChatMessages(acknowledged, { allThrough: 2, deletedThrough: 0 }), []);
+});
+
+test('discarding a failed local message preserves identical sends, queued messages and confirmed rows', () => {
+  const failed = failedChatMessage([pending()], 'local-1', 'Offline')[0];
+  const duplicate = failedChatMessage([pending('Hello', 'local-2')], 'local-2', 'Offline')[0];
+  const sending = pending('Hello', 'local-3');
+  const confirmed = { ...delivered, localKey: 'local-1' };
+  const feed = [failed, duplicate, sending, confirmed];
+  assert.deepEqual(discardFailedChatMessage(feed, 'local-1'), [duplicate, sending, confirmed]);
+  assert.deepEqual(discardFailedChatMessage(feed, 'local-3'), feed);
+  assert.deepEqual(discardFailedChatMessage(feed, 'missing'), feed);
+  assert.equal(feed.length, 4);
+  const afterDiscard = discardFailedChatMessage([failed], 'local-1');
+  const late = mergeChatFeed(afterDiscard, [delivered], { echo: true });
+  assert.equal(late.length, 1);
+  assert.equal(late[0].id, delivered.id);
+  assert.equal(late[0].delivery, undefined);
 });

@@ -1,0 +1,20 @@
+.chat-participants { flex:none; min-width:0; margin:0 36px 12px; padding:12px 14px; border:1px solid var(--border-subtle); border-radius:12px; background:var(--surface-subtle); }
+.chat-participants header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.chat-participants h2 { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:500; }
+.chat-participants h2>svg { width:15px; height:15px; color:var(--muted-foreground); }
+.chat-participants header>span, .chat-participants h2>span { font-size:12px; font-weight:400; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
+.chat-participants-list, .chat-participants-loading { display:flex; gap:6px; overflow-x:auto; overscroll-behavior:contain; padding:2px 0; }
+.chat-participants-list li { flex:none; min-width:0; max-width:200px; }
+.chat-participants-list button { display:flex; align-items:center; gap:7px; max-width:100%; min-height:36px; padding:4px 8px 4px 4px; border-radius:8px; }
+.chat-participants-list button:hover { background:var(--surface-raised); }
+.chat-participants-list button:focus-visible, .chat-participants-error button:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
+.chat-participant-avatar { position:relative; display:grid; width:26px; height:26px; flex:none; place-items:center; overflow:hidden; border-radius:50%; background:var(--surface-raised); color:var(--muted-foreground); font-size:11px; }
+.chat-participant-avatar img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.chat-participant-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.chat-participant-count { display:flex; align-items:center; gap:4px; flex:none; color:var(--muted-foreground); font-size:11px; font-variant-numeric:tabular-nums; }
+.chat-participant-count svg { width:11px; height:11px; }
+.chat-participants-empty, .chat-participants-error { font-size:12px; color:var(--muted-foreground); }
+.chat-participants-error { display:flex; gap:8px; align-items:center; justify-content:space-between; }
+.chat-participants-error button { display:grid; place-items:center; width:26px; height:26px; flex:none; border-radius:6px; }
+.chat-participants-error svg { width:14px; height:14px; }
+@media(max-width:600px) { .chat-participants { margin-inline:18px; padding:10px 12px; } }

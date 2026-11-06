@@ -68,6 +68,16 @@ export function failedChatMessage(
   )
 }
 
+export function discardFailedChatMessage(
+  current: FeedMessage[],
+  key: string
+): FeedMessage[] {
+  return current.filter(
+    (item) =>
+      !(item.id <= 0 && item.delivery === "failed" && item.localKey === key)
+  )
+}
+
 export function outgoingChatMessage(
   messages: FeedMessage[],
   author: { userId: string; displayName: string; login: string },

@@ -8,19 +8,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import type { Preset } from "@/domain/polls"
+type DeletablePreset = { id: string; name: string }
 
-type PresetDialogsProps = {
-  pendingDelete: Preset | null
-  onDeleteChange: (preset: Preset | null) => void
-  onConfirmDelete: (preset: Preset) => void
+type PresetDialogsProps<T extends DeletablePreset> = {
+  pendingDelete: T | null
+  onDeleteChange: (preset: T | null) => void
+  onConfirmDelete: (preset: T) => void
 }
 
-export function PresetDialogs({
+export function PresetDialogs<T extends DeletablePreset>({
   pendingDelete,
   onDeleteChange,
   onConfirmDelete,
-}: PresetDialogsProps) {
+}: PresetDialogsProps<T>) {
   return (
     <AlertDialog
       open={!!pendingDelete}
@@ -30,7 +30,7 @@ export function PresetDialogs({
         <AlertDialogHeader>
           <AlertDialogTitle>Удалить «{pendingDelete?.name}»?</AlertDialogTitle>
           <AlertDialogDescription>
-            Текущий опрос останется без изменений.
+            Текущие настройки останутся без изменений.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

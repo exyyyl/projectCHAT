@@ -19,7 +19,7 @@ const audienceRoles = ['viewer', 'subscriber', 'vip', 'moderator'];
 const demoNames = ['PixelFox', 'NightOwl', 'LimeCat', 'MoonByte', 'Kira', 'NoScope', 'SoftPanda', 'Nova'];
 const demoReplies = ['Я здесь!', 'Вижу сообщение', 'Да, это я', 'Спасибо!', 'На месте 👋'];
 
-function validateSetup(setup) {
+export function validateContestSetup(setup) {
   const mode = ['active', 'keyword', 'number'].includes(setup?.mode) ? setup.mode : 'keyword';
   const keyword = cleanText(setup?.keyword, 32);
   const duration = Number(setup?.duration);
@@ -174,7 +174,7 @@ export async function createContest(filename, { now = Date.now, randomInt = secu
     const current = state.contest;
     if (command.type === 'start') {
       if (current && current.status !== 'finished') throw new PollError('Конкурс уже запущен.', 409);
-      const setup = validateSetup(command.setup);
+      const setup = validateContestSetup(command.setup);
       const broadcasterId = cleanText(command.broadcasterId, 100);
       if (setup.source === 'twitch' && !broadcasterId) throw new PollError('Сначала подключите Twitch.', 409);
       const startedAt = now();

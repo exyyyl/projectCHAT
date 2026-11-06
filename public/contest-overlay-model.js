@@ -1,4 +1,4 @@
-export const contestOverlayDefaults = Object.freeze({ enabled: true, width: 480, fontSize: 24, radius: 18, opacity: 92, accentColor: '#c7ed98', backgroundColor: '#141416', textColor: '#f4f4f5', showTimer: true, showCount: true, showRecent: true });
+export const contestOverlayDefaults = Object.freeze({ enabled: true, font: 'geist', layout: 'stacked', alignment: 'auto', width: 480, fontSize: 24, radius: 18, opacity: 92, accentColor: '#c7ed98', backgroundColor: '#141416', textColor: '#f4f4f5', showTimer: true, showCount: true, showRecent: true });
 export const contestOverlayRanges = Object.freeze({ width: [280, 1200], fontSize: [16, 40], radius: [0, 40], opacity: [0, 100] });
 
 // The broadcast feed must never include chat messages, role data or internal IDs.

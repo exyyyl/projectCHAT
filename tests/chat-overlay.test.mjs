@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { chatOverlayDefaults, visibleChatMessages } from '../public/chat-overlay-model.js';
+import { chatOverlayDefaults, visibleChatMessages, resolveChatOverlay, chatOverlayMotion } from '../public/chat-overlay-model.js';
 import { initialState, applyCommand, validateStoredState, validateChatOverlay } from '../server/polls.mjs';
 import { createStore } from '../server/store.mjs';
 
@@ -30,6 +30,44 @@ test('chat overlay validates bounded settings and never accepts CSS or HTML inje
   assert.throws(() => applyCommand(initialState(), { type: 'chat-overlay-update', settings: [] }));
   const zero = validateChatOverlay({ opacity: 0, radius: 0, hideAfter: 0, animation: 'none' });
   assert.equal(zero.opacity, 0); assert.equal(zero.radius, 0); assert.equal(zero.hideAfter, 0);
+  assert.equal(zero.animation, 'slide');
+});
+
+test('new message animations survive updates, stored state and backup imports; legacy none migrates', () => {
+  for (const animation of ['scale', 'side', 'turn', 'reveal', 'bounce']) {
+    const state = applyCommand(initialState(), { type: 'chat-overlay-update', settings: { animation } }).state;
+    assert.equal(validateStoredState(state).chatOverlay.animation, animation);
+    const imported = applyCommand(initialState(), { type: 'settings-import', draftRevision: 0, settings: { schema: 1, app: 'Cue', draft: state.draft, presets: [], widget: state.widget, chatOverlay: state.chatOverlay } }).state;
+    assert.equal(imported.chatOverlay.animation, animation);
+  }
+  const legacy = initialState();
+  legacy.chatOverlay.animation = 'none';
+  assert.equal(validateStoredState(legacy).chatOverlay.animation, 'slide');
+  assert.equal(resolveChatOverlay({ animation: 'none' }).animation, 'slide');
+});
+
+test('message motion follows alignment, settles fully and removes movement for reduced motion', () => {
+  const still = { x: 0, y: 0, scale: 1, rotation: 0, clipPath: 'inset(0% 0% 0% 0%)' };
+  for (const animation of ['slide', 'fade', 'scale', 'side', 'turn', 'reveal', 'bounce']) {
+    const settings = { ...chatOverlayDefaults, animation, animationDuration: 600 };
+    const motion = chatOverlayMotion(settings);
+    assert.deepEqual(motion.settled, still);
+    assert.equal(motion.duration, 0.6);
+    const reduced = chatOverlayMotion(settings, true);
+    assert.deepEqual(reduced.enter, still);
+    assert.deepEqual(reduced.exit, still);
+    assert.equal(reduced.duration, 0);
+  }
+  assert.ok(chatOverlayMotion({ animation: 'side', alignment: 'left' }).enter.x < 0);
+  assert.ok(chatOverlayMotion({ animation: 'side', alignment: 'right' }).enter.x > 0);
+  assert.equal(chatOverlayMotion({ animation: 'side', alignment: 'right' }).origin, '100% 100%');
+  assert.ok(chatOverlayMotion({ animation: 'scale' }).enter.scale < 1);
+  assert.equal(chatOverlayMotion({ animation: 'scale' }).ease, 'back.out(1.7)');
+  assert.ok(chatOverlayMotion({ animation: 'turn', alignment: 'left' }).enter.rotation < 0);
+  assert.ok(chatOverlayMotion({ animation: 'turn', alignment: 'right' }).enter.rotation > 0);
+  assert.notEqual(chatOverlayMotion({ animation: 'reveal' }).enter.clipPath, still.clipPath);
+  assert.equal(chatOverlayMotion({ animation: 'bounce' }).ease, 'bounce.out');
+  assert.deepEqual(chatOverlayMotion({ animation: 'fade' }).enter, still);
 });
 
 test('overlay hides old messages, bounds floods, excludes activities and supports permanent display', () => {
@@ -85,7 +123,8 @@ test('local preview samples cover maximum-width edge cases with valid native emo
   }
   assert.equal(createChatPreviewMessage(1, 'word').text.length, 500);
   assert.doesNotMatch(createChatPreviewMessage(1, 'word').text, /\s/);
-  assert.match(createChatPreviewMessage(1, 'long').text, /\n/);
+  assert.ok(createChatPreviewMessage(1, 'long').text.length > 300);
+  assert.equal(createChatPreviewMessage(1, 'long').viewerName, 'peachysoul');
   assert.equal(createChatPreviewMessage(1, 'emotes').emotes.length, 40);
 });
 

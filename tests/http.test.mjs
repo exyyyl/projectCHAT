@@ -1,3 +1,4 @@
+import { widgetFontFiles } from '../public/widget-fonts.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
@@ -22,7 +23,7 @@ test('HTTP commands, independent SSE clients, reconnect, and static routes', asy
   t.after(() => app.close());
   const request = (body, headers = {}) => fetch(url + '/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Poll-Client': 'panel', ...headers }, body: JSON.stringify(body) });
   const control = (action, data = {}, headers = {}) => fetch(url + '/api/stream-dock', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-projectCHAT-Control': 'stream-dock-v1', ...headers }, body: JSON.stringify({ action, ...data }) });
-  for (const path of ['/', '/contest-overlay', '/chat-overlay', '/overlay', '/overlay.js', '/shared.js', '/widget-model.js', '/widget.css', '/style.css', '/fonts/geist-cyrillic.woff2', '/fonts/geist-latin.woff2']) {
+  for (const path of ['/', '/contest-overlay', '/chat-overlay', '/overlay', '/overlay.js', '/shared.js', '/widget-model.js', '/widget-fonts.js', '/fonts/widget-fonts.css', ...widgetFontFiles.map(file => '/fonts/' + file), '/widget.css', '/style.css', '/fonts/geist-cyrillic.woff2', '/fonts/geist-latin.woff2']) {
     const response = await fetch(url + path);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('cache-control'), 'no-store');
@@ -66,6 +67,11 @@ test('HTTP commands, independent SSE clients, reconnect, and static routes', asy
   assert.equal((await (await control('toggle-poll')).json()).state.poll.status, 'ended');
   assert.equal((await (await control('toggle-poll')).json()).state.poll.status, 'running');
   assert.equal((await request({ type: 'unknown' })).status, 400);
+  const savedTemplate = await (await request({ type: 'template-create', template: {name:'Чат',kind:'chat-widget',data:{fontSize:30}} })).json();
+  assert.equal(savedTemplate.state.templates[0].kind, 'chat-widget');
+  assert.equal((await request({ type: 'template-create', template: {name:'Чат',kind:'chat-widget',data:{fontSize:30}} }, {Origin:'https://example.com'})).status, 403);
+  assert.equal((await request({ type: 'template-create', template: {name:'Неверный',kind:'chat-widget',data:{fontSize:999}} })).status, 400);
+
   assert.equal((await fetch(url + '/api/twitch')).status, 200);
   assert.equal((await fetch(url + '/api/contest')).status, 200);
   assert.equal((await fetch(url + '/data/twitch.json')).status, 404);
@@ -90,4 +96,22 @@ test('HTTP commands, independent SSE clients, reconnect, and static routes', asy
   const selected = await (await control('select-preset', { presetId: preset.state.presets[0].id })).json();
   assert.equal(selected.message, 'Выбран шаблон «Быстрый выбор»');
   assert.equal(selected.state.draft.question, initial.draft.question);
+});
+
+
+test('settings backups with large template libraries are accepted within the bounded request limit', async t => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'cue-template-backup-http-'));
+  const app = await createApp({ dataDir });
+  const url = await app.listen(0);
+  t.after(() => app.close());
+  const initial = app.store.snapshot();
+  const templates = Array.from({length:16}, (_,index) => ({id:String(index),name:'Рулетка '+index,kind:'wheel',data:{mode:'list',minimum:'1',maximum:'100',withoutRepeats:true,options:Array.from({length:40},(_,i)=>({label:String(i)+'x'.repeat(118)}))}}));
+  const command = {type:'settings-import',draftRevision:0,settings:{schema:1,app:'Cue',draft:initial.draft,presets:[],templates}};
+  const body = JSON.stringify(command);
+  assert.ok(Buffer.byteLength(body)>65536);
+  const response = await fetch(url+'/api/command',{method:'POST',headers:{'Content-Type':'application/json','X-Poll-Client':'panel'},body});
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).state.templates.length,16);
+  const oversized = await fetch(url+'/api/command',{method:'POST',headers:{'Content-Type':'application/json','X-Poll-Client':'panel'},body:' '.repeat(2*1024*1024+1)});
+  assert.equal(oversized.status,413);
 });

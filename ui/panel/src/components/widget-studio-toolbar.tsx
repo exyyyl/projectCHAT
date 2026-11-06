@@ -25,7 +25,9 @@ export function WidgetStudioToolbar({
   onToggleOutput,
   onSceneChange,
   onSelectKind,
+  templateAction,
 }: {
+  templateAction?: ReactNode
   kind: WidgetKind
   enabled: boolean
   disabled?: boolean
@@ -74,6 +76,7 @@ export function WidgetStudioToolbar({
           role="group"
           aria-label={`Вывод: ${label} в OBS`}
         >
+          {templateAction}
           <button
             type="button"
             className="studio-toolbar-visibility"
@@ -88,7 +91,6 @@ export function WidgetStudioToolbar({
             ) : (
               <EyeOff aria-hidden="true" />
             )}
-            <span>{enabled ? "Скрыть оверлей" : "Показать оверлей"}</span>
           </button>
           <Popover.Root>
             <Popover.Trigger asChild>
@@ -99,7 +101,7 @@ export function WidgetStudioToolbar({
                 aria-label={`Подключить ${label} к OBS`}
               >
                 <ExternalLink aria-hidden="true" />
-                Подключить OBS
+                OBS
               </Button>
             </Popover.Trigger>
             <Popover.Portal>

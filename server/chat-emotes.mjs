@@ -23,10 +23,11 @@ export function validEmoteSpans(spans, text) {
   }).map(({ start, end, id }) => ({ start, end, id }));
 }
 
-export function nativeEmotes(data) {
+export function nativeEmotes(data, channel = {}) {
   return (Array.isArray(data) ? data : []).slice(0, 10000).flatMap(emote => {
     const url = twitchEmoteUrl(emote?.id);
-    return url && codeIsValid(emote.name) ? [{ id: emote.id, code: emote.name, url, provider: 'twitch' }] : [];
+    const ownerId = typeof emote?.owner_id === 'string' && /^[1-9][0-9]{0,29}$/.test(emote.owner_id) ? emote.owner_id : channel.ownerId;
+    return url && codeIsValid(emote.name) ? [{ id: emote.id, code: emote.name, url, provider: 'twitch', scope: ownerId ? 'channel' : 'global', ...(ownerId ? { ownerId, ...(channel.ownerName ? { ownerName: channel.ownerName } : {}) } : {}) }] : [];
   });
 }
 function bttvEmotes(data) {
@@ -92,7 +93,10 @@ export function createChatEmotes({ twitch, fetcher = fetch, now = Date.now } = {
         const byCode = new Map();
         for (const [index, result] of results.entries()) {
           if (result.status !== 'fulfilled') continue;
-          for (const emote of index === 0 ? result.value.emotes : result.value) byCode.set(`${emote.provider}:${emote.code}`, { ...emote, scope: [2, 4, 6].includes(index) ? 'channel' : 'global' });
+          for (const emote of index === 0 ? result.value.emotes : result.value) {
+            const channel = [2, 4, 6].includes(index);
+            byCode.set(`${emote.provider}:${emote.code}`, index === 0 ? emote : { ...emote, scope: channel ? 'channel' : 'global', ...(channel ? { ownerId: state.userId, ownerName: state.displayName || state.login || '', ownerAvatarUrl: state.profileImageUrl || '' } : {}) });
+          }
         }
         const data = { channelId: state.userId, emotes: [...byCode.values()], unavailable, requiresReconnect: results[0].status === 'fulfilled' ? results[0].value.requiresReconnect : !state.canReadEmotes };
         if (twitch.snapshot().userId === state.userId) cached = { key, expiresAt: now() + (unavailable.length ? 30_000 : 300_000), data };

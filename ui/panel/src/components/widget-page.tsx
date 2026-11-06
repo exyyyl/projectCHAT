@@ -1,9 +1,15 @@
+import { WidgetFontSelect } from "./widget-font-select"
+import { WidgetLookGallery } from "./widget-look-gallery"
+import { TemplateSaveButton, type SaveTemplate } from "./template-save-button"
+import type { SavedTemplate, TemplateKind } from "@/domain/templates"
+import type { ReactNode } from "react"
 import { AnimatedSettings } from "@/components/animated-settings"
 import type { ContestOverlaySettings } from "../../../../public/contest-overlay-model.js"
 import { useId, useLayoutEffect, useRef, useState } from "react"
 import {
   ListChecks,
   Palette,
+  LayoutTemplate,
   RectangleHorizontal,
   RotateCcw,
   SlidersHorizontal,
@@ -32,6 +38,10 @@ import "./widget-studio.css"
 */
 
 type WidgetPageProps = {
+  initialKind?: WidgetKind
+  onSaveTemplate?: SaveTemplate
+  templates?: SavedTemplate[]
+  templateAction?: ReactNode
   contestOverlay: ContestOverlaySettings
   onUpdateContestOverlay: (patch: Partial<ContestOverlaySettings>) => void
   chatOverlay: ChatOverlaySettings
@@ -65,13 +75,38 @@ const contentFields = [
 ] as const
 
 export function WidgetPage(props: WidgetPageProps) {
-  const [selected, setSelected] = useState<WidgetKind>("polls")
+  const [selected, setSelected] = useState<WidgetKind>(
+    props.initialKind || "polls"
+  )
+  const kind: TemplateKind =
+    selected === "polls"
+      ? "poll-widget"
+      : selected === "chat"
+        ? "chat-widget"
+        : "contest-widget"
+  const templateAction = props.onSaveTemplate ? (
+    <TemplateSaveButton
+      compact
+      kind={kind}
+      data={
+        selected === "polls"
+          ? props.widget
+          : selected === "chat"
+            ? props.chatOverlay
+            : props.contestOverlay
+      }
+      current={props.templates?.find((template) => template.kind === kind)}
+      onSave={props.onSaveTemplate}
+      disabled={props.busy}
+    />
+  ) : undefined
   if (selected === "chat")
     return (
       <ChatWidgetEditor
         settings={props.chatOverlay}
         onUpdate={props.onUpdateChatOverlay}
         onSelectKind={setSelected}
+        templateAction={templateAction}
       />
     )
   if (selected === "contests")
@@ -81,9 +116,16 @@ export function WidgetPage(props: WidgetPageProps) {
         settings={props.contestOverlay}
         onUpdate={props.onUpdateContestOverlay}
         onSelectKind={setSelected}
+        templateAction={templateAction}
       />
     )
-  return <PollWidgetEditor {...props} onSelectKind={setSelected} />
+  return (
+    <PollWidgetEditor
+      {...props}
+      templateAction={templateAction}
+      onSelectKind={setSelected}
+    />
+  )
 }
 
 function PollWidgetEditor({
@@ -94,6 +136,7 @@ function PollWidgetEditor({
   onUpdate,
   onSetOutput,
   onSelectKind,
+  templateAction,
 }: WidgetPageProps & { onSelectKind: (kind: WidgetKind) => void }) {
   const controlId = useId()
   const widget = resolveWidget(savedWidget)
@@ -101,7 +144,7 @@ function PollWidgetEditor({
   const [background, setBackground] = useState("dark")
   const [zoom, setZoom] = useState("fit")
   const [panel, setPanel] = useState<
-    "layout" | "text" | "options" | "colors" | "content" | null
+    "look" | "layout" | "text" | "options" | "colors" | "content" | null
   >(null)
   const [measurement, setMeasurement] = useState({ width: 600, height: 500 })
   const [objectHeight, setObjectHeight] = useState(500)
@@ -159,9 +202,13 @@ function PollWidgetEditor({
   )
   const scale = zoom === "fit" ? fit : Number(zoom)
   const updateFormat = (layout: WidgetSettings["layout"]) =>
-    onUpdate({ layout, panelWidth: layout === "horizontal" ? 960 : 440 })
+    onUpdate({
+      layout,
+      panelWidth: layout === "horizontal" ? 960 : layout === "grid" ? 760 : 440,
+    })
 
   const sections = [
+    ["look", "Оформление", LayoutTemplate],
     ["layout", "Макет", RectangleHorizontal],
     ["text", "Текст", Type],
     ["options", "Варианты", ListChecks],
@@ -170,6 +217,9 @@ function PollWidgetEditor({
   ] as const
 
   const properties = {
+    look: (
+      <WidgetLookGallery kind="poll" settings={widget} onUpdate={onUpdate} />
+    ),
     layout: (
       <>
         <FormSelect
@@ -179,6 +229,7 @@ function PollWidgetEditor({
           options={[
             ["vertical", "Вертикальный"],
             ["horizontal", "Горизонтальный"],
+            ["grid", "Сетка"],
           ]}
           onChange={(value) => {
             if (value !== widget.layout)
@@ -188,7 +239,7 @@ function PollWidgetEditor({
         <NumberProperty
           label="Ширина"
           value={widget.panelWidth}
-          min={widget.layout === "horizontal" ? 640 : 280}
+          min={widget.layout === "vertical" ? 280 : 640}
           max={1600}
           onChange={(panelWidth) => onUpdate({ panelWidth })}
         />
@@ -212,16 +263,20 @@ function PollWidgetEditor({
       <>
         <FormSelect
           disabled={false}
-          label="Шрифт"
-          value={widget.font}
+          label="Выравнивание заголовка"
+          value={widget.alignment}
           options={[
-            ["geist", "Geist"],
-            ["system", "Системный"],
-            ["mono", "Моноширинный"],
+            ["left", "По левому краю"],
+            ["center", "По центру"],
           ]}
-          onChange={(font) =>
-            onUpdate({ font: font as WidgetSettings["font"] })
+          onChange={(alignment) =>
+            onUpdate({ alignment: alignment as WidgetSettings["alignment"] })
           }
+        />
+
+        <WidgetFontSelect
+          value={widget.font}
+          onChange={(font) => onUpdate({ font })}
         />
         <NumberProperty
           label="Размер вопроса"
@@ -347,6 +402,7 @@ function PollWidgetEditor({
         onSceneChange={setBackground}
         onToggleOutput={() => onSetOutput(!visible)}
         onSelectKind={onSelectKind}
+        templateAction={templateAction}
         previewControls={
           <div
             className="studio-toolbar-modes"

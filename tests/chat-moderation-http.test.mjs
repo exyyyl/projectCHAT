@@ -125,3 +125,99 @@ test('permanent ban omits duration, uses the archived identity and clears only t
   assert.equal(f.app.chat.recent('123').filter(item => item.deleted).length, 2);
   assert.equal(f.app.chat.recent('999')[0].deleted, false);
 });
+
+test('archive cleanup is local, channel scoped, protected, and reaches panel and OBS clients', async t => {
+  const f = await fixture(t);
+  const first = f.add('clear-deleted');
+  const kept = f.add('keep-active', '789');
+  f.add('other-channel', '456', '999');
+  f.app.chat.markDeleted('123', { eventId: 'clear-deleted' });
+  f.app.chat.addNote('123', 'twitch:456', 'Keep note');
+  const post = (body, options = {}) => fetch(f.base + '/api/chat/archive', { method: 'POST', headers, body: JSON.stringify(body), ...options });
+  assert.equal((await post({ channelId: '999', scope: 'all' })).status, 409);
+  assert.equal((await post({ channelId: '123', scope: 'invalid' })).status, 400);
+  assert.equal((await post({ channelId: '123', scope: 'all' }, { headers: { 'Content-Type': 'application/json' } })).status, 415);
+  assert.equal((await post({ channelId: '123', scope: 'all' }, { headers: { ...headers, Origin: 'https://untrusted.example' } })).status, 403);
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const panel = (await fetch(f.base + '/api/chat/events', { signal: controller.signal })).body.getReader();
+  const obs = (await fetch(f.base + '/api/chat/overlay/events', { signal: controller.signal })).body.getReader();
+  await Promise.all([panel.read(), obs.read()]);
+  const response = await post({ channelId: '123', scope: 'deleted' });
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.removed, 1);
+  assert.equal(result.archive.count, 1);
+  for (const reader of [panel, obs]) {
+    const event = new TextDecoder().decode((await reader.read()).value);
+    assert.match(event, /event: cleanup/);
+    assert.match(event, /"scope":"deleted"/);
+    assert.doesNotMatch(event, /"text"|"notes"/);
+  }
+  assert.deepEqual(f.app.chat.recent('123').map(message => message.id), [kept.id]);
+  assert.equal(f.app.chat.recent('999').length, 1);
+  assert.equal(f.app.chat.profile('123', 'twitch:456').notes.length, 1);
+  assert.equal(f.actions.length, 0, 'local cleanup never moderates Twitch');
+  assert.equal((await post({ channelId: '123', scope: 'all' })).status, 200);
+  const next = f.add('after-clear');
+  assert.ok(next.id > kept.id && next.id > first.id);
+  controller.abort();
+});
+
+test('viewer note API edits one note and streamer notes API keeps tasks separate', async t => {
+  const f = await fixture(t);
+  const post = (path, body, options = {}) => fetch(f.base + path, { method: 'POST', headers, body: JSON.stringify(body), ...options });
+  const path = '/api/chat/notes';
+  assert.equal((await post(path, { type: 'set', channelId: '999', viewerId: 'twitch:456', text: 'No' })).status, 409);
+  const a = await (await post(path, { type: 'set', channelId: '123', viewerId: 'twitch:456', text: 'One' })).json();
+  const b = await (await post(path, { type: 'set', channelId: '123', viewerId: 'twitch:456', text: 'Edited' })).json();
+  assert.equal(a.note.id, b.note.id);
+  assert.equal(f.app.chat.profile('123', 'twitch:456').notes.length, 1);
+  const removed = await (await post(path, { type: 'set', channelId: '123', viewerId: 'twitch:456', text: '' })).json();
+  assert.equal(removed.note, null);
+  const endpoint = '/api/chat/streamer-notes';
+  assert.equal((await post(endpoint, { type: 'add', text: 'No' }, { headers: { 'Content-Type': 'application/json' } })).status, 415);
+  assert.equal((await post(endpoint, { type: 'add', text: 'No' }, { headers: { ...headers, Origin: 'https://untrusted.example' } })).status, 403);
+  const task = await (await post(endpoint, { type: 'add', text: 'Microphone', task: true })).json();
+  const note = await (await post(endpoint, { type: 'add', text: 'Music', task: false })).json();
+  assert.equal((await post(endpoint, { type: 'update', id: task.note.id, patch: { completed: true } })).status, 200);
+  assert.equal((await post(endpoint, { type: 'update', id: note.note.id, patch: { text: 'Music plan' } })).status, 200);
+  const saved = await (await fetch(f.base + endpoint)).json();
+  assert.equal(saved.notes.length, 2);
+  assert.equal(saved.notes.find(item => item.id === task.note.id).completed, true);
+  assert.equal(saved.notes.find(item => item.id === note.note.id).text, 'Music plan');
+  assert.equal((await post(endpoint, { type: 'delete', id: task.note.id })).status, 200);
+  assert.equal((await (await fetch(f.base + endpoint)).json()).notes.length, 1);
+  assert.equal(f.actions.length, 0);
+});
+
+test('archive settings route validates panel requests and applies durable limits', async t => {
+  const f = await fixture(t);
+  const body = { maxMessages: 100, maxBytes: 16 * 1024 * 1024 };
+  const post = (data, requestHeaders = headers) => fetch(f.base + '/api/chat/archive/settings', { method: 'POST', headers: requestHeaders, body: JSON.stringify(data) });
+  assert.equal((await post(body, { 'Content-Type': 'application/json' })).status, 415);
+  assert.equal((await post(body, { ...headers, Origin: 'https://untrusted.example' })).status, 403);
+  assert.equal((await post({ ...body, maxMessages: -1 })).status, 400);
+  for (let i = 0; i < 120; i++) f.add(`limit-${i}`);
+  const response = await post(body);
+  assert.equal(response.status, 200);
+  const change = await response.json();
+  assert.equal(change.channelId, '123');
+  assert.equal(change.archive.count, 100);
+  assert.equal(change.removed, 20);
+  assert.equal(change.archive.maxBytes, body.maxBytes);
+});
+
+test('participants route always reads the connected channel and updates after moderation', async t => {
+  const f = await fixture(t);
+  f.add('participant-one'); f.add('participant-two'); f.add('other-participant', '789', '999');
+  const response = await fetch(f.base + '/api/chat/participants?channelId=999');
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.channelId, '123');
+  assert.equal(data.total, 1);
+  assert.equal(data.participants[0].messageCount, 2);
+  f.app.chat.markDeleted('123', { viewerId: 'twitch:456' });
+  const cleared = await (await fetch(f.base + '/api/chat/participants')).json();
+  assert.equal(cleared.total, 0);
+});

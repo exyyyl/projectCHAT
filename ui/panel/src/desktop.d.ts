@@ -124,7 +124,7 @@ interface Window {
   streamPollsDesktop?: {
     getInfo(): Promise<DesktopInfo>
     recordError?(message: string): Promise<void>
-    setWindowTheme(theme: "lime" | "violet" | "ice" | "mono"): Promise<void>
+    setWindowTheme(theme: import("./domain/app-themes").AppTheme): Promise<void>
     getVersions(): Promise<DesktopVersionState>
     checkVersions(): Promise<DesktopVersionState>
     downloadVersion(branch: "stable" | "beta"): Promise<DesktopVersionState>

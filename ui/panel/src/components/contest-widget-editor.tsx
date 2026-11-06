@@ -1,10 +1,16 @@
+import { WidgetFontSelect } from "./widget-font-select"
+import { WidgetLookGallery } from "./widget-look-gallery"
+import type { ReactNode } from "react"
 import { AnimatedSettings } from "@/components/animated-settings"
 import { useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import {
   Palette,
+  LayoutTemplate,
   RectangleHorizontal,
   SlidersHorizontal,
   X,
+  Gift,
+  Eye,
 } from "lucide-react"
 import { publicContest } from "../../../../public/contest-overlay-model.js"
 import type {
@@ -16,7 +22,8 @@ import type { WidgetKind } from "./widget-kind-tabs"
 import { WidgetStudioToolbar } from "./widget-studio-toolbar"
 import { ContestOverlayView } from "./contest-overlay-view"
 import { NumberProperty, ColorProperty } from "./widget-properties"
-import { FormSwitch } from "./form-controls"
+import { FormSelect, FormSwitch } from "./form-controls"
+import { Button } from "./ui/button"
 
 type Preview = "collecting" | "ready" | "drawing" | "winner" | "number" | "live"
 export function ContestWidgetEditor({
@@ -24,19 +31,21 @@ export function ContestWidgetEditor({
   settings,
   onUpdate,
   onSelectKind,
+  templateAction,
 }: {
   contest: Contest | null
   settings: ContestOverlaySettings
   onUpdate: (patch: Partial<ContestOverlaySettings>) => void
   onSelectKind: (kind: WidgetKind) => void
+  templateAction?: ReactNode
 }) {
   const id = useId()
   const [mode, setMode] = useState<Preview>("collecting")
   const [seed, setSeed] = useState(Date.now)
   const [scene, setScene] = useState("dark")
-  const [panel, setPanel] = useState<"layout" | "colors" | "content" | null>(
-    null
-  )
+  const [panel, setPanel] = useState<
+    "look" | "layout" | "colors" | "content" | null
+  >(null)
   const [size, setSize] = useState({ width: 800, height: 600 })
   const [height, setHeight] = useState(400)
   const stage = useRef<HTMLDivElement>(null),
@@ -94,17 +103,63 @@ export function ContestWidgetEditor({
   )
   const origin = import.meta.env.DEV ? "http://127.0.0.1:4317" : location.origin
   const sections = [
+    ["look", "Оформление", LayoutTemplate],
     ["layout", "Макет", RectangleHorizontal],
     ["colors", "Цвета", Palette],
     ["content", "Состав", SlidersHorizontal],
   ] as const
   const properties = {
+    look: (
+      <WidgetLookGallery
+        kind="contest"
+        settings={settings}
+        onUpdate={onUpdate}
+      />
+    ),
     layout: (
       <>
+        <WidgetFontSelect
+          value={settings.font}
+          onChange={(font) => onUpdate({ font })}
+        />
+        <FormSelect
+          disabled={false}
+          label="Расположение"
+          value={settings.layout}
+          options={[
+            ["stacked", "Вертикальное"],
+            ["split", "В две колонки"],
+            ["banner", "Горизонтальное"],
+          ]}
+          onChange={(layout) =>
+            onUpdate({
+              layout: layout as ContestOverlaySettings["layout"],
+              ...(layout === "banner" && settings.width < 640
+                ? { width: 800 }
+                : {}),
+            })
+          }
+        />
+        <FormSelect
+          disabled={false}
+          label="Выравнивание"
+          value={settings.alignment}
+          options={[
+            ["auto", "Автоматически"],
+            ["left", "По левому краю"],
+            ["center", "По центру"],
+          ]}
+          onChange={(alignment) =>
+            onUpdate({
+              alignment: alignment as ContestOverlaySettings["alignment"],
+            })
+          }
+        />
+
         <NumberProperty
           label="Ширина"
           value={settings.width}
-          min={280}
+          min={settings.layout === "banner" ? 640 : 280}
           max={1200}
           onChange={(width) => onUpdate({ width })}
         />
@@ -182,6 +237,7 @@ export function ContestWidgetEditor({
         onSceneChange={setScene}
         onToggleOutput={() => onUpdate({ enabled: !settings.enabled })}
         onSelectKind={onSelectKind}
+        templateAction={templateAction}
         previewControls={
           <div
             className="studio-toolbar-modes"
@@ -238,6 +294,7 @@ export function ContestWidgetEditor({
       <div className="widget-canvas-workspace">
         <div className="widget-canvas" data-background={scene} ref={stage}>
           <div
+            hidden={!preview}
             style={{
               width: (settings.width + 48) * scale,
               height: height * scale,
@@ -261,13 +318,26 @@ export function ContestWidgetEditor({
                   settings={settings}
                   preview
                 />
-              ) : (
-                <div className="widget-unavailable">
-                  <p>Запусти конкурс в разделе «Конкурсы» или выбери «Демо».</p>
-                </div>
-              )}
+              ) : null}
             </div>
           </div>
+          {!preview && (
+            <div className="widget-canvas-empty">
+              <Gift aria-hidden="true" />
+              <h2>Нет текущего конкурса</h2>
+              <p>Запустите конкурс или настройте оформление на демо.</p>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setMode("collecting")
+                  setSeed(Date.now())
+                }}
+              >
+                <Eye aria-hidden="true" />
+                Показать демо
+              </Button>
+            </div>
+          )}
         </div>
       </div>
       <div className="widget-edit-dock">

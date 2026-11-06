@@ -119,19 +119,21 @@ export function VersionSwitcher({ children }: { children?: ReactNode }) {
     )
   return (
     <div className="space-y-4">
-      <FormSegmented
-        label="Версия приложения"
-        hideLabel
-        value={branch}
-        options={[
-          ["stable", "Стабильная"],
-          ["beta", "Бета"],
-        ]}
-        disabled={busy}
-        onChange={(value) => {
-          if (value === "stable" || value === "beta") setBranch(value)
-        }}
-      />
+      <div className="max-w-xs">
+        <FormSegmented
+          label="Версия приложения"
+          hideLabel
+          value={branch}
+          options={[
+            ["stable", "Стабильная"],
+            ["beta", "Бета"],
+          ]}
+          disabled={busy}
+          onChange={(value) => {
+            if (value === "stable" || value === "beta") setBranch(value)
+          }}
+        />
+      </div>
       <div className="flex min-h-12 flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-xl font-semibold tracking-tight tabular-nums">

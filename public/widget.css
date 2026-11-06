@@ -1,3 +1,5 @@
+@import "./fonts/widget-fonts.css";
+
 @font-face {
   font-family: Geist;
   src: url("./fonts/geist-latin.woff2") format("woff2");
@@ -282,3 +284,9 @@
     animation: none !important;
   }
 }
+.cue-poll-widget[data-layout="grid"] .cue-widget-options { grid-template-columns:repeat(var(--cue-columns,3),minmax(0,1fr)); align-items:stretch; }
+.cue-poll-widget[data-layout="grid"] .cue-widget-option-main { flex-wrap:wrap; }
+.cue-poll-widget[data-layout="grid"] .cue-widget-label { flex-basis:calc(100% - 32px); }
+.cue-poll-widget[data-layout="grid"] .cue-widget-value { flex-direction:row; align-items:baseline; gap:8px; width:100%; margin-top:8px; }
+.cue-poll-widget[data-alignment="center"] .cue-widget-heading { flex-direction:column; align-items:center; text-align:center; gap:12px; }
+.cue-poll-widget[data-alignment="center"] .cue-widget-footer { justify-content:center; }

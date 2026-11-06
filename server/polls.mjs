@@ -1,7 +1,9 @@
+import { widgetFonts } from '../public/widget-fonts.js';
+import { validateTemplate, validateTemplateLibrary } from './saved-templates.mjs';
 import { contestOverlayDefaults, contestOverlayRanges } from '../public/contest-overlay-model.js';
 import { randomUUID } from 'node:crypto';
 import { widgetDefaults, resolveWidget } from '../public/widget-model.js';
-import { chatOverlayDefaults, chatOverlayRanges } from '../public/chat-overlay-model.js';
+import { chatOverlayDefaults, chatOverlayRanges, resolveChatOverlay } from '../public/chat-overlay-model.js';
 
 export class PollError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -25,15 +27,16 @@ export function validateChatOverlay(input) {
     if (chatOverlayRanges[key]) {
       const [min, max] = chatOverlayRanges[key];
       requireThat(Number.isInteger(value) && value >= min && value <= max, `Настройка ${key}: от ${min} до ${max}.`);
-    } else if (typeof settings[key] === 'boolean') requireThat(typeof value === 'boolean', 'Некорректный переключатель чата.');
+    } else if (key === 'font') requireThat(widgetFonts.includes(value), 'Некорректный шрифт чата.');
+    else if (typeof settings[key] === 'boolean') requireThat(typeof value === 'boolean', 'Некорректный переключатель чата.');
     else if (key.endsWith('Color')) requireThat(typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value), 'Укажите цвет в формате HEX.');
     else {
-      const variants = { style: ['cards', 'minimal', 'bubble'], font: ['geist', 'system', 'mono'], animation: ['slide', 'fade', 'none'], alignment: ['left', 'right'], emoteProvider: ['ffz', '7tv', 'bttv'] };
+      const variants = { style: ['cards', 'minimal', 'bubble'], font: widgetFonts, animation: ['slide', 'fade', 'scale', 'side', 'turn', 'reveal', 'bounce', 'none'], alignment: ['left', 'right'], emoteProvider: ['ffz', '7tv', 'bttv'] };
       requireThat(variants[key]?.includes(value), 'Некорректный вариант оформления чата.');
     }
     settings[key] = value;
   }
-  return settings;
+  return resolveChatOverlay(settings);
 }
 export function validateContestOverlay(input) {
   requireThat(input && typeof input === 'object' && !Array.isArray(input), 'Некорректные настройки конкурса.');
@@ -43,10 +46,14 @@ export function validateContestOverlay(input) {
     if (contestOverlayRanges[key]) {
       const [min,max] = contestOverlayRanges[key];
       requireThat(Number.isInteger(value) && value >= min && value <= max, `Настройка ${key}: от ${min} до ${max}.`);
-    } else if (typeof settings[key] === 'boolean') requireThat(typeof value === 'boolean', 'Некорректный переключатель конкурса.');
+    } else if (key === 'font') requireThat(widgetFonts.includes(value), 'Некорректный шрифт конкурса.');
+    else if (key === 'layout') requireThat(['stacked', 'split', 'banner'].includes(value), 'Некорректный макет конкурса.');
+    else if (key === 'alignment') requireThat(['auto', 'left', 'center'].includes(value), 'Некорректное выравнивание конкурса.');
+    else if (typeof settings[key] === 'boolean') requireThat(typeof value === 'boolean', 'Некорректный переключатель конкурса.');
     else requireThat(typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value), 'Укажите цвет в формате HEX.');
     settings[key] = value;
   }
+  requireThat(settings.layout !== 'banner' || settings.width >= 640, 'Ширина горизонтального конкурса — от 640 px.');
   return settings;
 }
 export function defaultWidget() {
@@ -75,7 +82,7 @@ export function validateWidget(input) {
   requireThat(['small', 'medium', 'large'].includes(titleSize), 'Некорректный размер заголовка виджета.');
   requireThat(['narrow', 'medium', 'wide'].includes(width), 'Некорректная ширина виджета.');
   requireThat(Number.isInteger(opacity) && opacity >= 0 && opacity <= 100, 'Прозрачность — от 0 до 100%.');
-  requireThat(['geist', 'system', 'mono'].includes(font), 'Некорректный шрифт виджета.');
+  requireThat(widgetFonts.includes(font), 'Некорректный шрифт виджета.');
   requireThat(['rows', 'cards', 'outline', 'fill'].includes(optionStyle), 'Некорректная форма вариантов виджета.');
   requireThat(['small', 'medium', 'large'].includes(optionSize), 'Некорректный размер вариантов виджета.');
   requireThat(['outline', 'filled', 'text'].includes(keywordStyle), 'Некорректный стиль ключевых слов виджета.');
@@ -100,11 +107,15 @@ export function validateWidget(input) {
     settings[key] = input[key];
   }
   if (input.layout !== undefined) {
-    requireThat(['vertical', 'horizontal'].includes(input.layout), 'Некорректный формат виджета.');
+    requireThat(['vertical', 'horizontal', 'grid'].includes(input.layout), 'Некорректный формат виджета.');
     settings.layout = input.layout;
   }
+  if (input.alignment !== undefined) {
+    requireThat(['left', 'center'].includes(input.alignment), 'Некорректное выравнивание виджета.');
+    settings.alignment = input.alignment;
+  }
   const resolved = resolveWidget(settings);
-  requireThat(resolved.layout !== 'horizontal' || resolved.panelWidth >= 640, 'Ширина горизонтального виджета — от 640 px.');
+  requireThat(resolved.layout === 'vertical' || resolved.panelWidth >= 640, 'Ширина горизонтального виджета — от 640 px.');
   return resolved;
 }
 export function validateDraft(input) {
@@ -127,11 +138,13 @@ export function validateDraft(input) {
   requireThat(input.source === undefined || ['test', 'twitch'].includes(input.source), 'Некорректный источник голосов.');
   return { question: input.question.trim(), options, duration: input.duration, secret: input.secret, allowChange: input.allowChange, showOverlay: input.showOverlay ?? true, source: input.source ?? 'test' };
 }
+const templateValidators = { 'poll-widget': validateWidget, 'chat-widget': validateChatOverlay, 'contest-widget': validateContestOverlay };
 export function initialState() {
   return {
     schema: 1, revision: 0, draftRevision: 0,
     draft: { question: 'Во что играем дальше?', options: [{ id: '1', name: 'Minecraft', word: 'майн' }, { id: '2', name: 'Valorant', word: 'вало' }, { id: '3', name: 'Hollow Knight', word: 'холлоу' }], duration: 60, secret: false, allowChange: false, showOverlay: true, source: 'test' },
     presets: [],
+    templates: [],
     widget: defaultWidget(),
     chatOverlay: { ...chatOverlayDefaults },
     contestOverlay: { ...contestOverlayDefaults },
@@ -149,6 +162,7 @@ export function validateStoredState(state) {
     presetIds.add(preset.id);
     return { id: preset.id, name: validatePresetName(preset.name), draft: validateDraft(preset.draft), pinned: preset.pinned === true, createdAt: Number.isFinite(preset.createdAt) ? preset.createdAt : 0, updatedAt: Number.isFinite(preset.updatedAt) ? preset.updatedAt : 0 };
   }).sort((a, b) => Number(b.pinned) - Number(a.pinned));
+  state.templates = validateTemplateLibrary(state.templates ?? [], templateValidators);
   state.chatOverlay = validateChatOverlay(state.chatOverlay ?? chatOverlayDefaults);
   state.contestOverlay = validateContestOverlay(state.contestOverlay ?? contestOverlayDefaults);
   state.widget = validateWidget(state.widget ?? defaultWidget());
@@ -223,6 +237,44 @@ export function applyCommand(state, command, now = Date.now()) {
       }
       changed = true;
       break;
+    }
+    case 'template-create': {
+      next.templates ??= [];
+      requireThat(next.templates.length < 100, 'Можно сохранить не больше 100 шаблонов новых разделов.');
+      next.templates.push(validateTemplate(command.template, templateValidators, { id: randomUUID(), createdAt: now, updatedAt: now }));
+      changed = true; break;
+    }
+    case 'template-update': {
+      const index = (next.templates ?? []).findIndex(item => item.id === command.templateId);
+      requireThat(index >= 0, 'Шаблон уже удалён.', 409);
+      const previous = next.templates[index];
+      requireThat(command.template?.kind === undefined || command.template.kind === previous.kind, 'Раздел шаблона нельзя изменить.');
+      next.templates[index] = validateTemplate({ ...previous, ...command.template }, templateValidators, { id: previous.id, createdAt: previous.createdAt, updatedAt: now });
+      changed = true; break;
+    }
+    case 'template-reorder': {
+      const index = (next.templates ?? []).findIndex(item => item.id === command.templateId);
+      const targetIndex = (next.templates ?? []).findIndex(item => item.id === command.targetId);
+      requireThat(index >= 0 && targetIndex >= 0, 'Шаблон уже удалён.', 409);
+      const item = next.templates[index], target = next.templates[targetIndex];
+      requireThat(item.kind === target.kind && item.pinned === target.pinned, 'Перемещайте шаблоны внутри одного раздела и группы.');
+      if (index !== targetIndex) { next.templates.splice(index, 1); next.templates.splice(next.templates.findIndex(item => item.id === target.id), 0, item); changed = true; }
+      break;
+    }
+    case 'template-delete': {
+      const index = (next.templates ?? []).findIndex(item => item.id === command.templateId);
+      requireThat(index >= 0, 'Шаблон уже удалён.', 409);
+      next.templates.splice(index, 1); changed = true; break;
+    }
+    case 'template-apply': {
+      const template = (next.templates ?? []).find(item => item.id === command.templateId);
+      requireThat(template, 'Шаблон уже удалён.', 409);
+      requireThat(template.kind.endsWith('-widget'), 'Этот шаблон применяется в своём разделе.');
+      const data = structuredClone(template.data);
+      if (template.kind === 'poll-widget') next.widget = validateWidget(data);
+      if (template.kind === 'chat-widget') next.chatOverlay = validateChatOverlay({ ...data, enabled: next.chatOverlay.enabled });
+      if (template.kind === 'contest-widget') next.contestOverlay = validateContestOverlay({ ...data, enabled: next.contestOverlay.enabled });
+      changed = true; outcome = template.name; break;
     }
     case 'preset-create': {
       requireThat(next.presets.length < 30, 'Можно сохранить не больше 30 шаблонов.');
@@ -309,6 +361,7 @@ export function applyCommand(state, command, now = Date.now()) {
       const settings = command.settings;
       requireThat(settings && typeof settings === 'object' && settings.schema === 1 && ['projectCHAT', 'Vela', 'Cue'].includes(settings.app), 'Этот файл настроек не поддерживается.');
       requireThat(Array.isArray(settings.presets) && settings.presets.length <= 30, 'В файле должно быть не больше 30 шаблонов.');
+      next.templates = validateTemplateLibrary((settings.templates ?? []).map(item => ({ ...item, id: randomUUID(), createdAt: now, updatedAt: now })), templateValidators);
       next.draft = validateDraft(settings.draft);
       next.presets = settings.presets.map(preset => ({
         id: randomUUID(),

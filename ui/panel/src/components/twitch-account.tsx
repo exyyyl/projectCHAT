@@ -54,11 +54,7 @@ export function TwitchAccount({ state, active, onClick }: TwitchAccountProps) {
   return (
     <Button
       variant="ghost"
-      className={`group h-11 w-full min-w-0 justify-start gap-2.5 rounded-md px-2.5 ${
-        active
-          ? "bg-surface-subtle text-foreground hover:bg-surface-raised"
-          : "text-muted-foreground"
-      }`}
+      className="sidebar-account-button group w-full min-w-0 justify-start gap-2.5 text-muted-foreground"
       aria-current={active ? "page" : undefined}
       aria-label={
         loading

@@ -1,57 +1,82 @@
 import "@/components/streamer-dashboard.css"
 import {
-  ArrowUpRight,
-  CircleDashed,
-  LayoutTemplate,
-  PanelsTopLeft,
-  ChevronDown,
-  ChevronUp,
-  Gift,
+  Activity,
+  Hash,
   HardDrive,
-  ListChecks,
   Minus,
-  Pause,
-  Play,
   Plus,
   RotateCcw,
   Settings2,
-  StickyNote,
   Timer,
   X,
+  Volume2,
+  VolumeX,
+  Pencil,
 } from "lucide-react"
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import {
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  type SetStateAction,
+} from "react"
+import {
+  DndContext,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
+import { useReducedMotion } from "@/hooks/use-reduced-motion"
 import { Popover } from "radix-ui"
 import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
+import { StudioActivity, type StudioActivityControls } from "./studio-activity"
+import { StreamerNotes } from "./streamer-notes"
+import { useStreamerNotes } from "@/hooks/use-streamer-notes"
+import { createTimerChime } from "@/domain/timer-chime"
+import { ChatArchiveControls } from "./chat-archive-controls"
 import { FormField, FormSwitch } from "@/components/form-controls"
 import type { AppView } from "@/domain/app-navigation"
-import type { ChatArchiveSummary } from "@/domain/chat"
+import type { ChatArchiveCleanup, ChatArchiveSummary } from "@/domain/chat"
 import type { Contest } from "@/domain/contest"
 import type { Poll } from "@/domain/polls"
 import {
-  activityIds,
-  normalizeActivities,
+  normalizeWidgetOrder,
+  reorderDashboardBlock,
   normalizeCounter,
   defaultCounter,
   counterValue,
   extendTimer,
   defaultTimer,
   normalizeTimer,
-  normalizeWidgetOrder,
   pauseTimer,
-  resetTimer,
+  parseTimerDuration,
+  formatTimerInput,
   startTimer,
   timerRemaining,
   type TimerState,
   type WidgetId,
-  widgetIds,
 } from "@/domain/streamer-widgets"
 
 const titles: Record<WidgetId, string> = {
-  activity: "Активность",
+  activity: "Сейчас",
   timer: "Таймер",
   counter: "Счётчик",
   notes: "Заметки",
+  todos: "Список дел",
   archive: "Архив чата",
 }
 
@@ -79,19 +104,17 @@ function clock(seconds: number) {
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
   const rest = seconds % 60
-  return hours
-    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`
-    : `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`
+  return [hours, minutes, rest]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":")
 }
 
-async function saveMemo(text: string) {
-  const response = await fetch("/api/chat/memo", {
-    method: "POST",
-    keepalive: true,
-    headers: { "Content-Type": "application/json", "X-Poll-Client": "panel" },
-    body: JSON.stringify({ text }),
-  })
-  if (!response.ok) throw new Error("Не удалось сохранить заметки.")
+function messageCountLabel(count: number) {
+  const tail = count % 100
+  if (tail >= 11 && tail <= 14) return "сообщений"
+  if (count % 10 === 1) return "сообщение"
+  if (count % 10 >= 2 && count % 10 <= 4) return "сообщения"
+  return "сообщений"
 }
 
 function RailIconButton({
@@ -122,57 +145,70 @@ export function StreamerDashboard({
   poll,
   contest,
   summary,
+  channelId,
+  onArchiveCleanup,
   onNavigate,
+  order,
+  onOrderChange,
+  blocksAction,
+  activityControls,
 }: {
+  activityControls?: StudioActivityControls
+  order: WidgetId[]
+  onOrderChange: Dispatch<SetStateAction<WidgetId[]>>
+  /** Receives a callback that enters the block arrangement mode. */
+  blocksAction: (arrange: () => void) => ReactNode
   poll: Poll | null
   contest: Contest | null
   summary: ChatArchiveSummary | null
+  channelId: string
+  onArchiveCleanup: (change: ChatArchiveCleanup) => void
   onNavigate: (view: AppView) => void
 }) {
-  const [order, setOrder] = useState<WidgetId[]>(() =>
-    stored("cue-home-widgets", [...widgetIds], normalizeWidgetOrder)
+  const notes = useStreamerNotes(
+    order.includes("notes") || order.includes("todos")
   )
-  const [customizing, setCustomizing] = useState(false)
   const [timer, setTimer] = useState<TimerState>(() =>
     stored("cue-home-timer", defaultTimer, (value) =>
       normalizeTimer(value, Date.now())
     )
   )
+  const [timerReady, setTimerReady] = useState(
+    () =>
+      timer.deadline !== null ||
+      (timer.remaining > 0 && timer.remaining < timer.duration)
+  )
+  const [timerInput, setTimerInput] = useState("")
+  const [timerFinished, setTimerFinished] = useState(false)
+  const timeInput = useRef<HTMLInputElement>(null)
+  const parsedDuration = parseTimerDuration(timerInput)
   const [now, setNow] = useState(() => Date.now())
+  const [chime] = useState(createTimerChime)
   const [counter, setCounter] = useState(() =>
     stored("cue-home-counter", defaultCounter, normalizeCounter)
-  )
-  const [activities, setActivities] = useState(() =>
-    stored(
-      "cue-home-activities",
-      normalizeActivities(null),
-      normalizeActivities
-    )
   )
   const [timerOptions, setTimerOptions] = useState(() =>
     stored(
       "cue-home-timer-options",
-      { label: "Таймер", progress: true },
+      { label: "Таймер", progress: true, sound: true },
       (value) => {
-        const saved = value as { label?: unknown; progress?: unknown } | null
+        const saved = value as {
+          label?: unknown
+          progress?: unknown
+          sound?: unknown
+        } | null
         return {
           label:
             typeof saved?.label === "string"
               ? saved.label.slice(0, 32)
               : "Таймер",
           progress: saved?.progress !== false,
+          sound: saved?.sound !== false,
         }
       }
     )
   )
-  const [memo, setMemo] = useState("")
-  const [memoLoaded, setMemoLoaded] = useState(false)
-  const memoRef = useRef("")
-  const memoDirty = useRef(false)
 
-  useEffect(() => {
-    persist("cue-home-widgets", order)
-  }, [order])
   useEffect(() => {
     persist("cue-home-timer", timer)
   }, [timer])
@@ -180,146 +216,170 @@ export function StreamerDashboard({
     persist("cue-home-counter", counter)
   }, [counter])
   useEffect(() => {
-    persist("cue-home-activities", activities)
-  }, [activities])
-  useEffect(() => {
     persist("cue-home-timer-options", timerOptions)
   }, [timerOptions])
+  useEffect(() => () => chime.dispose(), [chime])
+  const finishTimer = useEffectEvent((deadline: number) => {
+    if (timer.deadline !== deadline) return
+    setTimer((value) => ({ ...value, remaining: 0, deadline: null }))
+    setTimerReady(false)
+    setTimerInput("")
+    setTimerFinished(true)
+    if (timerOptions.sound) chime.play()
+  })
   useEffect(() => {
     if (timer.deadline === null) return
+    const deadline = timer.deadline
     const interval = window.setInterval(() => {
       const current = Date.now()
       setNow(current)
-      setTimer((value) =>
-        value.deadline !== null && value.deadline <= current
-          ? { ...value, remaining: 0, deadline: null }
-          : value
-      )
+      if (deadline <= current) {
+        window.clearInterval(interval)
+        finishTimer(deadline)
+      }
     }, 250)
     return () => window.clearInterval(interval)
   }, [timer.deadline])
-  useEffect(() => {
-    void fetch("/api/chat/memo")
-      .then((response) => response.json())
-      .then((data: { text?: string }) => {
-        if (!memoDirty.current) {
-          setMemo(data.text || "")
-          memoRef.current = data.text || ""
-        }
-        setMemoLoaded(true)
-      })
-      .catch(() => setMemoLoaded(true))
-    return () => {
-      if (memoDirty.current) void saveMemo(memoRef.current).catch(() => {})
-    }
-  }, [])
-  useEffect(() => {
-    if (!memoLoaded || !memoDirty.current) return
-    const timeout = window.setTimeout(() => {
-      void saveMemo(memo)
-        .then(() => {
-          if (memoRef.current === memo) memoDirty.current = false
-        })
-        .catch(() => {})
-    }, 600)
-    return () => window.clearTimeout(timeout)
-  }, [memo, memoLoaded])
-
-  const move = (id: WidgetId, offset: number) =>
-    setOrder((current) => {
-      const index = current.indexOf(id)
-      const nextIndex = index + offset
-      if (index < 0 || nextIndex < 0 || nextIndex >= current.length)
-        return current
-      const next = [...current]
-      ;[next[index], next[nextIndex]] = [next[nextIndex], next[index]]
-      return next
-    })
-  const setDuration = (seconds: number) => {
-    setTimer({ duration: seconds, remaining: seconds, deadline: null })
-    setNow(Date.now())
-  }
   const toggleTimer = () => {
     const current = Date.now()
+    if (!timerReady) {
+      if (parsedDuration === null) return
+      if (timerOptions.sound) void chime.prepare()
+      setTimer(
+        startTimer(
+          {
+            duration: parsedDuration,
+            remaining: parsedDuration,
+            deadline: null,
+          },
+          current
+        )
+      )
+      setTimerReady(true)
+      setTimerInput("")
+      setTimerFinished(false)
+    } else {
+      if (timer.deadline === null && timerOptions.sound) void chime.prepare()
+      setTimer((value) =>
+        value.deadline === null
+          ? startTimer(value, current)
+          : pauseTimer(value, current)
+      )
+    }
     setNow(current)
-    setTimer((value) =>
-      value.deadline === null
-        ? startTimer(value, current)
-        : pauseTimer(value, current)
-    )
   }
   const clearTimer = () => {
-    setTimer((value) => resetTimer(value))
+    setTimer((value) => ({ ...value, remaining: 0, deadline: null }))
+    setTimerReady(false)
+    setTimerInput("")
+    setTimerFinished(false)
     setNow(Date.now())
+  }
+  const editTimer = () => {
+    const current = Date.now()
+    const paused = pauseTimer(timer, current)
+    setTimer(paused)
+    setTimerInput(clock(paused.remaining))
+    setTimerReady(false)
+    setTimerFinished(false)
+    requestAnimationFrame(() => {
+      timeInput.current?.focus()
+      timeInput.current?.select()
+    })
   }
   const remaining = timerRemaining(timer, now)
 
   const widgets: Record<WidgetId, ReactNode> = {
     activity: (
-      <div className="chat-rail-activities">
-        {activities.map((id) => {
-          const live =
-            (id === "polls" && poll?.status === "running") ||
-            (id === "contests" &&
-              Boolean(contest && contest.status !== "finished"))
-          const item = activityLinks[id]
-          const Icon = item.icon
-          const detail =
-            id === "polls" && poll?.status === "running"
-              ? poll.question
-              : id === "contests" && live
-                ? contest?.status === "collecting"
-                  ? "Приём участников"
-                  : "Выбор победителя"
-                : item.detail
-          return (
-            <button
-              key={id}
-              type="button"
-              className="chat-rail-action"
-              data-live={live || undefined}
-              onClick={() => onNavigate(id)}
-            >
-              <Icon aria-hidden="true" />
-              <span>
-                <strong>{item.label}</strong>
-                <small>{detail}</small>
-              </span>
-              <ArrowUpRight
-                className="chat-rail-action-arrow"
-                aria-hidden="true"
-              />
-            </button>
-          )
-        })}
-        {!activities.length && (
-          <span className="chat-rail-empty">
-            Выберите разделы в настройках блока.
-          </span>
-        )}
-      </div>
+      <StudioActivity
+        poll={poll}
+        contest={contest}
+        controls={activityControls}
+        onNavigate={onNavigate}
+      />
     ),
     timer: (
-      <>
+      <form
+        className="chat-rail-inline-timer"
+        onSubmit={(event) => {
+          event.preventDefault()
+          toggleTimer()
+        }}
+      >
         <div className="chat-rail-time-row">
-          <output
-            className="chat-rail-timer"
-            aria-label="Осталось времени"
-            data-finished={remaining === 0 || undefined}
-          >
-            {clock(remaining)}
-          </output>
-          <span className="chat-rail-timer-state" role="status">
-            {remaining === 0
-              ? "Готово"
-              : timer.deadline !== null
-                ? "Идёт"
-                : remaining !== timer.duration
-                  ? "Пауза"
-                  : ""}
+          {timerReady ? (
+            <>
+              <output className="chat-rail-timer" aria-label="Осталось времени">
+                {clock(remaining)}
+              </output>
+              <RailIconButton
+                label="Изменить время таймера"
+                icon={<Pencil />}
+                onClick={editTimer}
+              />
+            </>
+          ) : (
+            <input
+              ref={timeInput}
+              className="chat-rail-time-input"
+              aria-label="Время таймера, часы, минуты и секунды"
+              placeholder="чч:мм:сс"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={8}
+              value={timerInput}
+              onChange={(event) => {
+                const input = event.currentTarget
+                const raw = input.value
+                const caret = input.selectionStart ?? raw.length
+                const formatted = formatTimerInput(raw)
+                const digitsBeforeCaret = raw
+                  .slice(0, caret)
+                  .replace(/\D/g, "").length
+                const forwardDelete =
+                  event.nativeEvent instanceof InputEvent &&
+                  event.nativeEvent.inputType === "deleteContentForward"
+                setTimerInput(formatted)
+                setTimerFinished(false)
+                if (formatted !== raw)
+                  requestAnimationFrame(() => {
+                    if (document.activeElement !== input) return
+                    let position = 0
+                    let digits = 0
+                    while (
+                      position < formatted.length &&
+                      digits < digitsBeforeCaret
+                    ) {
+                      if (/\d/.test(formatted[position])) digits++
+                      position++
+                    }
+                    if (
+                      formatted[position] === ":" &&
+                      (forwardDelete || raw[caret - 1] === ":")
+                    )
+                      position++
+                    input.setSelectionRange(position, position)
+                  })
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                  event.preventDefault()
+                  if (!event.repeat) event.currentTarget.form?.requestSubmit()
+                }
+              }}
+            />
+          )}
+          <span className="sr-only" role="status">
+            {timerFinished
+              ? "Таймер завершён"
+              : timerReady
+                ? timer.deadline === null
+                  ? "Таймер приостановлен"
+                  : "Таймер запущен"
+                : ""}
           </span>
         </div>
-        {timerOptions.progress && (
+        {timerOptions.progress && timerReady && (
           <div className="chat-rail-progress" aria-hidden="true">
             <span
               style={{
@@ -331,20 +391,22 @@ export function StreamerDashboard({
         <div className="chat-rail-timer-controls">
           <button
             className="chat-rail-start"
-            type="button"
-            aria-label={timer.deadline === null ? "Запустить таймер" : "Пауза"}
-            onClick={toggleTimer}
+            type="submit"
+            aria-label={
+              timer.deadline !== null
+                ? "Пауза"
+                : timerReady
+                  ? "Продолжить таймер"
+                  : "Запустить таймер"
+            }
+            disabled={!timerReady && parsedDuration === null}
           >
-            {timer.deadline === null ? (
-              <Play aria-hidden="true" />
-            ) : (
-              <Pause aria-hidden="true" />
-            )}
-            {timer.deadline === null ? "Старт" : "Пауза"}
+            {timer.deadline !== null ? "Пауза" : timerReady ? "Далее" : "Старт"}
           </button>
           <button
             className="chat-rail-add-time"
             type="button"
+            disabled={!timerReady}
             onClick={() => {
               const current = Date.now()
               setNow(current)
@@ -353,13 +415,31 @@ export function StreamerDashboard({
           >
             +30 с
           </button>
+          <button
+            type="button"
+            className="chat-rail-icon-button"
+            aria-label={
+              timerOptions.sound
+                ? "Выключить звук таймера"
+                : "Включить звук таймера"
+            }
+            aria-pressed={timerOptions.sound}
+            onClick={() => {
+              const sound = !timerOptions.sound
+              if (sound) void chime.prepare()
+              setTimerOptions((current) => ({ ...current, sound }))
+            }}
+          >
+            {timerOptions.sound ? <Volume2 /> : <VolumeX />}
+          </button>
           <RailIconButton
             label="Сбросить таймер"
             icon={<RotateCcw />}
             onClick={clearTimer}
+            disabled={!timerReady && !timerInput}
           />
         </div>
-      </>
+      </form>
     ),
     counter: (
       <>
@@ -405,35 +485,23 @@ export function StreamerDashboard({
         </div>
       </>
     ),
-    notes: (
-      <textarea
-        className="chat-rail-note-input"
-        aria-label="Заметки для стрима"
-        placeholder="Что держать под рукой во время эфира…"
-        maxLength={5000}
-        value={memo}
-        onChange={(event) => {
-          setMemo(event.target.value)
-          memoRef.current = event.target.value
-          memoDirty.current = true
-        }}
-      />
-    ),
+    notes: <StreamerNotes task={false} controller={notes} />,
+    todos: <StreamerNotes task controller={notes} />,
     archive: (
-      <>
-        <strong className="chat-rail-archive-count">
-          {summary ? summary.count.toLocaleString("ru") : "—"}
-        </strong>
-        <span className="chat-rail-archive-size">
-          сообщений ·{" "}
-          {summary
-            ? `${(summary.storageBytes / 1024 / 1024).toFixed(1)} МБ`
-            : "0 МБ"}
-        </span>
-        <small className="chat-rail-archive-limit">
-          Лимит: 100 000 записей или 128 МБ
-        </small>
-      </>
+      <div className="chat-rail-archive-summary">
+        <div className="chat-rail-archive-total">
+          <strong>{summary ? summary.count.toLocaleString("ru") : "—"}</strong>
+          <span>{messageCountLabel(summary?.count || 0)}</span>
+        </div>
+        {summary && (
+          <span className="chat-rail-archive-bytes">
+            {(summary.storageBytes / 1024 / 1024).toLocaleString("ru", {
+              maximumFractionDigits: 1,
+            })}{" "}
+            МБ
+          </span>
+        )}
+      </div>
     ),
   }
 
@@ -453,11 +521,6 @@ export function StreamerDashboard({
             }
           />
         </FormField>
-        <TimerDuration
-          key={timer.duration}
-          value={timer.duration}
-          onChange={setDuration}
-        />
         <FormSwitch
           label="Полоса времени"
           checked={timerOptions.progress}
@@ -498,163 +561,344 @@ export function StreamerDashboard({
         />
       </>
     ),
-    activity: (
-      <div>
-        {activityIds.map((id) => (
-          <FormSwitch
-            key={id}
-            label={activityLinks[id].label}
-            checked={activities.includes(id)}
-            onCheckedChange={(checked) =>
-              setActivities((current) =>
-                checked
-                  ? [...current, id]
-                  : current.filter((item) => item !== id)
-              )
-            }
-          />
-        ))}
-      </div>
-    ),
   }
-  return (
-    <aside className="chat-home-rail" aria-label="Инструменты стримера">
-      <div className="chat-rail-top">
-        <button
-          type="button"
-          aria-label={
-            customizing ? "Завершить настройку блоков" : "Настроить блоки"
-          }
-          aria-pressed={customizing}
-          onClick={() => setCustomizing((value) => !value)}
-        >
-          {customizing ? (
-            <X aria-hidden="true" />
+  const visibleOrder = normalizeWidgetOrder(order)
+  const renderBlock = (id: WidgetId) => (
+    <>
+      {id !== "notes" && id !== "todos" && (
+        <div className="chat-rail-heading">
+          <h2>
+            {id === "timer" ? (
+              <Timer aria-hidden="true" />
+            ) : id === "counter" ? (
+              <Hash aria-hidden="true" />
+            ) : id === "activity" ? (
+              <Activity aria-hidden="true" />
+            ) : id === "archive" ? (
+              <HardDrive aria-hidden="true" />
+            ) : null}
+            {id === "timer"
+              ? timerOptions.label || "Таймер"
+              : id === "counter"
+                ? counter.label || "Счётчик"
+                : titles[id]}
+          </h2>
+          {id === "archive" ? (
+            <ChatArchiveControls
+              key={channelId}
+              channelId={channelId}
+              summary={summary}
+              onCleanup={onArchiveCleanup}
+            />
           ) : (
-            <Settings2 aria-hidden="true" />
+            settings[id] && (
+              <Popover.Root>
+                <Popover.Trigger asChild>
+                  <button
+                    className="chat-rail-settings-trigger"
+                    type="button"
+                    aria-label={`Настроить: ${titles[id]}`}
+                  >
+                    <Settings2 aria-hidden="true" />
+                  </button>
+                </Popover.Trigger>
+                <Popover.Portal>
+                  <Popover.Content
+                    className="chat-rail-settings"
+                    side="right"
+                    align="start"
+                    sideOffset={12}
+                    collisionPadding={12}
+                  >
+                    <div className="chat-rail-settings-heading">
+                      <strong>{titles[id]}</strong>
+                      <Popover.Close asChild>
+                        <button
+                          type="button"
+                          aria-label="Закрыть настройки блока"
+                        >
+                          <X aria-hidden="true" />
+                        </button>
+                      </Popover.Close>
+                    </div>
+                    {settings[id]}
+                  </Popover.Content>
+                </Popover.Portal>
+              </Popover.Root>
+            )
           )}
-        </button>
-      </div>
-      {order.map((id, index) => (
-        <section key={id} className="chat-rail-block">
-          <div className="chat-rail-heading">
-            <h2>
-              {id === "timer" ? (
-                <Timer />
-              ) : id === "notes" ? (
-                <StickyNote />
-              ) : id === "archive" ? (
-                <HardDrive />
-              ) : null}
-              {id === "timer"
-                ? timerOptions.label || "Таймер"
-                : id === "counter"
-                  ? counter.label || "Счётчик"
-                  : titles[id]}
-            </h2>
-            {customizing ? (
-              <div className="chat-rail-edit">
-                <RailIconButton
-                  label={`Поднять ${titles[id]}`}
-                  icon={<ChevronUp />}
-                  onClick={() => move(id, -1)}
-                  disabled={index === 0}
-                />
-                <RailIconButton
-                  label={`Опустить ${titles[id]}`}
-                  icon={<ChevronDown />}
-                  onClick={() => move(id, 1)}
-                  disabled={index === order.length - 1}
-                />
-                <RailIconButton
-                  label={`Скрыть ${titles[id]}`}
-                  icon={<X />}
-                  onClick={() =>
-                    setOrder((current) => current.filter((item) => item !== id))
-                  }
-                />
-              </div>
-            ) : (
-              settings[id] && (
-                <Popover.Root>
-                  <Popover.Trigger asChild>
-                    <button
-                      className="chat-rail-settings-trigger"
-                      type="button"
-                      aria-label={`Настроить: ${titles[id]}`}
-                    >
-                      <Settings2 aria-hidden="true" />
-                    </button>
-                  </Popover.Trigger>
-                  <Popover.Portal>
-                    <Popover.Content
-                      className="chat-rail-settings"
-                      side="right"
-                      align="start"
-                      sideOffset={12}
-                      collisionPadding={12}
-                    >
-                      <div className="chat-rail-settings-heading">
-                        <strong>{titles[id]}</strong>
-                        <Popover.Close asChild>
-                          <button
-                            type="button"
-                            aria-label="Закрыть настройки блока"
-                          >
-                            <X aria-hidden="true" />
-                          </button>
-                        </Popover.Close>
-                      </div>
-                      {settings[id]}
-                    </Popover.Content>
-                  </Popover.Portal>
-                </Popover.Root>
-              )
-            )}
-          </div>
-          {widgets[id]}
-        </section>
-      ))}
-      {customizing &&
-        widgetIds.filter((id) => !order.includes(id)).length > 0 && (
-          <div className="chat-rail-hidden">
-            <span>Добавить блок</span>
-            {widgetIds
-              .filter((id) => !order.includes(id))
-              .map((id) => (
-                <button
-                  type="button"
-                  key={id}
-                  onClick={() => setOrder((current) => [...current, id])}
-                >
-                  <Plus aria-hidden="true" />
-                  {titles[id]}
-                </button>
-              ))}
-          </div>
-        )}
-    </aside>
+        </div>
+      )}
+      {widgets[id]}
+    </>
+  )
+  return (
+    <ArrangeableRail
+      order={visibleOrder}
+      onOrderChange={onOrderChange}
+      blocksAction={blocksAction}
+      renderBlock={renderBlock}
+    />
   )
 }
 
-const activityLinks = {
-  polls: { label: "Опрос", icon: ListChecks, detail: "Создать опрос" },
-  contests: { label: "Конкурс", icon: Gift, detail: "Открыть розыгрыш" },
-  "decision-wheel": {
-    label: "Рулетка",
-    icon: CircleDashed,
-    detail: "Выбрать случайно",
-  },
-  presets: {
-    label: "Шаблоны",
-    icon: LayoutTemplate,
-    detail: "Заготовки опросов",
-  },
-  widget: {
-    label: "Виджеты",
-    icon: PanelsTopLeft,
-    detail: "Оформление для OBS",
-  },
+const sortableTransition = {
+  duration: 220,
+  easing: "cubic-bezier(.16,1,.3,1)",
+}
+
+/** Long presses on text fields keep their native behaviour (selection, caret). */
+function startsOnTextField(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    Boolean(
+      target.closest(
+        "input, textarea, select, [contenteditable=''], [contenteditable='true']"
+      )
+    )
+  )
+}
+
+function ArrangeableRail({
+  order,
+  onOrderChange,
+  blocksAction,
+  renderBlock,
+}: {
+  order: WidgetId[]
+  onOrderChange: Dispatch<SetStateAction<WidgetId[]>>
+  /** Receives a callback that enters the block arrangement mode. */
+  blocksAction: (arrange: () => void) => ReactNode
+  renderBlock: (id: WidgetId) => ReactNode
+}) {
+  const reduced = useReducedMotion()
+  const rail = useRef<HTMLElement>(null)
+  const [arrangeRequested, setArranging] = useState(false)
+  const [dragging, setDragging] = useState<WidgetId | null>(null)
+  const [focusRequest, setFocusRequest] = useState(0)
+  const sortable: WidgetId[] = order.filter((id) => id !== "activity")
+  // Nothing left to sort: leave the mode instead of keeping an empty edit state.
+  const arranging = arrangeRequested && sortable.length > 0
+  // Outside the arrangement mode a block is picked up only after a long press,
+  // like the iPhone home screen; inside it any short drag moves a block.
+  const mouse = useMemo(
+    () => ({
+      activationConstraint: arranging
+        ? { distance: 4 }
+        : { delay: 450, tolerance: 6 },
+    }),
+    [arranging]
+  )
+  const touch = useMemo(
+    () => ({
+      activationConstraint: arranging
+        ? { delay: 90, tolerance: 8 }
+        : { delay: 450, tolerance: 8 },
+    }),
+    [arranging]
+  )
+  const sensors = useSensors(
+    useSensor(MouseSensor, mouse),
+    useSensor(TouchSensor, touch),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+  const finish = () => {
+    setArranging(false)
+    setDragging(null)
+  }
+  const exitOnOutsidePress = useEffectEvent((event: PointerEvent) => {
+    const target = event.target as Node | null
+    if (dragging || !target) return
+    if (target === rail.current || !rail.current?.contains(target)) finish()
+  })
+  const exitOnEscape = useEffectEvent((event: KeyboardEvent) => {
+    if (event.key === "Escape" && !dragging) {
+      event.preventDefault()
+      finish()
+    }
+  })
+  // Entering the mode from the menu moves keyboard focus onto the first block.
+  useEffect(() => {
+    if (focusRequest)
+      rail.current
+        ?.querySelector<HTMLElement>(".chat-rail-block[data-sortable]")
+        ?.focus()
+  }, [focusRequest])
+  useEffect(() => {
+    if (!arranging) return
+    const press = (event: PointerEvent) => exitOnOutsidePress(event)
+    const key = (event: KeyboardEvent) => exitOnEscape(event)
+    document.addEventListener("pointerdown", press, true)
+    document.addEventListener("keydown", key)
+    return () => {
+      document.removeEventListener("pointerdown", press, true)
+      document.removeEventListener("keydown", key)
+    }
+  }, [arranging])
+  const label = (id: string | number) => titles[id as WidgetId] || "Блок"
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      accessibility={{
+        screenReaderInstructions: {
+          draggable:
+            "Нажмите пробел, чтобы взять блок. Стрелки меняют место. Пробел подтверждает, Escape отменяет.",
+        },
+        announcements: {
+          onDragStart: ({ active }) =>
+            `${label(active.id)}: перенос. Используйте стрелки.`,
+          onDragOver: ({ active, over }) =>
+            over
+              ? `${label(active.id)}: позиция ${sortable.indexOf(over.id as WidgetId) + 1} из ${sortable.length}.`
+              : "За пределами списка. Отпустите для отмены.",
+          onDragEnd: ({ over }) =>
+            over ? "Порядок блоков сохранён." : "Перенос отменён.",
+          onDragCancel: () => "Перенос отменён.",
+        },
+      }}
+      onDragStart={({ active }) => {
+        setArranging(true)
+        setDragging(active.id as WidgetId)
+      }}
+      onDragCancel={() => setDragging(null)}
+      onDragEnd={({ active, over }) => {
+        setDragging(null)
+        if (over && active.id !== over.id)
+          onOrderChange((current) =>
+            reorderDashboardBlock(
+              current,
+              active.id as WidgetId,
+              over.id as WidgetId
+            )
+          )
+      }}
+    >
+      <aside
+        ref={rail}
+        className="chat-home-rail"
+        aria-label="Инструменты стримера"
+        data-arranging={arranging || undefined}
+        data-dragging={dragging ? true : undefined}
+      >
+        <div className="studio-rail-toolbar">
+          {arranging ? (
+            <div className="studio-arrange-bar" role="status">
+              <span>Перетащите блоки</span>
+              <button type="button" onClick={finish}>
+                Готово
+              </button>
+            </div>
+          ) : (
+            blocksAction(() => {
+              setArranging(true)
+              setFocusRequest((value) => value + 1)
+            })
+          )}
+        </div>
+        <SortableContext items={sortable} strategy={rectSortingStrategy}>
+          {order.map((id) =>
+            id === "activity" ? (
+              <section
+                key={id}
+                className="chat-rail-block"
+                data-widget={id}
+                data-pinned={arranging || undefined}
+              >
+                <div className="chat-rail-block-body" inert={arranging}>
+                  {renderBlock(id)}
+                </div>
+              </section>
+            ) : (
+              <SortableRailBlock
+                key={id}
+                id={id}
+                arranging={arranging}
+                reduced={reduced}
+                onRemove={() => {
+                  if (sortable.length === 1) finish()
+                  onOrderChange((current) =>
+                    current.filter((item) => item !== id)
+                  )
+                }}
+              >
+                {renderBlock(id)}
+              </SortableRailBlock>
+            )
+          )}
+        </SortableContext>
+      </aside>
+    </DndContext>
+  )
+}
+
+function SortableRailBlock({
+  id,
+  arranging,
+  reduced,
+  onRemove,
+  children,
+}: {
+  id: WidgetId
+  arranging: boolean
+  reduced: boolean
+  onRemove: () => void
+  children: ReactNode
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id, transition: reduced ? null : sortableTransition })
+  return (
+    <section
+      ref={setNodeRef}
+      className="chat-rail-block"
+      data-widget={id}
+      data-sortable
+      data-dragging={isDragging || undefined}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      {...(arranging
+        ? {
+            ...attributes,
+            "aria-label": `${titles[id]}: переместить`,
+            onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) =>
+              listeners?.onKeyDown?.(event),
+          }
+        : {})}
+      onMouseDown={(event) => {
+        if (!arranging && startsOnTextField(event.target)) return
+        listeners?.onMouseDown?.(event)
+      }}
+      onTouchStart={(event) => {
+        if (!arranging && startsOnTextField(event.target)) return
+        listeners?.onTouchStart?.(event)
+      }}
+      onContextMenu={(event) => {
+        if (!startsOnTextField(event.target)) event.preventDefault()
+      }}
+    >
+      {arranging && (
+        <button
+          type="button"
+          className="chat-rail-remove"
+          aria-label={`Убрать блок ${titles[id]}`}
+          onMouseDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+          onClick={onRemove}
+        >
+          <Minus aria-hidden="true" />
+        </button>
+      )}
+      <div className="chat-rail-block-body" inert={arranging}>
+        {children}
+      </div>
+    </section>
+  )
 }
 
 function CounterValue({
@@ -730,75 +974,5 @@ function NumberSetting({
         }}
       />
     </FormField>
-  )
-}
-function TimerDuration({
-  value,
-  onChange,
-}: {
-  value: number
-  onChange: (value: number) => void
-}) {
-  const [minutes, setMinutes] = useState(String(Math.floor(value / 60)))
-  const [seconds, setSeconds] = useState(String(value % 60))
-  const duration = Number(minutes) * 60 + Number(seconds)
-  const valid =
-    minutes.trim() &&
-    seconds.trim() &&
-    Number.isInteger(Number(minutes)) &&
-    Number.isInteger(Number(seconds)) &&
-    Number(minutes) >= 0 &&
-    Number(seconds) >= 0 &&
-    Number(seconds) < 60 &&
-    duration >= 10 &&
-    duration <= 36000
-  return (
-    <form
-      className="chat-rail-duration"
-      onSubmit={(event) => {
-        event.preventDefault()
-        if (valid) onChange(duration)
-      }}
-    >
-      <div className="chat-rail-duration-inputs">
-        <FormField label="Минуты">
-          <Input
-            aria-label="Минуты таймера"
-            type="number"
-            min={0}
-            max={600}
-            value={minutes}
-            onChange={(event) => setMinutes(event.target.value)}
-          />
-        </FormField>
-        <FormField label="Секунды">
-          <Input
-            aria-label="Секунды таймера"
-            type="number"
-            min={0}
-            max={59}
-            value={seconds}
-            onChange={(event) => setSeconds(event.target.value)}
-          />
-        </FormField>
-      </div>
-      <div className="chat-rail-duration-presets">
-        {[1, 5, 10, 30].map((minutes) => (
-          <button
-            key={minutes}
-            type="button"
-            onClick={() => {
-              setMinutes(String(minutes))
-              setSeconds("0")
-            }}
-          >
-            {minutes} мин
-          </button>
-        ))}
-      </div>
-      <Button type="submit" variant="secondary" disabled={!valid}>
-        Установить время
-      </Button>
-    </form>
   )
 }

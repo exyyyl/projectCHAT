@@ -1,27 +1,22 @@
+import { TemplateSaveButton, type SaveTemplate } from "./template-save-button"
+import { wheelTemplate, type SavedTemplate } from "@/domain/templates"
 import { useEffect, useId, useRef, useState } from "react"
 import {
-  Plus,
   RotateCcw,
-  Trash2,
   CircleDashed,
   ChevronRight,
+  Plus,
+  X,
+  ClipboardList,
+  Check,
+  History,
 } from "lucide-react"
 import gsap from "gsap"
 import { useGSAP } from "@gsap/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  FormField,
-  FormStack,
-  FormSwitch,
-  FormSegmented,
-} from "@/components/form-controls"
-import {
-  StudioWorkspace,
-  StudioStage,
-  StudioRail,
-} from "@/components/page-layout"
+import { FormField, FormSwitch } from "@/components/form-controls"
 import { useToast } from "@/components/ui/toast"
 import {
   availableDecisions,
@@ -48,16 +43,37 @@ function loadWheel() {
   }
 }
 
-export function DecisionWheelPage() {
-  const [state, setState] = useState<DecisionState>(loadWheel)
+export function DecisionWheelPage({
+  template,
+  onSaveTemplate,
+  onSpinningChange,
+}: {
+  template?: Extract<SavedTemplate, { kind: "wheel" }>
+  onSaveTemplate?: SaveTemplate
+  onSpinningChange?: (spinning: boolean) => void
+}) {
+  const [state, setState] = useState<DecisionState>(() => {
+    const saved = template
+      ? { ...template.data, excluded: [], history: [] }
+      : loadWheel()
+    return saved.mode === "list" && saved.options.length === 0
+      ? {
+          ...saved,
+          options: [
+            { id: crypto.randomUUID(), label: "" },
+            { id: crypto.randomUUID(), label: "" },
+          ],
+        }
+      : saved
+  })
   const [spinning, setSpinning] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulk, setBulk] = useState("")
   const [result, setResult] = useState<string | null>(null)
   const [presentation, setPresentation] = useState<{
     entries: DecisionOption[]
     winnerIndex: number
   } | null>(null)
-  const [bulkOpen, setBulkOpen] = useState(false)
-  const [bulk, setBulk] = useState("")
   const reel = useRef<HTMLDivElement>(null)
   const spinLock = useRef(false)
   const saveWarning = useRef(false)
@@ -102,12 +118,16 @@ export function DecisionWheelPage() {
       entries.push(selected, available[0], available.at(-1)!)
       setPresentation({ entries, winnerIndex })
       setSpinning(true)
+      onSpinningChange?.(true)
       setResult(null)
       gsap.fromTo(
         reel.current,
         { y: 0 },
         {
-          y: (2 - winnerIndex) * rowHeight,
+          y:
+            ((reel.current?.parentElement?.clientHeight || 320) - rowHeight) /
+              2 -
+            winnerIndex * rowHeight,
           duration: window.matchMedia("(prefers-reduced-motion: reduce)")
             .matches
             ? 0
@@ -118,6 +138,7 @@ export function DecisionWheelPage() {
             setResult(selected.label.trim())
             spinLock.current = false
             setSpinning(false)
+            onSpinningChange?.(false)
           },
         }
       )
@@ -134,166 +155,87 @@ export function DecisionWheelPage() {
       ...current,
       mode,
       withoutRepeats: mode === "list",
+      options:
+        mode === "list" && !current.options.length
+          ? [
+              { id: crypto.randomUUID(), label: "" },
+              { id: crypto.randomUUID(), label: "" },
+            ]
+          : current.options,
     }))
     setResult(null)
     setPresentation(null)
   }
-  const addOption = () =>
-    setState((current) => ({
-      ...current,
-      options: [...current.options, { id: crypto.randomUUID(), label: "" }],
-    }))
-  const importOptions = () => {
-    const seen = new Set(
-      state.options.map((option) => option.label.trim().toLocaleLowerCase("ru"))
-    )
-    const additions = bulk
-      .split(/\r?\n/)
-      .map((label) => label.trim().slice(0, 120))
-      .filter((label) => {
-        const normalized = label.toLocaleLowerCase("ru")
-        if (!label || seen.has(normalized)) return false
-        seen.add(normalized)
-        return true
-      })
-    if (state.options.length + additions.length > 40) {
-      showToast({
-        message: "В рулетке может быть до 40 вариантов",
-        tone: "error",
-      })
+  const listError =
+    state.mode === "list" &&
+    state.options.some((option) => option.label.length > 120)
+      ? "В одном варианте может быть до 120 символов"
+      : null
+  const changeOptions = (text: string) => {
+    const lines = text ? text.split(/\r?\n/) : []
+    if (lines.length > 40) {
+      showToast({ message: "Можно добавить до 40 вариантов", tone: "warning" })
       return
     }
-    setState((current) => ({
-      ...current,
-      options: [
-        ...current.options,
-        ...additions.map((label) => ({ id: crypto.randomUUID(), label })),
-      ],
-    }))
-    setBulk("")
-    setBulkOpen(false)
+    setState((current) => {
+      const used = new Set<string>()
+      const next = lines.map((label, index) => {
+        const matching = current.options.find(
+          (option) => !used.has(option.id) && option.label === label
+        )
+        const previous = matching || current.options[index]
+        const id =
+          previous && !used.has(previous.id) ? previous.id : crypto.randomUUID()
+        used.add(id)
+        return { id, label }
+      })
+      return {
+        ...current,
+        options: next,
+        excluded: current.excluded.filter((id) => used.has(id)),
+      }
+    })
   }
 
   return (
-    <div className="roulette-page h-full">
-      <StudioWorkspace className="roulette-workspace" aria-label="Рулетка">
-        <StudioStage className="roulette-stage">
-          <div className="roulette-canvas">
-            {presentation && (
-              <div className="roulette-marker" aria-hidden="true">
-                <ChevronRight />
-              </div>
-            )}
-            <div className="roulette-window" aria-hidden="true">
-              <div
-                ref={reel}
-                className={presentation ? "roulette-reel" : "hidden"}
-              >
-                {presentation?.entries.map((option, index) => (
-                  <div
-                    key={index + "-" + option.id}
-                    className="roulette-row"
-                    data-winner={
-                      (!spinning && index === presentation.winnerIndex) ||
-                      undefined
-                    }
-                  >
-                    <span>{option.label.trim()}</span>
-                  </div>
-                ))}
-              </div>
+    <section className="roulette-page h-full" aria-label="Рулетка">
+      <div className="template-filters" role="group" aria-label="Режим рулетки">
+        {(
+          [
+            ["list", "Список"],
+            ["number", "Число"],
+            ["yes-no", "Да / нет"],
+          ] as const
+        ).map(([mode, label]) => (
+          <Button
+            key={mode}
+            variant={state.mode === mode ? "secondary" : "ghost"}
+            size="sm"
+            aria-pressed={state.mode === mode}
+            disabled={spinning}
+            onClick={() => changeMode(mode)}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+      <div className="roulette-form-layout">
+        <div className="roulette-editor">
+          <div className="roulette-block">
+            <div className="roulette-block-heading">
+              <h2>{state.mode === "number" ? "Диапазон" : "Варианты"}</h2>
+              {state.mode === "list" && <span>{options.length}/40</span>}
             </div>
-            {!presentation && (
-              <div className="roulette-ready">
-                <CircleDashed
-                  className="size-7 text-muted-foreground"
-                  strokeWidth={1.5}
-                />
-                <p className="text-lg font-medium">
-                  {state.mode === "list" && options.length < 2
-                    ? "Добавьте варианты"
-                    : "Готово к выбору"}
-                </p>
-              </div>
-            )}
-          </div>
-          <div className="roulette-controls">
-            <p
-              className="mb-4 text-center text-xs text-muted-foreground"
-              aria-live="polite"
-            >
-              {spinning
-                ? "Выбираем…"
-                : rangeError ||
-                  (state.mode === "list" && options.length < 2
-                    ? "Минимум 2 разных варианта"
-                    : !available.length
-                      ? "Варианты закончились — начните заново"
-                      : "Доступно: " + available.length)}
-              <span className="sr-only">{result && "Выбрано: " + result}</span>
-            </p>
-            <div className="flex gap-2">
-              <Button
-                className="flex-1"
-                disabled={spinning || !canSpin}
-                onClick={spin}
-              >
-                <CircleDashed />
-                {spinning ? "Выбираем…" : "Крутить"}
-              </Button>
-              <Button
-                variant="secondary"
-                size="icon"
-                aria-label="Начать заново"
-                disabled={
-                  spinning || (!state.excluded.length && !state.history.length)
-                }
-                onClick={reset}
-              >
-                <RotateCcw />
-              </Button>
-            </div>
-          </div>
-        </StudioStage>
-        <StudioRail>
-          <FormStack>
-            <FormSegmented
-              label="Режим"
-              value={state.mode}
-              options={[
-                ["list", "Список"],
-                ["number", "Число"],
-                ["yes-no", "Да / нет"],
-              ]}
-              disabled={spinning}
-              onChange={changeMode}
-            />
             {state.mode === "list" && (
-              <div>
-                <div className="mb-3 flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">
-                    Варианты
-                  </span>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {state.options.length}/40
-                  </span>
-                </div>
-                <div className="decision-options space-y-2">
+              <>
+                <div className="space-y-2">
                   {state.options.map((option, index) => (
-                    <div
-                      key={option.id}
-                      className="flex items-center gap-2"
-                      data-excluded={
-                        (state.withoutRepeats &&
-                          state.excluded.includes(option.id)) ||
-                        undefined
-                      }
-                    >
+                    <div key={option.id} className="roulette-option-row">
                       <Input
-                        aria-label={"Вариант " + (index + 1)}
-                        placeholder={"Вариант " + (index + 1)}
-                        value={option.label}
+                        aria-label={`Вариант ${index + 1}`}
+                        placeholder={`Вариант ${index + 1}`}
                         maxLength={120}
+                        value={option.label}
                         disabled={spinning}
                         onChange={(event) =>
                           setState((current) => ({
@@ -308,9 +250,9 @@ export function DecisionWheelPage() {
                       />
                       <Button
                         variant="ghost"
-                        size="icon-sm"
-                        aria-label={"Удалить вариант " + (index + 1)}
-                        disabled={spinning}
+                        size="icon"
+                        aria-label={`Удалить вариант ${index + 1}`}
+                        disabled={spinning || state.options.length <= 2}
                         onClick={() =>
                           setState((current) => ({
                             ...current,
@@ -323,32 +265,42 @@ export function DecisionWheelPage() {
                           }))
                         }
                       >
-                        <Trash2 className="size-3.5" />
+                        <X />
                       </Button>
                     </div>
                   ))}
                 </div>
-                <div className="mt-2 flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     variant="ghost"
                     size="sm"
                     disabled={spinning || state.options.length >= 40}
-                    onClick={addOption}
+                    onClick={() =>
+                      setState((current) => ({
+                        ...current,
+                        options: [
+                          ...current.options,
+                          { id: crypto.randomUUID(), label: "" },
+                        ],
+                      }))
+                    }
                   >
                     <Plus />
-                    Вариант
+                    Добавить вариант
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
-                    disabled={spinning || state.options.length >= 40}
-                    onClick={() => setBulkOpen(!bulkOpen)}
+                    aria-expanded={bulkOpen}
+                    disabled={spinning}
+                    onClick={() => setBulkOpen((value) => !value)}
                   >
-                    Добавить списком
+                    <ClipboardList />
+                    Вставить список
                   </Button>
                 </div>
                 {bulkOpen && (
-                  <div className="mt-4">
+                  <div className="space-y-3">
                     <FormField
                       label="По одному варианту на строку"
                       htmlFor={id + "-bulk"}
@@ -356,30 +308,50 @@ export function DecisionWheelPage() {
                       <Textarea
                         id={id + "-bulk"}
                         value={bulk}
+                        maxLength={4840}
                         disabled={spinning}
                         onChange={(event) => setBulk(event.target.value)}
                         placeholder={"Minecraft\nValorant\nHollow Knight"}
                       />
+                    </FormField>
+                    <div className="flex justify-end">
                       <Button
                         variant="secondary"
                         size="sm"
                         disabled={spinning || !bulk.trim()}
-                        onClick={importOptions}
+                        onClick={() => {
+                          if (bulk.split(/\r?\n/).length <= 40) {
+                            changeOptions(bulk)
+                            setBulkOpen(false)
+                            setBulk("")
+                          } else
+                            showToast({
+                              message: "Можно добавить до 40 вариантов",
+                              tone: "warning",
+                            })
+                        }}
                       >
-                        Добавить
+                        Заменить варианты
                       </Button>
-                    </FormField>
+                    </div>
                   </div>
                 )}
-              </div>
+                {listError && (
+                  <p role="alert" className="text-sm text-destructive">
+                    {listError}
+                  </p>
+                )}
+              </>
             )}
             {state.mode === "number" && (
-              <div>
+              <>
                 <div className="grid grid-cols-2 gap-3">
                   <FormField label="От" htmlFor={id + "-min"}>
                     <Input
                       id={id + "-min"}
                       type="number"
+                      min={-1000000}
+                      max={1000000}
                       step="1"
                       value={state.minimum}
                       disabled={spinning}
@@ -396,6 +368,8 @@ export function DecisionWheelPage() {
                     <Input
                       id={id + "-max"}
                       type="number"
+                      min={-1000000}
+                      max={1000000}
                       step="1"
                       value={state.maximum}
                       disabled={spinning}
@@ -410,40 +384,138 @@ export function DecisionWheelPage() {
                   </FormField>
                 </div>
                 {rangeError && (
-                  <p role="alert" className="mt-2 text-xs text-destructive">
+                  <p role="alert" className="text-sm text-destructive">
                     {rangeError}
                   </p>
                 )}
+              </>
+            )}
+            {state.mode === "yes-no" && (
+              <div className="roulette-answers">
+                <span>Да</span>
+                <span>Нет</span>
               </div>
             )}
-            <FormSwitch
-              label="Без повторов"
-              checked={state.withoutRepeats}
-              disabled={spinning}
-              onCheckedChange={(withoutRepeats) =>
-                setState((current) => ({ ...current, withoutRepeats }))
-              }
-            />
-            {!!state.history.length && (
-              <div>
-                <span className="mb-3 block text-xs font-medium text-muted-foreground">
+          </div>
+          {!!state.history.length && (
+            <div className="roulette-block">
+              <div className="roulette-block-heading">
+                <h2>
+                  <History aria-hidden="true" />
                   История
-                </span>
-                <ol className="space-y-2">
-                  {state.history.map((label, index) => (
-                    <li
-                      key={index + "-" + label}
-                      className="truncate text-sm text-foreground/80"
+                </h2>
+                <span>{state.history.length}</span>
+              </div>
+              <ol className="roulette-history">
+                {state.history.map((label, index) => (
+                  <li key={index + "-" + label}>
+                    <span
+                      className="roulette-history-position"
+                      aria-hidden="true"
                     >
-                      {label}
-                    </li>
-                  ))}
-                </ol>
+                      {state.history.length - index}
+                    </span>
+                    <span>{label}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
+        <div className="roulette-block roulette-runner">
+          <div className="roulette-block-heading">
+            <h2>Результат</h2>
+            {onSaveTemplate && (
+              <TemplateSaveButton
+                iconOnly
+                kind="wheel"
+                data={wheelTemplate(state)}
+                current={template}
+                onSave={onSaveTemplate}
+                disabled={
+                  spinning ||
+                  (state.mode === "list" && options.length < 2) ||
+                  !!rangeError ||
+                  !!listError
+                }
+              />
+            )}
+          </div>
+          <div className="roulette-canvas">
+            <div className="roulette-marker" aria-hidden="true">
+              <ChevronRight />
+            </div>
+            <div className="roulette-window" aria-hidden="true">
+              <div
+                ref={reel}
+                className="roulette-reel"
+                style={{ visibility: spinning ? "visible" : "hidden" }}
+              >
+                {presentation?.entries.map((option, index) => (
+                  <div key={index + "-" + option.id} className="roulette-row">
+                    <span>{option.label.trim()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {!spinning && (
+              <div
+                className="roulette-settled"
+                data-result={Boolean(result) || undefined}
+              >
+                {result ||
+                  (canSpin
+                    ? "Готова к запуску"
+                    : state.mode === "list" && options.length < 2
+                      ? "Добавьте варианты"
+                      : "Начните заново")}
               </div>
             )}
-          </FormStack>
-        </StudioRail>
-      </StudioWorkspace>
-    </div>
+          </div>
+          <FormSwitch
+            label="Без повторов"
+            checked={state.withoutRepeats}
+            disabled={spinning}
+            onCheckedChange={(withoutRepeats) =>
+              setState((current) => ({ ...current, withoutRepeats }))
+            }
+          />
+          {!available.length && options.length >= 2 && (
+            <div className="roulette-exhausted" role="status">
+              <Check aria-hidden="true" />
+              <span>Все варианты выпали</span>
+              <button type="button" onClick={reset}>
+                Начать заново
+              </button>
+            </div>
+          )}
+          <div className="roulette-run-actions">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Начать заново"
+              disabled={
+                spinning || (!state.excluded.length && !state.history.length)
+              }
+              onClick={reset}
+            >
+              <RotateCcw />
+            </Button>
+            <Button
+              type="button"
+              disabled={spinning || !canSpin || !!listError}
+              onClick={spin}
+            >
+              <CircleDashed />
+              {spinning ? "Выбираем…" : "Крутить"}
+            </Button>
+          </div>
+        </div>
+      </div>
+      <p className="sr-only" role="status">
+        {spinning ? "Выбираем…" : result ? "Выбрано: " + result : ""}
+      </p>
+    </section>
   )
 }

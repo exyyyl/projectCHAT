@@ -1,3 +1,5 @@
+import type { WidgetFont } from "../../../../public/widget-fonts.js"
+import type { SavedTemplate } from "./templates"
 import type { ContestOverlaySettings } from "../../../../public/contest-overlay-model.js"
 import type { ChatOverlaySettings } from "../../../../public/chat-overlay-model.js"
 export type PollOption = {
@@ -56,7 +58,7 @@ export type WidgetSettings = {
   titleSize: "small" | "medium" | "large"
   width: "narrow" | "medium" | "wide"
   opacity: number
-  font: "geist" | "system" | "mono"
+  font: WidgetFont
   optionStyle: "rows" | "cards" | "outline" | "fill"
   optionSize: "small" | "medium" | "large"
   keywordStyle: "outline" | "filled" | "text"
@@ -66,7 +68,8 @@ export type WidgetSettings = {
   showBars: boolean
   showVotes: boolean
   showPercentages: boolean
-  layout: "vertical" | "horizontal"
+  layout: "vertical" | "horizontal" | "grid"
+  alignment: "left" | "center"
   panelColor: string
   textColor: string
   mutedColor: string
@@ -89,6 +92,7 @@ export type ServerState = {
   serverNow: number
   draft: Draft
   presets: Preset[]
+  templates?: SavedTemplate[]
   widget: WidgetSettings
   contestOverlay: ContestOverlaySettings
   chatOverlay: ChatOverlaySettings

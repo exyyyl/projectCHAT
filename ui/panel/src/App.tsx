@@ -1,7 +1,9 @@
 import { useEffect, useReducer, useState } from "react"
 import { AppLoadingSkeleton } from "@/components/loading-skeletons"
+import { SectionTransition } from "@/components/section-transition"
 import {
   Gift,
+  HandCoins,
   LayoutTemplate,
   ListChecks,
   PanelsTopLeft,
@@ -19,7 +21,15 @@ import { ChatHomePage } from "@/components/chat-home-page"
 import { DecisionWheelPage } from "@/components/decision-wheel-page"
 import { PollWorkspace } from "@/components/poll-workspace"
 import { PresetDialogs } from "@/components/preset-dialogs"
-import { PresetLibrary } from "@/components/preset-library"
+import { TemplateLibrary } from "@/components/template-library"
+import type { SaveTemplate } from "@/components/template-save-button"
+import {
+  type LibraryTemplate,
+  type LibraryKind,
+  type TemplateKind,
+} from "@/domain/templates"
+import type { WidgetKind } from "@/components/widget-kind-tabs"
+import type { SettingsSection } from "@/domain/settings-navigation"
 import { SettingsPage } from "@/components/settings-page"
 import { TwitchAccount } from "@/components/twitch-account"
 import { WidgetPage } from "@/components/widget-page"
@@ -33,6 +43,7 @@ import { useDemoMode } from "@/hooks/use-demo-mode"
 import {
   initialNavigation,
   isViewAvailable,
+  isSidebarCollapsed,
   navigationReducer,
   type NavigationState,
   type NavigationAction,
@@ -79,6 +90,12 @@ const newTabItems = [
     label: "Виджеты",
     description: "Оформление для OBS",
     icon: PanelsTopLeft,
+  },
+  {
+    id: "donations",
+    label: "Донаты",
+    description: "",
+    icon: HandCoins,
   },
   {
     id: "settings",
@@ -139,9 +156,14 @@ function AppContent() {
   )
   const [compactPinned, setCompactPinned] = useState(false)
   const [sidebarPeek, setSidebarPeek] = useState(false)
-  const sidebarCollapsed = compact || sidebarManuallyCollapsed
+  const sidebarCollapsed = isSidebarCollapsed(
+    view,
+    compact,
+    sidebarManuallyCollapsed
+  )
   const hoverSidebarOpen = sidebarCollapsed && (sidebarPeek || compactPinned)
   const toggleSidebar = () => {
+    if (view === "settings") return
     if (compact) {
       setCompactPinned((current) => !current)
       setSidebarPeek(false)
@@ -204,10 +226,13 @@ function AppContent() {
 
   if (!state || !draft)
     return (
-      <div className="app-shell">
+      <div
+        className="app-shell"
+        data-settings={view === "settings" || undefined}
+      >
         <AppTitleBar
           sidebarCollapsed={sidebarCollapsed && !compactPinned}
-          onToggleSidebar={toggleSidebar}
+          onToggleSidebar={view === "settings" ? undefined : toggleSidebar}
         />
         <AppLoadingSkeleton sidebarVisible={!sidebarCollapsed} />
         <ToastViewport onOpenDiagnostics={openDiagnostics} />
@@ -215,10 +240,10 @@ function AppContent() {
     )
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-settings={view === "settings" || undefined}>
       <AppTitleBar
         sidebarCollapsed={sidebarCollapsed && !compactPinned}
-        onToggleSidebar={toggleSidebar}
+        onToggleSidebar={view === "settings" ? undefined : toggleSidebar}
         tabs={navigation.tabs}
         activeId={navigation.activeId}
         onSelect={(id) => dispatch({ type: "select", id })}
@@ -230,6 +255,20 @@ function AppContent() {
         <AnimatedSidebar collapsed={sidebarCollapsed}>
           <AppSidebar
             view={view}
+            settings={{
+              section: activeTab.settingsSection || "general",
+              onSelect: (section) =>
+                dispatch({ type: "settings-section", section }),
+              onExit: () =>
+                navigate(
+                  activeTab.history
+                    .slice(0, activeTab.position)
+                    .findLast(
+                      (item): item is AppView =>
+                        item !== "settings" && item !== "new"
+                    ) || "home"
+                ),
+            }}
             connected={connected}
             poll={poll}
             contest={contestController.contest}
@@ -238,7 +277,10 @@ function AppContent() {
               <TwitchAccount
                 state={twitch}
                 active={view === "settings"}
-                onClick={() => navigate("settings")}
+                onClick={() => {
+                  dispatch({ type: "settings-section", section: "general" })
+                  navigate("settings")
+                }}
               />
             }
           />
@@ -256,6 +298,26 @@ function AppContent() {
             >
               <AppSidebar
                 view={view}
+                settings={{
+                  section: activeTab.settingsSection || "general",
+                  onSelect: (section) => {
+                    dispatch({ type: "settings-section", section })
+                    setSidebarPeek(false)
+                    setCompactPinned(false)
+                  },
+                  onExit: () => {
+                    navigate(
+                      activeTab.history
+                        .slice(0, activeTab.position)
+                        .findLast(
+                          (item): item is AppView =>
+                            item !== "settings" && item !== "new"
+                        ) || "home"
+                    )
+                    setSidebarPeek(false)
+                    setCompactPinned(false)
+                  },
+                }}
                 connected={connected}
                 poll={poll}
                 contest={contestController.contest}
@@ -269,6 +331,7 @@ function AppContent() {
                     state={twitch}
                     active={view === "settings"}
                     onClick={() => {
+                      dispatch({ type: "settings-section", section: "general" })
                       navigate("settings")
                       setSidebarPeek(false)
                       setCompactPinned(false)
@@ -281,21 +344,34 @@ function AppContent() {
         )}
 
         <main className="app-content">
-          {navigation.tabs.map((tab) => (
-            <div
-              key={tab.id}
-              className={tab.id === navigation.activeId ? "h-full" : "hidden"}
-            >
-              <TabWorkspace
-                tab={tab}
-                controller={controller}
-                contestController={contestController}
-                onNavigate={(next) =>
-                  dispatch({ type: "navigate", tabId: tab.id, view: next })
-                }
-              />
-            </div>
-          ))}
+          <SectionTransition
+            transitionKey={`${activeTab.id}:${view}`}
+            className="h-full"
+          >
+            {navigation.tabs.map((tab) => (
+              <div
+                key={tab.id}
+                className={tab.id === navigation.activeId ? "h-full" : "hidden"}
+              >
+                <TabWorkspace
+                  tab={tab}
+                  active={tab.id === navigation.activeId}
+                  onSettingsSectionChange={(section) =>
+                    dispatch({
+                      type: "settings-section",
+                      tabId: tab.id,
+                      section,
+                    })
+                  }
+                  controller={controller}
+                  contestController={contestController}
+                  onNavigate={(next) =>
+                    dispatch({ type: "navigate", tabId: tab.id, view: next })
+                  }
+                />
+              </div>
+            ))}
+          </SectionTransition>
         </main>
 
         <PresetDialogs
@@ -314,32 +390,42 @@ function AppContent() {
 
 function TabWorkspace({
   tab,
+  active,
+  onSettingsSectionChange,
   controller,
   contestController,
   onNavigate: navigate,
 }: {
   tab: WorkspaceTab
+  active: boolean
+  onSettingsSectionChange: (section: SettingsSection) => void
   controller: ReturnType<typeof usePollController>
   contestController: ReturnType<typeof useContestController>
   onNavigate: (view: AppView) => void
 }) {
-  const {
-    state,
-    draft,
-    twitch,
-    connected,
-    busy,
-    poll,
-    canEdit,
-    canApplyPreset,
-    changeDraft,
-  } = controller
+  const { state, draft, twitch, connected, busy, poll, canEdit, changeDraft } =
+    controller
   const { enabled: demoEnabled } = useDemoMode()
   const [presetDialog, setPresetDialog] = useState<PresetDialogState | null>(
     null
   )
-  const [selectedPreset, setSelectedPreset] = useState<string | null>(null)
+  const [loadedTemplateIds, setLoadedTemplateIds] = useState<
+    Partial<Record<TemplateKind, string>>
+  >({})
+  const [templateGeneration, setTemplateGeneration] = useState({
+    wheel: 0,
+    contest: 0,
+    widget: 0,
+  })
+  const [widgetKind, setWidgetKind] = useState<WidgetKind>("polls")
+  const [wheelSpinning, setWheelSpinning] = useState(false)
+  const showToast = useToast()
   const view = tab.history[tab.position]
+  useEffect(() => {
+    if (active && view === "home" && contestController.error)
+      showToast({ message: contestController.error, tone: "error" })
+  }, [active, view, contestController.error, showToast])
+
   const savePreset = async (name: string, presetDraft: Draft) => {
     const result =
       presetDialog?.mode === "edit"
@@ -353,10 +439,144 @@ function TabWorkspace({
             draft: presetDraft,
           })
     if (!result) return false
-    if (presetDialog?.mode === "create")
-      setSelectedPreset(result.state.presets.at(-1)?.id || null)
     setPresetDialog(null)
     return true
+  }
+  const templates = state?.templates || []
+  const associatedTemplates = templates.filter(
+    (template) => loadedTemplateIds[template.kind] === template.id
+  )
+  const loadedWheelTemplate = associatedTemplates.find(
+    (template) => template.kind === "wheel"
+  )
+  const loadedContestTemplate = associatedTemplates.find(
+    (template) => template.kind === "contest"
+  )
+  const saveTemplate: SaveTemplate = async (template, replaceId) => {
+    const result = replaceId
+      ? await controller.run("template-update", {
+          templateId: replaceId,
+          template,
+        })
+      : await controller.run("template-create", { template })
+    if (!result) return false
+    const id = replaceId || result.state.templates?.at(-1)?.id
+    if (id)
+      setLoadedTemplateIds((current) => ({ ...current, [template.kind]: id }))
+    showToast({ message: replaceId ? "Шаблон обновлён" : "Шаблон сохранён" })
+    return true
+  }
+  const blockedTemplate = (template: LibraryTemplate) => {
+    if (template.kind === "poll" && poll?.status === "running")
+      return "Опрос идёт"
+    if (
+      template.kind === "contest" &&
+      contestController.contest &&
+      contestController.contest.status !== "finished"
+    )
+      return "Конкурс идёт"
+    if (template.kind === "wheel" && wheelSpinning) return "Рулетка крутится"
+    return null
+  }
+  const applyTemplate = async (template: LibraryTemplate, edit = false) => {
+    if (template.kind === "poll" && edit) {
+      setPresetDialog({ mode: "edit", preset: template })
+      return
+    }
+    const reason = blockedTemplate(template)
+    if (reason) {
+      showToast({ message: reason, tone: "warning" })
+      return
+    }
+    if (template.kind === "poll") {
+      if (await controller.applyPreset(template)) {
+        if (!demoEnabled)
+          changeDraft((current) =>
+            current.source === "test"
+              ? { ...current, source: "twitch" }
+              : current
+          )
+        navigate("polls")
+      }
+      return
+    }
+    if (template.kind.endsWith("-widget")) {
+      if (
+        !(await controller.run("template-apply", { templateId: template.id }))
+      )
+        return
+      setWidgetKind(
+        template.kind === "poll-widget"
+          ? "polls"
+          : template.kind === "chat-widget"
+            ? "chat"
+            : "contests"
+      )
+    }
+    setLoadedTemplateIds((current) => ({
+      ...current,
+      [template.kind]: template.id,
+    }))
+    setTemplateGeneration((value) => ({
+      ...value,
+      [template.kind === "contest"
+        ? "contest"
+        : template.kind === "wheel"
+          ? "wheel"
+          : "widget"]:
+        value[
+          template.kind === "contest"
+            ? "contest"
+            : template.kind === "wheel"
+              ? "wheel"
+              : "widget"
+        ] + 1,
+    }))
+    navigate(
+      template.kind === "contest"
+        ? "contests"
+        : template.kind === "wheel"
+          ? "decision-wheel"
+          : "widget"
+    )
+  }
+  const createTemplate = (kind: LibraryKind) => {
+    if (kind === "poll") {
+      setPresetDialog({ mode: "create", editorId: crypto.randomUUID() })
+      return
+    }
+    if (
+      kind === "contest" &&
+      contestController.contest &&
+      contestController.contest.status !== "finished"
+    ) {
+      showToast({
+        message:
+          "Можно сохранить текущий конкурс в шаблон из раздела «Конкурсы».",
+        tone: "warning",
+      })
+    }
+    setLoadedTemplateIds((current) => ({ ...current, [kind]: undefined }))
+    if (kind.endsWith("-widget")) {
+      setWidgetKind(
+        kind === "poll-widget"
+          ? "polls"
+          : kind === "chat-widget"
+            ? "chat"
+            : "contests"
+      )
+      setTemplateGeneration((value) => ({ ...value, widget: value.widget + 1 }))
+    }
+    navigate(
+      kind === "contest"
+        ? "contests"
+        : kind === "wheel"
+          ? "decision-wheel"
+          : "widget"
+    )
+    showToast({
+      message: `Настройте ${kind.endsWith("-widget") ? "виджет" : kind === "contest" ? "конкурс" : "рулетку"} и нажмите «Сохранить шаблон».`,
+    })
   }
   if (!state || !draft) return null
   return (
@@ -369,13 +589,36 @@ function TabWorkspace({
             twitch={twitch}
             poll={poll}
             contest={contestController.contest}
+            activityControls={{
+              pollDisabled: !connected || busy,
+              contestDisabled:
+                !contestController.connected || contestController.busy,
+              finishPoll: () => {
+                if (poll) void controller.run("finish", { pollId: poll.id })
+              },
+              closeContest: () => {
+                void contestController.close()
+              },
+              drawContest: () => {
+                void contestController.draw()
+              },
+            }}
             onNavigate={navigate}
           />
         </div>
       )}
       {tab.visited.includes("decision-wheel") && (
         <div className={view === "decision-wheel" ? "h-full" : "hidden"}>
-          <DecisionWheelPage />
+          <DecisionWheelPage
+            key={`wheel-${templateGeneration.wheel}`}
+            template={loadedWheelTemplate}
+            onSpinningChange={setWheelSpinning}
+            onSaveTemplate={
+              isViewAvailable("presets", import.meta.env.PROD) && connected
+                ? saveTemplate
+                : undefined
+            }
+          />
         </div>
       )}
       {view === "new" && (
@@ -405,9 +648,11 @@ function TabWorkspace({
                           <span className="section-soon">Скоро</span>
                         )}
                       </span>
-                      <span className="new-tab-tile-description">
-                        {item.description}
-                      </span>
+                      {item.description && (
+                        <span className="new-tab-tile-description">
+                          {item.description}
+                        </span>
+                      )}
                     </span>
                   </button>
                 )
@@ -453,50 +698,58 @@ function TabWorkspace({
           className={view === "presets" ? "h-full" : "hidden"}
           aria-hidden={view === "presets" ? undefined : true}
         >
-          <PresetLibrary
-            presets={state.presets}
-            selectedId={selectedPreset}
+          <TemplateLibrary
+            templates={[
+              ...state.presets.map((preset) => ({
+                ...preset,
+                kind: "poll" as const,
+                data: preset.draft,
+              })),
+              ...templates,
+            ]}
             dialog={presetDialog}
-            canApply={canApplyPreset}
-            applyBlocked={poll?.status === "running"}
-            canManage={connected}
-            canCreate={state.presets.length < 30}
+            connected={connected}
             busy={busy}
-            onCreate={() =>
-              setPresetDialog({
-                mode: "create",
-                editorId: crypto.randomUUID(),
-              })
+            onCreate={createTemplate}
+            onUse={(template) => void applyTemplate(template)}
+            onEdit={(template) => void applyTemplate(template, true)}
+            blocked={blockedTemplate}
+            onPin={(template) =>
+              void controller.run(
+                template.kind === "poll"
+                  ? "preset-toggle-pin"
+                  : "template-update",
+                template.kind === "poll"
+                  ? { presetId: template.id, pinned: !template.pinned }
+                  : {
+                      templateId: template.id,
+                      template: { pinned: !template.pinned },
+                    }
+              )
             }
-            onApply={(preset) => {
-              void controller.applyPreset(preset).then((applied) => {
-                if (applied) {
-                  if (!demoEnabled)
-                    changeDraft((current) =>
-                      current.source === "test"
-                        ? { ...current, source: "twitch" }
-                        : current
-                    )
-                  navigate("polls")
-                }
-              })
-            }}
-            onEdit={(preset) => setPresetDialog({ mode: "edit", preset })}
-            onTogglePin={(preset) =>
-              void controller.run("preset-toggle-pin", {
-                presetId: preset.id,
-                pinned: !preset.pinned,
-              })
+            onReorder={(template, target) =>
+              void controller.run(
+                template.kind === "poll"
+                  ? "preset-reorder"
+                  : "template-reorder",
+                template.kind === "poll"
+                  ? {
+                      presetId: template.id,
+                      targetId: target.id,
+                      position: "before",
+                    }
+                  : { templateId: template.id, targetId: target.id }
+              )
             }
-            onReorder={(preset, target, position) =>
-              void controller.run("preset-reorder", {
-                presetId: preset.id,
-                targetId: target.id,
-                position,
-              })
+            onDelete={async (template) =>
+              !!(await controller.run(
+                template.kind === "poll" ? "preset-delete" : "template-delete",
+                template.kind === "poll"
+                  ? { presetId: template.id }
+                  : { templateId: template.id }
+              ))
             }
-            onDelete={controller.setDeletePreset}
-            onSave={savePreset}
+            onSavePoll={savePreset}
             onCloseEditor={() => setPresetDialog(null)}
           />
         </div>
@@ -505,8 +758,12 @@ function TabWorkspace({
       {tab.visited.includes("settings") && (
         <div className={view === "settings" ? "h-full" : "hidden"}>
           <SettingsPage
+            section={tab.settingsSection || "general"}
+            active={active && view === "settings"}
+            onSectionChange={onSettingsSectionChange}
             draft={draft}
             presets={state.presets}
+            templates={templates}
             widget={state.widget}
             contestOverlay={state.contestOverlay}
             chatOverlay={state.chatOverlay}
@@ -522,6 +779,13 @@ function TabWorkspace({
       {tab.visited.includes("contests") && (
         <div className={view === "contests" ? "h-full" : "hidden"}>
           <ContestPage
+            key={`contest-${templateGeneration.contest}`}
+            template={loadedContestTemplate}
+            onSaveTemplate={
+              isViewAvailable("presets", import.meta.env.PROD) && connected
+                ? saveTemplate
+                : undefined
+            }
             twitchConnected={twitch.phase === "connected"}
             controller={contestController}
           />
@@ -531,6 +795,14 @@ function TabWorkspace({
       {tab.visited.includes("widget") && (
         <div className={view === "widget" ? "h-full" : "hidden"}>
           <WidgetPage
+            key={`widget-${templateGeneration.widget}`}
+            initialKind={widgetKind}
+            templates={associatedTemplates}
+            onSaveTemplate={
+              isViewAvailable("presets", import.meta.env.PROD) && connected
+                ? saveTemplate
+                : undefined
+            }
             contest={contestController.contest}
             poll={poll}
             draft={draft}

@@ -1,3 +1,4 @@
+import { widgetFontFiles } from '../public/widget-fonts.js';
 import { publicContest } from '../public/contest-overlay-model.js';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -14,7 +15,7 @@ import { createErrorJournal } from './diagnostics.mjs';
 
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
 const productionPanelDir = join(publicDir, 'panel-build');
-const staticFiles = panelDir => ({ '/': [join(panelDir, 'index.html'), 'text/html', true], '/overlay': ['overlay.html', 'text/html'], '/chat-overlay': [join(panelDir, 'chat-overlay.html'), 'text/html', true], '/contest-overlay': [join(panelDir, 'contest-overlay.html'), 'text/html', true], '/overlay.js': ['overlay.js', 'text/javascript'], '/shared.js': ['shared.js', 'text/javascript'], '/widget-model.js': ['widget-model.js', 'text/javascript'], '/widget.css': ['widget.css', 'text/css'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/favicon.png': ['favicon.png', 'image/png'], '/fonts/geist-cyrillic.woff2': ['fonts/geist-cyrillic.woff2', 'font/woff2'], '/fonts/geist-latin.woff2': ['fonts/geist-latin.woff2', 'font/woff2'] });
+const staticFiles = panelDir => ({ '/fonts/widget-fonts.css': ['fonts/widget-fonts.css', 'text/css'], ...Object.fromEntries(widgetFontFiles.map(file => ['/fonts/' + file, ['fonts/' + file, 'font/woff2']])), '/': [join(panelDir, 'index.html'), 'text/html', true], '/overlay': ['overlay.html', 'text/html'], '/chat-overlay': [join(panelDir, 'chat-overlay.html'), 'text/html', true], '/contest-overlay': [join(panelDir, 'contest-overlay.html'), 'text/html', true], '/overlay.js': ['overlay.js', 'text/javascript'], '/shared.js': ['shared.js', 'text/javascript'], '/widget-model.js': ['widget-model.js', 'text/javascript'], '/widget-fonts.js': ['widget-fonts.js', 'text/javascript'], '/widget.css': ['widget.css', 'text/css'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/favicon.png': ['favicon.png', 'image/png'], '/fonts/geist-cyrillic.woff2': ['fonts/geist-cyrillic.woff2', 'font/woff2'], '/fonts/geist-latin.woff2': ['fonts/geist-latin.woff2', 'font/woff2'] });
 const assetTypes = { '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png' };
 const requireThat = (condition, message, status) => { if (!condition) throw new PollError(message, status); };
 export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, emoteOptions = {}, allowedOrigins = [], panelDir = productionPanelDir, diagnostics, appVersion = '' } = {}) {
@@ -46,6 +47,7 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
       if (request.method === 'GET' && path === '/api/twitch/stream') return json(response, 200, await twitch.stream());
       if (request.method === 'GET' && path === '/api/contest') return json(response, 200, contest.snapshot());
       if (request.method === 'GET' && path === '/api/chat/memo') return json(response, 200, { text: chat.memo() });
+      if (request.method === 'GET' && path === '/api/chat/streamer-notes') return json(response, 200, { notes: chat.streamerNotes() });
       if (request.method === 'GET' && path === '/api/chat/avatars') {
         requireThat(twitch.snapshot().userId, 'Сначала подключите Twitch.', 409);
         const ids = requestUrl.searchParams.getAll('id');
@@ -69,6 +71,7 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
         requireThat(Number.isSafeInteger(before) && before > 0, 'Некорректная страница истории.', 400);
         return json(response, 200, { messages: chat.recent(channelId, before), archive: chat.overview(channelId), channelId });
       }
+      if (request.method === 'GET' && path === '/api/chat/participants') return json(response, 200, chat.participants(twitch.snapshot().userId));
       if (request.method === 'GET' && path === '/api/chat/profile') {
         const channelId = twitch.snapshot().userId;
         requireThat(channelId, 'Сначала подключите Twitch.', 409);
@@ -96,11 +99,12 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
         const snapshot = () => emit('snapshot', { channelId, settings, serverNow: now(), messages: chat.recent(channelId) });
         snapshot();
         const offChat = chat.subscribe((sourceId, message, updated) => { if (sourceId === channelId) emit(updated ? 'update' : 'message', message); });
+        const offCleanup = chat.subscribeCleanup(change => { if (change.channelId === channelId) emit('cleanup', change); });
         const offTwitch = twitch.subscribe(state => { if (state.userId !== channelId) { channelId = state.userId; snapshot(); } });
         const offStore = store.subscribe(state => { if (JSON.stringify(settings) !== JSON.stringify(state.chatOverlay)) { settings = state.chatOverlay; emit('settings', settings); } });
         streams.add(response);
         const heartbeat = setInterval(() => { if (!response.destroyed) response.write(': heartbeat\n\n'); }, 15000);
-        request.on('close', () => { clearInterval(heartbeat); offChat(); offTwitch(); offStore(); streams.delete(response); });
+        request.on('close', () => { clearInterval(heartbeat); offChat(); offCleanup(); offTwitch(); offStore(); streams.delete(response); });
         return;
       }
       if (request.method === 'GET' && path === '/api/chat/events') {
@@ -111,9 +115,12 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
         const off = chat.subscribe((sourceId, message, updated) => {
           if (sourceId === channelId && !response.destroyed) response.write(`event: ${updated ? 'update' : 'message'}\ndata: ${JSON.stringify(message)}\n\n`);
         });
+        const offCleanup = chat.subscribeCleanup(change => {
+          if (change.channelId === channelId && !response.destroyed) response.write(`event: cleanup\ndata: ${JSON.stringify(change)}\n\n`);
+        });
         streams.add(response);
         const heartbeat = setInterval(() => response.write(': heartbeat\n\n'), 15000);
-        request.on('close', () => { clearInterval(heartbeat); off(); streams.delete(response); });
+        request.on('close', () => { clearInterval(heartbeat); off(); offCleanup(); streams.delete(response); });
         return;
       }
       if (request.method === 'GET' && path === '/api/events') {
@@ -177,18 +184,30 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
         const result = await store.command(command);
         return json(response, 200, { ok: true, message: message || `Выбран шаблон «${result.outcome}»`, state: result.state });
       }
-      if (request.method === 'POST' && ['/api/command', '/api/twitch', '/api/contest', '/api/chat/notes', '/api/chat/memo', '/api/chat/send', '/api/chat/moderate', '/api/diagnostics'].includes(path)) {
+      if (request.method === 'POST' && ['/api/command', '/api/twitch', '/api/contest', '/api/chat/notes', '/api/chat/memo', '/api/chat/streamer-notes', '/api/chat/send', '/api/chat/moderate', '/api/chat/archive', '/api/chat/archive/settings', '/api/diagnostics'].includes(path)) {
         if (!request.headers['content-type']?.startsWith('application/json') || request.headers['x-poll-client'] !== 'panel') return json(response, 415, { error: 'Ожидается JSON-команда панели.' });
         let bytes = 0, text = '';
         for await (const chunk of request) {
           bytes += chunk.length;
-          if (bytes > 65536) { json(response, 413, { error: 'Слишком большой запрос.' }); return; }
+          if (bytes > (['/api/chat/notes', '/api/command'].includes(path) ? 2 * 1024 * 1024 : 65536)) { json(response, 413, { error: 'Слишком большой запрос.' }); return; }
           text += chunk;
         }
         let command;
         try { command = JSON.parse(text); } catch { return json(response, 400, { error: 'Некорректный JSON.' }); }
         if (!command || typeof command !== 'object' || Array.isArray(command)) throw new PollError('Некорректная команда.');
         if (path === '/api/chat/memo') return json(response, 200, { text: chat.saveMemo(command.text) });
+        if (path === '/api/chat/streamer-notes') {
+          if (command.type === 'add') return json(response, 200, { note: chat.createStreamerNote({ text: command.text, task: command.task }) });
+          if (command.type === 'update') return json(response, 200, { note: chat.updateStreamerNote(command.id, command.patch) });
+          if (command.type === 'delete') { chat.deleteStreamerNote(command.id); return json(response, 200, { ok: true }); }
+          throw new PollError('Неизвестная команда заметок.');
+        }
+        if (path === '/api/chat/archive/settings') return json(response, 200, chat.setLimits(command, twitch.snapshot().userId || ''));
+        if (path === '/api/chat/archive') {
+          const channelId = twitch.snapshot().userId;
+          requireThat(channelId && command.channelId === channelId, 'Аккаунт Twitch изменился. Обновите чат.', 409);
+          return json(response, 200, chat.clearMessages(channelId, command.scope));
+        }
         if (path === '/api/chat/moderate') {
           const channelId = twitch.snapshot().userId;
           requireThat(channelId && command.channelId === channelId, 'Аккаунт Twitch изменился. Обновите чат.', 409);
@@ -207,6 +226,8 @@ export async function createApp({ dataDir, now = Date.now, twitchOptions = {}, e
         if (path === '/api/chat/notes') {
           const channelId = twitch.snapshot().userId;
           requireThat(channelId, 'Сначала подключите Twitch.', 409);
+          requireThat(command.channelId === undefined || command.channelId === channelId, 'Аккаунт Twitch изменился. Обновите чат.', 409);
+          if (command.type === 'set') return json(response, 200, { note: chat.setNote(channelId, command.viewerId, command.text) });
           if (command.type === 'add') return json(response, 200, { note: chat.addNote(channelId, command.viewerId, command.text) });
           if (command.type === 'delete') { chat.deleteNote(channelId, command.viewerId, command.noteId); return json(response, 200, { ok: true }); }
           throw new PollError('Неизвестная команда заметок.');

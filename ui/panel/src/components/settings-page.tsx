@@ -1,29 +1,44 @@
+import type { SavedTemplate } from "@/domain/templates"
 import type { ContestOverlaySettings } from "../../../../public/contest-overlay-model.js"
 import type { ChatOverlaySettings } from "../../../../public/chat-overlay-model.js"
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   type ChangeEvent,
   type ReactNode,
 } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Check, Download, FileUp } from "lucide-react"
+import { SectionTransition } from "@/components/section-transition"
+import { Check, Download, ExternalLink, FileUp } from "lucide-react"
+import appIcon from "@/assets/app-icon.png"
+import {
+  settingsTitles,
+  type SettingsSection,
+} from "@/domain/settings-navigation"
 
-import { type AppTheme, useTheme } from "@/components/theme-provider"
+import { useTheme } from "@/components/theme-provider"
+import { appThemes, isAppTheme } from "@/domain/app-themes"
+import { RadioGroup } from "radix-ui"
 import { TwitchSettings } from "@/components/twitch-settings"
 import { UpdateSettings } from "@/components/update-control"
 import { StreamDockPage } from "@/components/stream-dock-page"
 import { DiagnosticsSettings } from "@/components/diagnostics-settings"
 import { Button } from "@/components/ui/button"
+import "./settings-page.css"
 import { FormSwitch } from "@/components/form-controls"
 import { useToast } from "@/components/ui/toast"
 import { useDemoMode } from "@/hooks/use-demo-mode"
 import type { Draft, Preset, TwitchState, WidgetSettings } from "@/domain/polls"
 
 type SettingsPageProps = {
+  section: SettingsSection
+  active: boolean
+  onSectionChange: (section: SettingsSection) => void
   draft: Draft
   presets: Preset[]
+  templates: SavedTemplate[]
   widget: WidgetSettings
   contestOverlay: ContestOverlaySettings
   chatOverlay: ChatOverlaySettings
@@ -35,8 +50,12 @@ type SettingsPageProps = {
 }
 
 export function SettingsPage({
+  section,
+  active,
+  onSectionChange,
   draft,
   presets,
+  templates,
   widget,
   contestOverlay,
   chatOverlay,
@@ -47,6 +66,25 @@ export function SettingsPage({
   onTwitchCommand,
 }: SettingsPageProps) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const root = useRef<HTMLElement>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const headingId = useId()
+  const previousSection = useRef(section)
+  useEffect(() => {
+    if (previousSection.current === section) return
+    previousSection.current = section
+    const frame = requestAnimationFrame(() =>
+      headingRef.current?.focus({ preventScroll: true })
+    )
+    return () => cancelAnimationFrame(frame)
+  }, [section])
+  useEffect(() => {
+    const element = root.current
+    const showJournal = () => onSectionChange("diagnostics")
+    element?.addEventListener("cue:open-diagnostics", showJournal)
+    return () =>
+      element?.removeEventListener("cue:open-diagnostics", showJournal)
+  }, [onSectionChange])
   const showToast = useToast()
   const bridge = window.streamPollsDesktop
   const { enabled: demoEnabled, setEnabled: setDemoEnabled } = useDemoMode()
@@ -128,6 +166,7 @@ export function SettingsPage({
         draft: preset.draft,
         pinned: preset.pinned,
       })),
+      templates,
       widget,
       contestOverlay,
       chatOverlay,
@@ -149,7 +188,8 @@ export function SettingsPage({
     event.target.value = ""
     if (!file) return
     try {
-      if (file.size > 60_000) throw new Error("Файл слишком большой")
+      if (file.size > 2 * 1024 * 1024)
+        throw new Error("Файл настроек должен быть не больше 2 МБ")
       const settings = JSON.parse(await file.text()) as unknown
       if (await onImport(settings))
         showToast({ message: "Настройки импортированы", tone: "success" })
@@ -166,224 +206,231 @@ export function SettingsPage({
 
   return (
     <section
+      ref={root}
+      data-error-journal
       aria-label="Настройки"
-      className="h-full min-h-0 overflow-y-auto overscroll-contain"
+      className="settings-layout"
     >
-      <div className="mx-auto w-full max-w-4xl px-6 py-7 lg:px-8">
-        <h1 className="mb-6 text-lg font-semibold tracking-tight">Настройки</h1>
-        <div className="rounded-xl bg-surface-subtle px-5 py-4">
-          <TwitchSettings
-            state={twitch}
-            busy={busy}
-            onCommand={onTwitchCommand}
-          />
+      <SectionTransition
+        transitionKey={section}
+        active={active}
+        variant="settings"
+        className="settings-detail"
+      >
+        <header className="settings-detail-header">
+          <h1 ref={headingRef} id={headingId} tabIndex={-1}>
+            {settingsTitles[section]}
+          </h1>
+        </header>
+        <div
+          key={section}
+          className="settings-detail-scroll"
+          role="region"
+          aria-labelledby={headingId}
+        >
+          <div className="settings-detail-content">
+            {section === "general" && (
+              <>
+                <SettingsBlock title="Аккаунт Twitch">
+                  <TwitchSettings
+                    state={twitch}
+                    busy={busy}
+                    onCommand={onTwitchCommand}
+                  />
+                </SettingsBlock>
+                <SettingsBlock title="Приложение">
+                  <div className="settings-rows">
+                    <PreferenceRow
+                      label="Автозапуск"
+                      hint={
+                        preferenceHint(
+                          bridge,
+                          preferences,
+                          preferences?.openAtLoginSupported
+                        ) ??
+                        (preferences?.openAtLogin
+                          ? "Запускается в трее"
+                          : undefined)
+                      }
+                      checked={preferences?.openAtLogin ?? false}
+                      disabled={
+                        !preferences?.openAtLoginSupported ||
+                        preferenceBusy !== undefined
+                      }
+                      onCheckedChange={(checked) =>
+                        void updatePreference("openAtLogin", checked)
+                      }
+                    />
+                    <PreferenceRow
+                      label="Работа в трее"
+                      hint={preferenceHint(
+                        bridge,
+                        preferences,
+                        preferences?.runInBackgroundSupported
+                      )}
+                      checked={preferences?.runInBackground ?? false}
+                      disabled={
+                        !preferences?.runInBackgroundSupported ||
+                        preferenceBusy !== undefined
+                      }
+                      onCheckedChange={(checked) =>
+                        void updatePreference("runInBackground", checked)
+                      }
+                    />
+                    <PreferenceRow
+                      label="Демо-режим"
+                      checked={demoEnabled}
+                      disabled={false}
+                      onCheckedChange={setDemoEnabled}
+                    />
+                  </div>
+                </SettingsBlock>
+              </>
+            )}
+            {section === "appearance" && <ThemeSettings />}
+            {section === "updates" && (
+              <SettingsBlock title="Версия приложения">
+                <UpdateSettings />
+              </SettingsBlock>
+            )}
+            {section === "data" && (
+              <SettingsBlock title="Настройки и шаблоны">
+                <div className="settings-data-actions">
+                  <div className="settings-data-row">
+                    <span className="settings-data-icon">
+                      <Download aria-hidden="true" />
+                    </span>
+                    <div className="settings-data-copy">
+                      <h3>Экспорт</h3>
+                      <p>Сохранить на компьютер</p>
+                    </div>
+                    <Button variant="outline" onClick={exportSettings}>
+                      Экспортировать
+                    </Button>
+                  </div>
+                  <div className="settings-data-row">
+                    <span className="settings-data-icon">
+                      <FileUp aria-hidden="true" />
+                    </span>
+                    <div className="settings-data-copy">
+                      <h3>Импорт</h3>
+                      <p id={`${headingId}-import-hint`}>
+                        {canImport
+                          ? "Восстановить из файла"
+                          : "Завершите опрос для импорта."}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      disabled={!canImport || busy}
+                      aria-describedby={`${headingId}-import-hint`}
+                      onClick={() => inputRef.current?.click()}
+                    >
+                      Импортировать
+                    </Button>
+                  </div>
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={importSettings}
+                  />
+                </div>
+              </SettingsBlock>
+            )}
+            {section === "plugins" && active && <StreamDockPage />}
+            {section === "diagnostics" && active && <DiagnosticsSettings />}
+            {section === "about" && <ProjectInfo />}
+          </div>
         </div>
-        <div className="mt-4 grid min-w-0 items-start gap-4 lg:grid-cols-2">
-          <SettingsBlock title="Оформление" wide>
-            <ThemeSettings />
-          </SettingsBlock>
-          <div className="min-w-0 space-y-4">
-            <SettingsBlock title="Приложение">
-              <div className="space-y-1">
-                <PreferenceRow
-                  label="Автозапуск"
-                  hint={
-                    preferenceHint(
-                      bridge,
-                      preferences,
-                      preferences?.openAtLoginSupported
-                    ) ??
-                    (preferences?.openAtLogin
-                      ? "Запускается в трее"
-                      : undefined)
-                  }
-                  checked={preferences?.openAtLogin ?? false}
-                  disabled={
-                    !preferences?.openAtLoginSupported ||
-                    preferenceBusy !== undefined
-                  }
-                  onCheckedChange={(checked) =>
-                    void updatePreference("openAtLogin", checked)
-                  }
-                />
-                <PreferenceRow
-                  label="Работа в трее"
-                  hint={preferenceHint(
-                    bridge,
-                    preferences,
-                    preferences?.runInBackgroundSupported
-                  )}
-                  checked={preferences?.runInBackground ?? false}
-                  disabled={
-                    !preferences?.runInBackgroundSupported ||
-                    preferenceBusy !== undefined
-                  }
-                  onCheckedChange={(checked) =>
-                    void updatePreference("runInBackground", checked)
-                  }
-                />
-                <PreferenceRow
-                  label="Демо-режим"
-                  checked={demoEnabled}
-                  disabled={false}
-                  onCheckedChange={setDemoEnabled}
-                />
-              </div>
-            </SettingsBlock>
-            <SettingsBlock title="Данные">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" onClick={exportSettings}>
-                  <Download />
-                  Экспортировать
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={!canImport || busy}
-                  onClick={() => inputRef.current?.click()}
-                >
-                  <FileUp />
-                  Импортировать
-                </Button>
-                <input
-                  ref={inputRef}
-                  type="file"
-                  accept="application/json,.json"
-                  className="hidden"
-                  onChange={(event) => void importSettings(event)}
-                />
-              </div>
-              {!canImport && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Завершите опрос для импорта.
-                </p>
-              )}
-            </SettingsBlock>
-          </div>
-          <div className="min-w-0 space-y-4">
-            <SettingsBlock title="Обновления">
-              <UpdateSettings />
-            </SettingsBlock>
-            <SettingsBlock title="О Cue" action={<TelegramLink />}>
-              <ProjectInfo />
-            </SettingsBlock>
-          </div>
-          <div className="min-w-0 lg:col-span-2">
-            <DiagnosticsSettings />
-          </div>
-          <div className="min-w-0 lg:col-span-2">
-            <StreamDockPage />
-          </div>
-        </div>
-      </div>
+      </SectionTransition>
     </section>
   )
 }
 
-const themes: Array<{
-  id: AppTheme
-  label: string
-  background: string
-  accent: string
-}> = [
-  {
-    id: "lime",
-    label: "Лайм",
-    background: "#0d1014",
-    accent: "#d3fb75",
-  },
-  {
-    id: "violet",
-    label: "Пичи",
-    background: "#0f0d14",
-    accent: "#b89aff",
-  },
-  {
-    id: "ice",
-    label: "Лёд",
-    background: "#0a1116",
-    accent: "#7ddcff",
-  },
-  {
-    id: "mono",
-    label: "Тёмная",
-    background: "#050505",
-    accent: "#f4f4f5",
-  },
-]
-
 function ThemeSettings() {
   const { theme, setTheme } = useTheme()
-
   return (
-    <div className="grid grid-cols-2 gap-3 @min-[28rem]:grid-cols-4">
-      {themes.map((option) => {
-        const selected = theme === option.id
-        return (
-          <button
-            key={option.id}
-            type="button"
-            aria-pressed={selected}
-            className="group min-w-0 rounded-lg text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background focus-visible:outline-none"
-            onClick={() => setTheme(option.id)}
+    <RadioGroup.Root
+      className="theme-grid"
+      aria-label="Тема приложения"
+      value={theme}
+      onValueChange={(value) => {
+        if (isAppTheme(value)) setTheme(value)
+      }}
+    >
+      {appThemes.map((option) => (
+        <RadioGroup.Item
+          key={option.id}
+          value={option.id}
+          className="theme-option"
+          aria-label={option.label}
+        >
+          <span
+            aria-hidden="true"
+            className={`theme-preview dark theme-${option.id}`}
           >
-            <span
-              aria-hidden="true"
-              className={`flex aspect-[2.1] gap-1.5 overflow-hidden rounded-lg p-2 ring-1 transition-[box-shadow] ring-inset ${selected ? "ring-foreground/50" : "ring-border-subtle group-hover:ring-border-strong"}`}
-              style={{ background: option.background }}
-            >
-              <span className="flex w-1/4 flex-col gap-1.5 pt-1">
-                <span className="mb-1 size-2 rounded bg-white/20" />
-                <span
-                  className="h-1.5 w-full rounded-sm"
-                  style={{ background: option.accent }}
-                />
-                <span className="h-1 w-4/5 rounded-sm bg-white/15" />
-                <span className="h-1 w-3/5 rounded-sm bg-white/15" />
-              </span>
-              <span className="flex flex-1 flex-col gap-1.5 rounded bg-white/5 p-2">
-                <span className="h-1.5 w-3/5 rounded-sm bg-white/35" />
-                <span className="mt-2 h-1 w-full rounded-sm bg-white/10" />
-                <span className="h-1 w-4/5 rounded-sm bg-white/10" />
-                <span
-                  className="mt-auto h-3 w-1/3 rounded-sm"
-                  style={{ background: option.accent }}
-                />
+            <span className="theme-preview-sidebar">
+              <span className="theme-preview-mark" />
+              <span className="theme-preview-nav" data-active />
+              <span className="theme-preview-nav" />
+              <span className="theme-preview-nav" />
+              <span className="theme-preview-profile" />
+            </span>
+            <span className="theme-preview-workspace">
+              <span className="theme-preview-title">Студия</span>
+              <span className="theme-preview-content">
+                <span className="theme-preview-tools">
+                  <span />
+                  <span />
+                </span>
+                <span className="theme-preview-chat">
+                  {[0, 1, 2].map((row) => (
+                    <span className="theme-preview-message" key={row}>
+                      <span className="theme-preview-avatar" />
+                      <span className="theme-preview-lines">
+                        <span />
+                        <span />
+                      </span>
+                    </span>
+                  ))}
+                  <span className="theme-preview-composer">
+                    <span />
+                    <span />
+                  </span>
+                </span>
               </span>
             </span>
-            <span className="mt-2 flex items-center justify-between gap-2 text-xs">
-              <span>{option.label}</span>
-              {selected && <Check className="size-3.5 text-foreground" />}
+          </span>
+          <span className="theme-option-caption">
+            <span>{option.label}</span>
+            <span aria-hidden="true" className="theme-option-check">
+              {theme === option.id && <Check />}
             </span>
-          </button>
-        )
-      })}
-    </div>
+          </span>
+        </RadioGroup.Item>
+      ))}
+    </RadioGroup.Root>
   )
 }
 
 function SettingsBlock({
   title,
-  wide,
-  full,
   action,
   children,
 }: {
   title: string
-  wide?: boolean
-  full?: boolean
-  action?: React.ReactNode
-  children: React.ReactNode
+  action?: ReactNode
+  children: ReactNode
 }) {
   return (
-    <section
-      aria-label={title}
-      className={`min-w-0 rounded-xl bg-surface-subtle p-4 ${wide ? "grid gap-4 lg:col-span-2 lg:grid-cols-[9rem_minmax(0,1fr)] lg:gap-6" : "space-y-3"} ${full ? "lg:col-span-2" : ""}`}
-    >
-      <div className="flex min-h-5 items-center justify-between gap-3">
-        <h2 className="text-base font-semibold tracking-[-0.015em]">{title}</h2>
+    <section aria-label={title} className="settings-block">
+      <div className="settings-block-heading">
+        <h3>{title}</h3>
         {action}
       </div>
-      <div className="@container min-w-0">{children}</div>
+      <div className="settings-group @container">{children}</div>
     </section>
   )
 }
@@ -423,17 +470,44 @@ function preferenceHint(
 }
 
 function ProjectInfo() {
+  const [version, setVersion] = useState<string | null>(null)
+  useEffect(() => {
+    let active = true
+    const bridge = window.streamPollsDesktop
+    if (bridge)
+      void bridge
+        .getInfo()
+        .then((info) => {
+          if (active) setVersion(info.version)
+        })
+        .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
   return (
-    <dl className="grid grid-cols-2 gap-4 text-xs">
-      <div className="space-y-1">
-        <dt className="font-medium">exyyyl</dt>
-        <dd className="text-muted-foreground">Разработка</dd>
+    <div className="settings-group about-cue">
+      <div className="about-cue-identity">
+        <img src={appIcon} width={48} height={48} alt="" />
+        <div>
+          <div className="about-cue-name">
+            <h2>Cue</h2>
+            {version && <span>{version}</span>}
+          </div>
+        </div>
       </div>
-      <div className="space-y-1">
-        <dt className="font-medium">peachysoul</dt>
-        <dd className="text-muted-foreground">Креативная поддержка</dd>
-      </div>
-    </dl>
+      <dl className="about-cue-team" aria-label="Команда Cue">
+        <div>
+          <dt>exyyyl</dt>
+          <dd>Разработка</dd>
+        </div>
+        <div>
+          <dt>peachysoul</dt>
+          <dd>Креативная поддержка</dd>
+        </div>
+      </dl>
+      <TelegramLink />
+    </div>
   )
 }
 
@@ -444,9 +518,16 @@ function TelegramLink() {
       target="_blank"
       rel="noreferrer"
       aria-label="@itsprojectCHAT — новости и поддержка в Telegram"
-      className="-my-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="about-cue-telegram"
     >
-      <TelegramIcon className="size-4" />
+      <span className="about-cue-telegram-icon">
+        <TelegramIcon />
+      </span>
+      <span>
+        <strong>Telegram</strong>
+        <span>@itsprojectCHAT</span>
+      </span>
+      <ExternalLink aria-hidden="true" />
     </a>
   )
 }

@@ -104,3 +104,52 @@ test('FFZ assets only use its CDN and the default global sets', async () => {
   const catalog = await f.catalog.catalog();
   assert.deepEqual(catalog.emotes.filter(emote => emote.provider === 'ffz').map(emote => emote.code), ['BibleThump']);
 });
+
+test('chat URLs become link parts while preserving punctuation, line breaks and native emotes', () => {
+  const text = 'Kappa Смотри (https://example.com/a_(b)?x=1&y=2).\nЕщё twitch.tv/ae_evsoul!';
+  const parts = messageParts(text, [{ start: 0, end: 5, id: '25' }], new Map());
+  assert.deepEqual(parts.filter(part => part.href).map(part => [part.text, part.href]), [
+    ['https://example.com/a_(b)?x=1&y=2', 'https://example.com/a_(b)?x=1&y=2'],
+    ['twitch.tv/ae_evsoul', 'https://twitch.tv/ae_evsoul'],
+  ]);
+  assert.equal(parts.map(part => part.text).join(''), text);
+  assert.match(parts[0].url, /jtvnw.*\/25\//);
+});
+
+test('chat links exclude emails, unsupported schemes and malformed URLs', () => {
+  for (const text of ['hello@example.com', 'javascript:alert(1)', 'javascript:example.com', 'ftp://example.com', 'https://', 'https://user:password@example.com']) {
+    assert.equal(messageParts(text, [], new Map()).some(part => part.href), false, text);
+  }
+  const parts = messageParts('www.example.com/path?x=1 https://example.com/#next', [], new Map());
+  assert.deepEqual(parts.filter(part => part.href).map(part => part.href), ['https://www.example.com/path?x=1', 'https://example.com/#next']);
+});
+
+test('catalog retains personal Twitch owners and tags third-party channel sets with the connected channel', async () => {
+  const personal = nativeEmotes([{ id: '25', name: 'Kappa', owner_id: '0' }, { id: 'emotesv2_owner', name: 'ownerWave', owner_id: '456' }]);
+  const catalog = createChatEmotes({ twitch: { snapshot: () => ({userId: '123', canReadEmotes: true}), emotes: async () => ({emotes: personal.map(e => e.ownerId ? {...e, ownerName: 'OtherChannel'} : e), requiresReconnect: false}) }, fetcher: async () => new Response(null, {status:404}) });
+  const result = await catalog.catalog();
+  assert.equal(result.emotes[0].scope, 'global');
+  assert.equal(result.emotes[0].ownerId, undefined);
+  assert.equal(result.emotes[1].scope, 'channel');
+  assert.equal(result.emotes[1].ownerId, '456');
+  assert.equal(result.emotes[1].ownerName, 'OtherChannel');
+  const f = fixture();
+  f.setState({userId:'123', canReadEmotes:true, displayName:'MyChannel'});
+  const thirdParty = (await f.catalog.catalog()).emotes.find(e => e.code === 'ALIAS');
+  assert.equal(thirdParty.ownerId, '123');
+  assert.equal(thirdParty.ownerName, 'MyChannel');
+});
+
+test('picker sections separate globals, combine one channel across providers and keep unknown owners distinct', async () => {
+  const {groupChatEmotes} = await import('../ui/panel/src/domain/chat-emotes.ts');
+  const groups = groupChatEmotes([
+    {id:'a',code:'ownWave',provider:'twitch',scope:'channel',ownerId:'123',ownerName:'MyChannel'},
+    {id:'b',code:'otherWave',provider:'twitch',scope:'channel',ownerId:'456',ownerName:'OtherChannel'},
+    {id:'c',code:'ownCat',provider:'7tv',scope:'channel',ownerId:'123',ownerName:'MyChannel'},
+    {id:'d',code:'Kappa',provider:'twitch',scope:'global'},
+    {id:'e',code:'unknown',provider:'twitch',scope:'channel',ownerId:'789'},
+  ], '123');
+  assert.deepEqual(groups.map(g => g.label), ['Twitch · Глобальные', 'MyChannel', 'Канал #789', 'OtherChannel']);
+  assert.deepEqual(groups[1].emotes.map(e => e.code), ['ownWave', 'ownCat']);
+  assert.equal(groups.flatMap(g => g.emotes).length, 5);
+});

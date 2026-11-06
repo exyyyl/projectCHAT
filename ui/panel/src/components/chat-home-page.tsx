@@ -1,29 +1,33 @@
+import type { StudioActivityControls } from "./studio-activity"
+import { useChatFeed } from "@/hooks/use-chat-feed"
+import { ChatDeliveryError, ChatSendingIndicator } from "./chat-delivery-error"
+import { ChatParticipants } from "./chat-participants"
+import { DashboardBlocksMenu } from "./dashboard-blocks-menu"
+import { useDashboardBlocks } from "@/hooks/use-dashboard-blocks"
 import { ModeratedMessage } from "./chat-moderation"
+import { Button } from "@/components/ui/button"
+import { normalizeChatText } from "../../../../public/chat-text.js"
+import { ViewerProfile } from "./viewer-profile"
+import { ViewerAvatar } from "./viewer-avatar"
 import {
   failedChatMessage,
+  discardFailedChatMessage,
   mergeChatFeed,
   outgoingChatMessage,
   type FeedMessage,
 } from "@/domain/chat-delivery"
 import type { ModerationAction } from "@/domain/chat-moderation"
 import { useToast } from "./ui/toast"
-import {
-  ChatLoadingSkeleton,
-  ProfileLoadingSkeleton,
-} from "@/components/loading-skeletons"
+import { ChatLoadingSkeleton } from "@/components/loading-skeletons"
 import {
   ArrowDown,
-  ExternalLink,
   Gift,
   Megaphone,
   MessageCircle,
-  Plus,
   Radio,
   ArrowUp,
   Sparkles,
-  Trash2,
   WifiOff,
-  X,
 } from "lucide-react"
 import {
   useCallback,
@@ -34,12 +38,15 @@ import {
   useState,
 } from "react"
 import type {
+  ChatArchiveCleanup,
+  ChatArchiveRetention,
   ChatBadge,
   ChatBadgeAsset,
   ChatMessage,
   ChatProfile,
   RecentChat,
 } from "@/domain/chat"
+import { retainChatMessages } from "@/domain/chat"
 import type { TwitchState, Poll } from "@/domain/polls"
 import type { Contest } from "@/domain/contest"
 import type { AppView } from "@/domain/app-navigation"
@@ -53,11 +60,6 @@ const timeFormat = new Intl.DateTimeFormat("ru", {
   hour: "2-digit",
   minute: "2-digit",
 })
-const dateFormat = new Intl.DateTimeFormat("ru", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-})
 const dateTimeFormat = new Intl.DateTimeFormat("ru", {
   day: "numeric",
   month: "short",
@@ -70,34 +72,6 @@ async function getJson<T>(path: string): Promise<T> {
   const data = (await response.json()) as T & { error?: string }
   if (!response.ok) throw new Error(data.error || "Не удалось загрузить чат.")
   return data
-}
-
-async function noteCommand(body: Record<string, unknown>) {
-  const response = await fetch("/api/chat/notes", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Poll-Client": "panel" },
-    body: JSON.stringify(body),
-  })
-  const data = (await response.json()) as { error?: string }
-  if (!response.ok)
-    throw new Error(data.error || "Не удалось сохранить заметку.")
-}
-
-function ViewerAvatar({ name, url }: { name: string; url?: string }) {
-  const [failedUrl, setFailedUrl] = useState("")
-  return (
-    <span className="chat-viewer-avatar" aria-hidden="true">
-      {name.slice(0, 1).toUpperCase()}
-      {url && failedUrl !== url && (
-        <img
-          src={url}
-          alt=""
-          referrerPolicy="no-referrer"
-          onError={() => setFailedUrl(url)}
-        />
-      )}
-    </span>
-  )
 }
 
 function TwitchBadges({
@@ -144,25 +118,47 @@ export function ChatHomePage({
   contest,
   onNavigate,
   emoteProvider = "ffz",
+  activityControls,
 }: {
+  activityControls?: StudioActivityControls
   emoteProvider?: ChatEmoteProvider
   twitch: TwitchState
   poll: Poll | null
   contest: Contest | null
   onNavigate: (view: AppView) => void
 }) {
+  const [
+    dashboardBlocks,
+    setDashboardBlocks,
+    showParticipants,
+    setShowParticipants,
+  ] = useDashboardBlocks()
   const showToast = useToast()
   const channelId = twitch.userId
-  const [messages, setMessages] = useState<FeedMessage[]>([])
+  const [messages, setMessages, outboxStorageError] = useChatFeed(
+    channelId || "offline"
+  )
+  useEffect(() => {
+    if (outboxStorageError)
+      showToast({
+        message: "Не удалось сохранить неотправленные сообщения на диске",
+        description:
+          "Они останутся в текущем сеансе. Не закрывайте Cue до повторной отправки.",
+        tone: "warning",
+      })
+  }, [outboxStorageError, showToast])
   const [summary, setSummary] = useState<RecentChat["archive"] | null>(null)
+  const [archiveRevision, setArchiveRevision] = useState(0)
+  const archiveEpoch = useRef(0)
+  const retention = useRef<ChatArchiveRetention>({
+    allThrough: 0,
+    deletedThrough: 0,
+  })
   const [selectedViewer, setSelectedViewer] = useState<string | null>(null)
-  const [profileTab, setProfileTab] = useState<"messages" | "notes">("messages")
   const [profile, setProfile] = useState<ChatProfile | null>(null)
   const [loading, setLoading] = useState(Boolean(channelId))
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [loadingProfile, setLoadingProfile] = useState(false)
-  const [savingNote, setSavingNote] = useState(false)
-  const [noteText, setNoteText] = useState("")
   const [error, setError] = useState("")
   const [unseen, setUnseen] = useState(0)
   const [composer, setComposer] = useState("")
@@ -187,7 +183,7 @@ export function ChatHomePage({
   const [emoteRevision, setEmoteRevision] = useState(0)
   const emoteKey = `${channelId}:${Boolean(twitch.canReadEmotes)}:${emoteRevision}`
   const emoteLoading = Boolean(channelId) && emoteState.requestKey !== emoteKey
-  const composerRef = useRef<HTMLInputElement>(null)
+  const composerRef = useRef<HTMLTextAreaElement>(null)
   const catalog = emoteState.channelId === channelId ? emoteState.catalog : null
   const lookup = useMemo(
     () => emoteLookup(catalog?.emotes || [], emoteProvider),
@@ -258,10 +254,37 @@ export function ChatHomePage({
   const pendingAvatars = useRef(new Set<string>())
   const avatarTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
-  const profileCloseRef = useRef<HTMLButtonElement>(null)
+  const [profileReturnFocus, setProfileReturnFocus] =
+    useState<HTMLElement | null>(null)
   const selectedViewerRef = useRef<string | null>(null)
   const nearBottom = useRef(true)
   const scrollRestore = useRef<number | null>(null)
+
+  const applyArchiveCleanup = useCallback(
+    (change: ChatArchiveCleanup) => {
+      if (change.channelId !== channelId) return
+      archiveEpoch.current++
+      const key = change.scope === "all" ? "allThrough" : "deletedThrough"
+      retention.current[key] = Math.max(
+        retention.current[key],
+        change.throughId
+      )
+      setMessages((current) => retainChatMessages(current, retention.current))
+      setProfile((current) =>
+        current
+          ? {
+              ...current,
+              messages: retainChatMessages(current.messages, retention.current),
+            }
+          : current
+      )
+      setSummary(change.archive)
+      setUnseen(0)
+      if (selectedViewerRef.current) setLoadingProfile(true)
+      setArchiveRevision((revision) => revision + 1)
+    },
+    [channelId, setMessages]
+  )
 
   useEffect(() => {
     if (!channelId) return
@@ -314,11 +337,22 @@ export function ChatHomePage({
 
   const loadRecent = useCallback(async () => {
     if (!channelId) return
+    const epoch = archiveEpoch.current
     try {
       const data = await getJson<RecentChat>("/api/chat/recent")
-      if (data.channelId !== channelId) return
+      if (data.channelId !== channelId || archiveEpoch.current !== epoch) return
       setSummary(data.archive)
-      setMessages((current) => mergeChatFeed(current, data.messages))
+      setMessages((current) =>
+        mergeChatFeed(
+          current.filter(
+            (item) =>
+              item.id <= 0 ||
+              data.messages.some((message) => message.id === item.id)
+          ),
+          data.messages
+        )
+      )
+      setArchiveRevision((revision) => revision + 1)
       setError("")
     } catch (cause) {
       setError(
@@ -327,7 +361,7 @@ export function ChatHomePage({
     } finally {
       setLoading(false)
     }
-  }, [channelId])
+  }, [channelId, setMessages])
 
   useEffect(() => {
     if (!channelId) return
@@ -367,9 +401,14 @@ export function ChatHomePage({
           : current
       )
     })
+    events.addEventListener("cleanup", (event) => {
+      applyArchiveCleanup(
+        JSON.parse((event as MessageEvent).data) as ChatArchiveCleanup
+      )
+    })
     events.onopen = () => void loadRecent()
     return () => events.close()
-  }, [channelId, loadRecent])
+  }, [channelId, loadRecent, applyArchiveCleanup, setMessages])
 
   const selectViewer = (viewerId: string) => {
     if (selectedViewerRef.current === viewerId) return
@@ -377,24 +416,17 @@ export function ChatHomePage({
     setSelectedViewer(viewerId)
     setProfile(null)
     setLoadingProfile(true)
-    setProfileTab("messages")
+    setProfileReturnFocus(
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null
+    )
   }
 
   const closeProfile = () => {
     selectedViewerRef.current = null
     setSelectedViewer(null)
-    setNoteText("")
   }
-
-  useEffect(() => {
-    if (!selectedViewer) return
-    profileCloseRef.current?.focus()
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeProfile()
-    }
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [selectedViewer])
 
   useLayoutEffect(() => {
     const list = listRef.current
@@ -411,10 +443,12 @@ export function ChatHomePage({
     const first = messages[0]
     if (!first || loadingOlder) return
     setLoadingOlder(true)
+    const epoch = archiveEpoch.current
     try {
       const data = await getJson<RecentChat>(
         `/api/chat/recent?before=${first.id}`
       )
+      if (archiveEpoch.current !== epoch || data.channelId !== channelId) return
       const list = listRef.current
       scrollRestore.current = list ? list.scrollHeight - list.scrollTop : null
       setMessages((current) => mergeChatFeed(data.messages, current))
@@ -451,70 +485,20 @@ export function ChatHomePage({
     return () => {
       cancelled = true
     }
-  }, [channelId, selectedViewer])
+  }, [channelId, selectedViewer, archiveRevision])
 
   const loadOlderProfile = async () => {
     if (!profile?.messages.length || !selectedViewer) return
-    try {
-      const data = await getJson<ChatProfile>(
-        `/api/chat/profile?viewerId=${encodeURIComponent(selectedViewer)}&before=${profile.messages.at(-1)!.id}`
-      )
-      setProfile((current) =>
-        current?.viewerId === selectedViewer
-          ? { ...current, messages: [...current.messages, ...data.messages] }
-          : current
-      )
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Не удалось загрузить историю."
-      )
-    }
-  }
-
-  const saveNote = async () => {
-    if (!selectedViewer || !noteText.trim() || savingNote) return
-    setSavingNote(true)
-    try {
-      await noteCommand({
-        type: "add",
-        viewerId: selectedViewer,
-        text: noteText.trim(),
-      })
-      setNoteText("")
-      const data = await getJson<ChatProfile>(
-        `/api/chat/profile?viewerId=${encodeURIComponent(selectedViewer)}`
-      )
-      setProfile((current) =>
-        current?.viewerId === selectedViewer
-          ? { ...current, notes: data.notes }
-          : current
-      )
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Не удалось сохранить заметку."
-      )
-    } finally {
-      setSavingNote(false)
-    }
-  }
-
-  const deleteNote = async (noteId: string) => {
-    if (!selectedViewer) return
-    try {
-      await noteCommand({ type: "delete", viewerId: selectedViewer, noteId })
-      setProfile((current) =>
-        current?.viewerId === selectedViewer
-          ? {
-              ...current,
-              notes: current.notes.filter((note) => note.id !== noteId),
-            }
-          : current
-      )
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Не удалось удалить заметку."
-      )
-    }
+    const epoch = archiveEpoch.current
+    const data = await getJson<ChatProfile>(
+      `/api/chat/profile?viewerId=${encodeURIComponent(selectedViewer)}&before=${profile.messages.at(-1)!.id}`
+    )
+    if (archiveEpoch.current !== epoch) return
+    setProfile((current) =>
+      current?.viewerId === selectedViewer
+        ? { ...current, messages: [...current.messages, ...data.messages] }
+        : current
+    )
   }
 
   const moderate = async (
@@ -575,7 +559,10 @@ export function ChatHomePage({
         if (!response.ok || !data.message)
           throw new Error(data.error || "Не удалось подтвердить отправку.")
         setMessages((current) =>
-          mergeChatFeed(current, [data.message!], { confirmedKey: key })
+          retainChatMessages(
+            mergeChatFeed(current, [data.message!], { confirmedKey: key }),
+            retention.current
+          )
         )
       } catch (cause) {
         const error =
@@ -598,7 +585,7 @@ export function ChatHomePage({
     enqueueMessage(message)
   }
   const sendChat = () => {
-    const text = composer.trim()
+    const text = normalizeChatText(composer)
     if (!text || !channelId || twitch.phase !== "connected" || !twitch.canSend)
       return
     if (messages.filter((item) => item.delivery === "sending").length >= 10) {
@@ -631,13 +618,35 @@ export function ChatHomePage({
       data-profile-open={Boolean(selectedViewer) || undefined}
     >
       <StreamerDashboard
+        blocksAction={(arrange) => (
+          <DashboardBlocksMenu
+            order={dashboardBlocks}
+            onChange={setDashboardBlocks}
+            participants={showParticipants}
+            onParticipantsChange={setShowParticipants}
+            onArrange={arrange}
+          />
+        )}
+        activityControls={activityControls}
+        order={dashboardBlocks}
+        onOrderChange={setDashboardBlocks}
         poll={poll}
         contest={contest}
         summary={summary}
+        channelId={channelId || ""}
+        onArchiveCleanup={applyArchiveCleanup}
         onNavigate={onNavigate}
       />
       <div className="chat-home-main">
         <StreamOverview key={channelId || "offline"} channelId={channelId} />
+        {showParticipants && channelId && (
+          <ChatParticipants
+            key={channelId}
+            channelId={channelId}
+            avatars={avatars}
+            onSelectViewer={selectViewer}
+          />
+        )}
         {error && (
           <p className="chat-home-error" role="alert">
             {error}
@@ -792,26 +801,26 @@ export function ChatHomePage({
                           </span>
                         )}
                         {message.delivery === "sending" && (
-                          <span
-                            className="chat-home-delivery-state"
-                            role="status"
-                          >
-                            Отправка…
-                          </span>
+                          <ChatSendingIndicator />
                         )}
                         {message.delivery === "failed" && (
-                          <span
-                            className="chat-home-delivery-error"
-                            role="alert"
-                          >
-                            <span>{message.deliveryError}</span>
-                            <button
-                              type="button"
-                              onClick={() => retryMessage(message)}
-                            >
-                              Повторить
-                            </button>
-                          </span>
+                          <ChatDeliveryError
+                            error={message.deliveryError}
+                            disabled={twitch.phase !== "connected"}
+                            onRetry={() => retryMessage(message)}
+                            onDiscard={() => {
+                              if (!message.localKey) return
+                              setMessages((current) =>
+                                discardFailedChatMessage(
+                                  current,
+                                  message.localKey!
+                                )
+                              )
+                              composerRef.current?.focus({
+                                preventScroll: true,
+                              })
+                            }}
+                          />
                         )}
                       </div>
                     </ModeratedMessage>
@@ -851,8 +860,9 @@ export function ChatHomePage({
               void sendChat()
             }}
           >
-            <input
+            <textarea
               ref={composerRef}
+              rows={1}
               aria-label="Сообщение в чат Twitch"
               maxLength={500}
               placeholder={
@@ -863,7 +873,27 @@ export function ChatHomePage({
               value={composer}
               disabled={twitch.phase !== "connected"}
               onChange={(event) => setComposer(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key !== "Enter" ||
+                  event.shiftKey ||
+                  event.nativeEvent.isComposing ||
+                  event.keyCode === 229
+                )
+                  return
+                event.preventDefault()
+                if (!event.repeat) event.currentTarget.form?.requestSubmit()
+              }}
             />
+            {composer.length >= 400 && (
+              <span
+                className="chat-home-counter"
+                data-limit={composer.length >= 500 || undefined}
+                aria-live="polite"
+              >
+                {500 - composer.length}
+              </span>
+            )}
             <ChatEmotePicker
               catalog={catalog}
               loading={emoteLoading}
@@ -880,207 +910,46 @@ export function ChatHomePage({
               }}
               onReconnect={() => onNavigate("settings")}
             />
-            <button
+            <Button
+              size="icon"
               type="submit"
+              className="chat-home-send"
               aria-label="Отправить сообщение"
               disabled={!composer.trim() || twitch.phase !== "connected"}
             >
               <ArrowUp aria-hidden="true" />
-            </button>
+            </Button>
           </form>
         )}
       </div>
 
       {selectedViewer && (
-        <div
-          className="chat-profile-layer"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeProfile()
+        <ViewerProfile
+          key={selectedViewer}
+          profile={profile}
+          loading={loadingProfile}
+          channelId={channelId || ""}
+          avatarUrl={
+            selectedViewer === `twitch:${channelId}`
+              ? twitch.profileImageUrl || avatars[selectedViewer]
+              : avatars[selectedViewer]
+          }
+          lookup={lookup}
+          returnFocus={profileReturnFocus}
+          onClose={closeProfile}
+          onReload={() => {
+            setLoadingProfile(true)
+            setArchiveRevision((revision) => revision + 1)
           }}
-        >
-          <aside
-            className="chat-profile"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Профиль зрителя"
-          >
-            <header className="chat-profile-header">
-              <span>Профиль</span>
-              <button
-                ref={profileCloseRef}
-                type="button"
-                className="chat-profile-back"
-                aria-label="Закрыть профиль"
-                onClick={closeProfile}
-              >
-                <X aria-hidden="true" />
-              </button>
-            </header>
-            {loadingProfile ? (
-              <ProfileLoadingSkeleton />
-            ) : !profile ? (
-              <div className="chat-profile-loading" role="status">
-                Не удалось загрузить профиль.
-              </div>
-            ) : (
-              <div className="chat-profile-scroll">
-                <div className="chat-profile-identity">
-                  <ViewerAvatar
-                    name={profile.viewerName}
-                    url={avatars[profile.viewerId]}
-                  />
-                  <div>
-                    <h2
-                      style={
-                        profile.nameColor
-                          ? { color: profile.nameColor }
-                          : undefined
-                      }
-                    >
-                      {profile.viewerName}
-                    </h2>
-                    <span>@{profile.viewerLogin}</span>
-                  </div>
-                </div>
-                <div className="chat-profile-facts">
-                  <span>
-                    {profile.messageCount.toLocaleString("ru")} сообщений
-                  </span>
-                  {profile.firstSeen && (
-                    <span>С {dateFormat.format(profile.firstSeen)}</span>
-                  )}
-                </div>
-                {profile.roles.length > 0 && profile.roles[0] !== "viewer" && (
-                  <div className="chat-profile-roles">
-                    {profile.roles.map((role) => (
-                      <span key={role}>{role}</span>
-                    ))}
-                  </div>
-                )}
-                {/^[A-Za-z0-9_]{1,50}$/.test(profile.viewerLogin) && (
-                  <a
-                    className="chat-profile-link"
-                    href={`https://www.twitch.tv/${profile.viewerLogin}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Открыть Twitch <ExternalLink aria-hidden="true" />
-                  </a>
-                )}
-                <div
-                  className="chat-profile-tabs"
-                  role="tablist"
-                  aria-label="Профиль зрителя"
-                >
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={profileTab === "messages"}
-                    data-active={profileTab === "messages" || undefined}
-                    onClick={() => setProfileTab("messages")}
-                  >
-                    Сообщения
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={profileTab === "notes"}
-                    data-active={profileTab === "notes" || undefined}
-                    onClick={() => setProfileTab("notes")}
-                  >
-                    Заметки
-                    {profile.notes.length ? ` ${profile.notes.length}` : ""}
-                  </button>
-                </div>
-                {profileTab === "notes" && (
-                  <section className="chat-profile-section">
-                    <div className="chat-profile-note-form">
-                      <textarea
-                        value={noteText}
-                        maxLength={2000}
-                        placeholder="Что стоит запомнить о зрителе?"
-                        aria-label="Новая заметка"
-                        onChange={(event) => setNoteText(event.target.value)}
-                      />
-                      <button
-                        type="button"
-                        disabled={!noteText.trim() || savingNote}
-                        onClick={() => void saveNote()}
-                      >
-                        <Plus aria-hidden="true" /> Добавить
-                      </button>
-                    </div>
-                    {profile.notes.length > 0 && (
-                      <div className="chat-profile-notes">
-                        {profile.notes.map((note) => (
-                          <article key={note.id}>
-                            <p>{note.text}</p>
-                            <span>{dateTimeFormat.format(note.createdAt)}</span>
-                            <button
-                              type="button"
-                              aria-label="Удалить заметку"
-                              onClick={() => void deleteNote(note.id)}
-                            >
-                              <Trash2 aria-hidden="true" />
-                            </button>
-                          </article>
-                        ))}
-                      </div>
-                    )}
-                  </section>
-                )}
-                {profileTab === "messages" && (
-                  <section className="chat-profile-section">
-                    {profile.messages.length === 0 ? (
-                      <p className="chat-profile-muted">Сообщений пока нет.</p>
-                    ) : (
-                      <div className="chat-profile-history">
-                        {profile.messages.map((message) => (
-                          <article key={message.id}>
-                            <time
-                              dateTime={new Date(message.sentAt).toISOString()}
-                            >
-                              {dateTimeFormat.format(message.sentAt)}
-                            </time>
-                            <p>
-                              <span
-                                className={
-                                  message.deleted
-                                    ? "chat-profile-deleted-text"
-                                    : undefined
-                                }
-                              >
-                                <ChatMessageBody
-                                  text={message.text}
-                                  emotes={message.emotes}
-                                  lookup={lookup}
-                                />
-                              </span>
-                              {message.deleted && (
-                                <span className="chat-home-deleted-label">
-                                  Удалено
-                                </span>
-                              )}
-                            </p>
-                          </article>
-                        ))}
-                      </div>
-                    )}
-                    {profile.messageCount > profile.messages.length && (
-                      <button
-                        className="chat-profile-more"
-                        type="button"
-                        onClick={() => void loadOlderProfile()}
-                      >
-                        Показать ещё
-                      </button>
-                    )}
-                  </section>
-                )}
-              </div>
-            )}
-          </aside>
-        </div>
+          onLoadOlder={loadOlderProfile}
+          onNoteSaved={(note) =>
+            setProfile((current) =>
+              current?.viewerId === selectedViewer
+                ? { ...current, notes: note ? [note] : [] }
+                : current
+            )
+          }
+        />
       )}
     </section>
   )

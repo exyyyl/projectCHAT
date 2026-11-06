@@ -1,0 +1,78 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { applyCommand, initialState, validateStoredState } from '../server/polls.mjs';
+import { createStore } from '../server/store.mjs';
+
+const contest = {mode:'keyword',keyword:'участвую',numberMin:1,numberMax:100,duration:120,antiSpam:true,allowedRoles:['viewer','vip'],source:'twitch',participants:[{name:'Private'}],winningNumber:42};
+const wheel = {mode:'list',minimum:'1',maximum:'100',options:[{id:'old-a',label:'Игра A'},{id:'old-b',label:'Игра B'}],withoutRepeats:true,excluded:['old-a'],history:['Игра A']};
+const create = (state,kind,data,name=kind) => applyCommand(state,{type:'template-create',template:{name,kind,data}},1000).state;
+
+test('saved templates keep reusable settings and strip contest participants and wheel results',()=>{
+ let state=create(initialState(),'contest',contest);
+ state=create(state,'wheel',wheel);
+ assert.equal(state.templates[0].data.participants,undefined);
+ assert.equal(state.templates[0].data.winningNumber,undefined);
+ assert.equal(state.templates[0].data.antiSpam,true);
+ assert.equal(state.templates[1].data.history,undefined);
+ assert.equal(state.templates[1].data.excluded,undefined);
+ assert.deepEqual(state.templates[1].data.options.map(item=>item.id),['1','2']);
+ assert.equal(state.poll,null);
+ assert.equal(state.draftRevision,0);
+ assert.throws(()=>applyCommand(state,{type:'template-apply',templateId:state.templates[0].id}),/своём разделе/);
+});
+test('all overlay templates restore appearance without switching the current output or poll state',()=>{
+ let state=initialState();
+ const original=structuredClone(state.draft);
+ state=create(state,'poll-widget',{...state.widget,panelWidth:600});
+ state=create(state,'chat-widget',{...state.chatOverlay,enabled:true,fontSize:35,hideAfter:10});
+ state=create(state,'contest-widget',{...state.contestOverlay,enabled:true,width:700});
+ state.chatOverlay.enabled=false; state.contestOverlay.enabled=false;
+ for(const template of state.templates) state=applyCommand(state,{type:'template-apply',templateId:template.id}).state;
+ assert.equal(state.widget.panelWidth,600);
+ assert.equal(state.chatOverlay.fontSize,35);
+ assert.equal(state.chatOverlay.enabled,false);
+ assert.equal(state.contestOverlay.width,700);
+ assert.equal(state.contestOverlay.enabled,false);
+ assert.deepEqual(state.draft,original);
+ assert.equal(state.poll,null);
+ assert.equal(state.templates[1].data.enabled,undefined);
+});
+test('template editing, pinning and ordering preserve IDs and reject invalid or deleted references',()=>{
+ let state=create(initialState(),'wheel',wheel,'Первый');
+ state=create(state,'wheel',wheel,'Второй');
+ const [first,second]=state.templates;
+ state=applyCommand(state,{type:'template-update',templateId:first.id,template:{name:'Обновлён',pinned:true}},2000).state;
+ assert.equal(state.templates[0].id,first.id);
+ assert.equal(state.templates[0].createdAt,1000);
+ assert.equal(state.templates[0].updatedAt,2000);
+ assert.throws(()=>applyCommand(state,{type:'template-reorder',templateId:second.id,targetId:first.id}),/группы/);
+ assert.throws(()=>applyCommand(state,{type:'template-update',templateId:first.id,template:{kind:'contest',data:contest}}),/нельзя изменить/);
+ state=applyCommand(state,{type:'template-update',templateId:first.id,template:{pinned:false}}).state;
+ state=applyCommand(state,{type:'template-reorder',templateId:second.id,targetId:first.id}).state;
+ assert.equal(state.templates[0].id,second.id);
+ state=applyCommand(state,{type:'template-delete',templateId:first.id}).state;
+ assert.equal(state.templates.length,1);
+ assert.throws(()=>applyCommand(state,{type:'template-delete',templateId:first.id}),/удалён/);
+ for (const template of [{kind:'unknown',data:{}},{kind:'wheel',data:{...wheel,options:[]}},{kind:'wheel',data:{...wheel,mode:'number',minimum:'0',maximum:'10000'}},{kind:'chat-widget',data:{fontSize:999}},{kind:'contest',data:{...contest,keyword:''}}]) assert.throws(()=>create(initialState(),template.kind,template.data));
+});
+test('legacy poll libraries load unchanged, and new templates persist and round-trip through settings backups',async()=>{
+ const legacy=initialState();delete legacy.templates;
+ assert.deepEqual(validateStoredState(legacy).templates,[]);
+ const filename=join(await mkdtemp(join(tmpdir(),'cue-templates-')),'state.json');
+ let store=await createStore(filename);
+ await store.command({type:'preset-create',name:'Старый опрос',draft:legacy.draft});
+ await store.command({type:'template-create',template:{name:'Конкурс',kind:'contest',data:contest}});
+ await store.command({type:'template-create',template:{name:'Рулетка',kind:'wheel',data:wheel}});
+ store=await createStore(filename);
+ const backup={schema:1,app:'Cue',...store.snapshot()};
+ const imported=applyCommand(initialState(),{type:'settings-import',draftRevision:0,settings:backup}).state;
+ assert.equal(imported.presets[0].name,'Старый опрос');
+ assert.deepEqual(imported.templates.map(item=>item.kind),['contest','wheel']);
+ assert.deepEqual(imported.templates.map(item=>item.data),backup.templates.map(item=>item.data));
+ assert.notEqual(imported.templates[0].id,backup.templates[0].id);
+ const corrupt=structuredClone(imported);corrupt.templates[1].id=corrupt.templates[0].id;
+ assert.throws(()=>validateStoredState(corrupt),/идентификаторы/);
+});

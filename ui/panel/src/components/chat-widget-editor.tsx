@@ -1,3 +1,5 @@
+import { WidgetFontSelect } from "./widget-font-select"
+import type { ReactNode } from "react"
 import { AnimatedSettings } from "@/components/animated-settings"
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import type { CSSProperties } from "react"
@@ -15,6 +17,7 @@ import {
   chatOverlayPresets,
   chatOverlayStyle,
   matchingChatOverlayPreset,
+  resolveChatOverlay,
 } from "../../../../public/chat-overlay-model.js"
 import type {
   ChatOverlayPreset,
@@ -120,7 +123,12 @@ function StylePreview({ preset }: { preset: ChatOverlayPreset }) {
         className="cue-chat-overlay"
         data-style={settings.style}
         data-align="left"
-        style={chatOverlayStyle(settings) as CSSProperties}
+        style={
+          {
+            ...chatOverlayStyle(settings),
+            "--chat-radius": `${Math.round(settings.radius * 0.4)}px`,
+          } as CSSProperties
+        }
       >
         {[0, 1].map((index) => (
           <span className="cue-chat-slot" key={index}>
@@ -133,7 +141,7 @@ function StylePreview({ preset }: { preset: ChatOverlayPreset }) {
                     : settings.nameColor,
                 }}
               >
-                <strong>{["peachysoul", "MoonByte"][index]}</strong>
+                <strong>{["ae_evsoul", "kyst21"][index]}</strong>
               </span>
               <span className="cue-chat-body">
                 {index ? "Вот это момент" : "Всем привет!"}
@@ -149,10 +157,12 @@ export function ChatWidgetEditor({
   settings,
   onUpdate,
   onSelectKind,
+  templateAction,
 }: {
   settings: ChatOverlaySettings
   onUpdate: (patch: Partial<ChatOverlaySettings>) => void
   onSelectKind: (kind: WidgetKind) => void
+  templateAction?: ReactNode
 }) {
   const id = useId()
   const [panel, setPanel] = useState<
@@ -163,9 +173,9 @@ export function ChatWidgetEditor({
   const [scene, setScene] = useState("dark")
   const [size, setSize] = useState({ width: 480, height: 600 })
   const [messages, setMessages] = useState(() =>
-    [1, 2, 3].map((id) => createChatPreviewMessage(id))
+    [1, 2, 3, 4, 5, 6].map((id) => createChatPreviewMessage(id))
   )
-  const nextId = useRef(4)
+  const nextId = useRef(7)
   const stage = useRef<HTMLDivElement>(null)
   const panelTrigger = useRef<HTMLButtonElement>(null)
   const preset = matchingChatOverlayPreset(settings)
@@ -234,35 +244,13 @@ export function ChatWidgetEditor({
             </button>
           ))}
         </div>
-        <FormSelect
-          disabled={false}
-          label="Вид сообщений"
-          value={settings.style}
-          options={[
-            ["cards", "Карточки"],
-            ["minimal", "Строки"],
-            ["bubble", "Пузыри"],
-          ]}
-          onChange={(style) =>
-            onUpdate({ style: style as ChatOverlaySettings["style"] })
-          }
-        />
       </>
     ),
     text: (
       <>
-        <FormSelect
-          disabled={false}
-          label="Шрифт"
+        <WidgetFontSelect
           value={settings.font}
-          options={[
-            ["geist", "Geist"],
-            ["system", "Системный"],
-            ["mono", "Моно"],
-          ]}
-          onChange={(font) =>
-            onUpdate({ font: font as ChatOverlaySettings["font"] })
-          }
+          onChange={(font) => onUpdate({ font })}
         />
         <NumberProperty
           label="Размер текста"
@@ -327,6 +315,19 @@ export function ChatWidgetEditor({
     ),
     messages: (
       <>
+        <FormSelect
+          disabled={false}
+          label="Вид сообщений"
+          value={settings.style}
+          options={[
+            ["cards", "Карточки"],
+            ["minimal", "Строки"],
+            ["bubble", "Пузыри"],
+          ]}
+          onChange={(style) =>
+            onUpdate({ style: style as ChatOverlaySettings["style"] })
+          }
+        />
         <NumberProperty
           label="Сообщений на экране"
           value={settings.maxMessages}
@@ -404,11 +405,15 @@ export function ChatWidgetEditor({
         <FormSelect
           disabled={false}
           label="Появление"
-          value={settings.animation}
+          value={resolveChatOverlay(settings).animation}
           options={[
             ["slide", "Плавный подъём"],
             ["fade", "Растворение"],
-            ["none", "Без анимации"],
+            ["scale", "Пружина"],
+            ["side", "Появление сбоку"],
+            ["turn", "Разворот"],
+            ["reveal", "Раскрытие"],
+            ["bounce", "Отскок"],
           ]}
           onChange={(animation) =>
             onUpdate({
@@ -416,16 +421,14 @@ export function ChatWidgetEditor({
             })
           }
         />
-        {settings.animation !== "none" && (
-          <NumberProperty
-            label="Длительность"
-            value={settings.animationDuration}
-            min={150}
-            max={1200}
-            unit="мс"
-            onChange={(animationDuration) => onUpdate({ animationDuration })}
-          />
-        )}
+        <NumberProperty
+          label="Длительность"
+          value={settings.animationDuration}
+          min={150}
+          max={1200}
+          unit="мс"
+          onChange={(animationDuration) => onUpdate({ animationDuration })}
+        />
       </>
     ),
   }
@@ -444,6 +447,7 @@ export function ChatWidgetEditor({
         onTogglePlayback={() => setPlaying((value) => !value)}
         onSceneChange={setScene}
         onSelectKind={onSelectKind}
+        templateAction={templateAction}
       />
       <div className="widget-canvas-workspace">
         <div className="chat-studio-canvas" data-scene={scene} ref={stage}>
@@ -463,6 +467,7 @@ export function ChatWidgetEditor({
                 <ChatOverlayLive preview />
               ) : (
                 <ChatOverlayView
+                  key={`${settings.animation}:${settings.animationDuration}`}
                   messages={messages}
                   settings={
                     source === "regular" && playing

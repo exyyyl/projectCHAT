@@ -10,20 +10,21 @@ export const chatPreviewSamples = [
 export type ChatPreviewKind = (typeof chatPreviewSamples)[number][0]
 
 const names = [
+  "ae_evsoul",
+  "kyst21",
+  "marinaeslichto",
+  "limaaay",
   "peachysoul",
-  "MoonByte",
   "exyyyl",
-  "PixelFox",
-  "Kira",
-  "LimeCat",
 ]
+const longMessage = `Вот такая хуйня собачка Вот такая соба хуйнячка Вот такачка соба хуйня Такаватачка соба хуйня Соба такая хуй вотня Хуй собаня вот такачка Вот собаня хуй такачка Такаватая хуй собанячка Такабачья хуй соба вотня Така хуйная соба вотбачка Собаватая хуй такабачка Вотбачья хуй тока собаня Хуй собая такавотнячка Хуй такачка соба вотня`
 const texts = [
-  "Всем привет! 👋",
-  "Вот это момент",
   "Kappa",
-  "Давайте ещё один раунд",
-  "Это было неожиданно ✨",
-  "Спасибо за стрим 💛",
+  "За додобоны продам душу!",
+  "Трудные времена создают сильных котят",
+  "Я тебя могну, мо-мо-могну",
+  longMessage,
+  "халёу евринян!",
 ]
 const colors = [
   "#d9a7ff",
@@ -40,12 +41,11 @@ export function createChatPreviewMessage(
   kind: ChatPreviewKind = "regular",
   now = Date.now()
 ): ChatMessage {
-  const index = (id - 1) % names.length
+  const index =
+    kind === "long" ? names.indexOf("peachysoul") : (id - 1) % names.length
   const text =
     kind === "long"
-      ? "Длинное сообщение должно оставаться внутри виджета и читаться на нескольких строках. Зрители обсуждают стрим, делятся впечатлениями и задают вопросы — даже когда текста очень много.\nНовый абзац тоже сохраняется. ".repeat(
-          2
-        )
+      ? longMessage
       : kind === "word"
         ? "ОченьДлинноеСообщениеБезПробелов".repeat(20).slice(0, 500)
         : kind === "link"

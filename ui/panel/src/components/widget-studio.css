@@ -132,17 +132,20 @@
 .widget-artboard [data-editable] {
   cursor: pointer;
   outline: 1px solid transparent;
-  outline-offset: 6px;
+  outline-offset: 4px;
   border-radius: 3px;
 }
 .widget-artboard [data-editable]:hover,
-.widget-artboard [data-editable]:focus-visible,
 .widget-artboard [data-edit-selected="true"] {
-  outline: 1px solid color-mix(in srgb, var(--cue-text) 45%, transparent);
-  outline-offset: 6px;
+  outline: 1px dashed color-mix(in srgb, var(--cue-text) 16%, transparent);
+  outline-offset: 4px;
+}
+.widget-artboard [data-editable]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
 }
 .widget-artboard .cue-poll-widget[data-edit-selected="true"] {
-  outline-offset: 8px;
+  outline-offset: 6px;
 }
 .widget-edit-dock {
   flex: none;
@@ -385,6 +388,25 @@
   text-align: center;
   font-size: 13px;
 }
+.widget-canvas-empty {
+  display: flex;
+  width: min(340px, calc(100% - 32px));
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 16px;
+  padding: 28px 24px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--foreground);
+  text-align: center;
+}
+.widget-canvas-empty > svg { width: 24px; height: 24px; margin-bottom: 4px; color: var(--muted-foreground); }
+.widget-canvas-empty h2 { font-size: 17px; font-weight: 600; line-height: 1.4; }
+.widget-canvas-empty p { max-width: 30ch; color: var(--muted-foreground); font-size: 13px; line-height: 1.6; }
+.widget-canvas-empty > button { margin-top: 6px; }
 @container (max-width: 680px) {
   .widget-property-grid {
     column-gap: 28px;
@@ -421,7 +443,10 @@
     padding-top: 8px;
   }
   .widget-edit-navigation {
-    padding: 10px 36px 10px 10px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 8px 40px 8px 10px;
     min-height: 54px;
   }
   .widget-edit-navigation > button {
@@ -457,7 +482,7 @@
 .studio-toolbar-visibility[aria-pressed='true'], .studio-toolbar-test[aria-expanded='true'] { color: var(--foreground); }
 .studio-toolbar-output { gap: 8px; }
 .studio-toolbar-output > button { height: 32px; }
-.studio-toolbar-visibility { display: flex; flex: none; width: 154px; min-height: 32px; align-items: center; justify-content: center; gap: 7px; padding: 6px 10px; border-radius: 6px; font-size: 12px; white-space: nowrap; color: var(--muted-foreground); }
+.studio-toolbar-visibility { display: flex; flex: none; width: 32px; min-height: 32px; align-items: center; justify-content: center; padding: 6px; border-radius: 6px; color: var(--muted-foreground); }
 .studio-toolbar-visibility > svg { width: 15px; height: 15px; flex: none; }
 .studio-toolbar-visibility:hover { background: var(--surface-subtle); }
 .studio-toolbar-test-tray { position: absolute; top: 100%; left: 24px; right: 24px; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 10px 12px; border-radius: 8px; background: var(--popover); box-shadow: 0 12px 32px rgb(0 0 0 / 25%); }
@@ -472,18 +497,18 @@
 .studio-toolbar-backgrounds > [data-scene='light'] > span { background: #d9dbdf; }
 .studio-toolbar-backgrounds > [data-scene='chroma'] > span { background: #227c55; }
 @container (max-width: 960px) {
-  .studio-toolbar.widget-studio-toolbar { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; padding-inline: 16px; }
+  .studio-toolbar.widget-studio-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding-inline: 16px; }
   .studio-toolbar-context { display: contents; }
   .studio-toolbar-context > .widget-kind-tabs { justify-self: start; grid-column: 1; grid-row: 1; }
-  .studio-toolbar-output { grid-column: 2; grid-row: 1; }
-  .studio-toolbar-preview { grid-column: 1 / -1; grid-row: 2; }
+  .studio-toolbar-output { grid-column: 1 / -1; grid-row: 2; justify-self: end; min-width: 0; max-width: 100%; flex-wrap: wrap; }
+  .studio-toolbar-preview { grid-column: 2; grid-row: 1; justify-self: end; }
   .studio-toolbar-test-tray { left: 16px; right: 16px; gap: 8px; }
 }
 @container (max-width: 620px) {
   .studio-toolbar.widget-studio-toolbar { grid-template-columns: minmax(0, 1fr); padding-inline: 12px; }
   .studio-toolbar-context > .widget-kind-tabs { grid-column: 1; grid-row: 1; }
-  .studio-toolbar-output { grid-column: 1; grid-row: 2; justify-self: start; }
-  .studio-toolbar-preview { grid-column: 1; grid-row: 3; }
+  .studio-toolbar-output { grid-column: 1; grid-row: 2; justify-self: stretch; min-width: 0; flex-wrap: wrap; }
+  .studio-toolbar-preview { grid-column: 1; grid-row: 3; justify-self: start; }
   .studio-toolbar-test-tray { left: 12px; right: 12px; }
 }
 

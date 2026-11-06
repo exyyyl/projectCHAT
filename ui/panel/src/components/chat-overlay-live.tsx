@@ -3,6 +3,7 @@ import { chatOverlayDefaults } from "../../../../public/chat-overlay-model.js"
 import type { ChatOverlaySettings } from "../../../../public/chat-overlay-model.js"
 import { connectEvents } from "../../../../public/shared.js"
 import type { ChatBadgeAsset, ChatMessage } from "@/domain/chat"
+import { retainChatMessages, type ChatArchiveCleanup } from "@/domain/chat"
 import type { ChatEmoteCatalog } from "@/domain/chat-emotes"
 import { ChatOverlayView } from "./chat-overlay-view"
 
@@ -45,6 +46,19 @@ export function ChatOverlayLive({ preview = false }: { preview?: boolean }) {
         setState((current) => ({ ...current, settings })),
       message: merge,
       update: merge,
+      cleanup: (change: ChatArchiveCleanup) =>
+        setState((current) =>
+          current.channelId !== change.channelId
+            ? current
+            : {
+                ...current,
+                messages: retainChatMessages(current.messages, {
+                  allThrough: change.scope === "all" ? change.throughId : 0,
+                  deletedThrough:
+                    change.scope === "deleted" ? change.throughId : 0,
+                }),
+              }
+        ),
     })
     return () => connection.close()
   }, [])

@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { PollError } from './polls.mjs';
 import { nativeEmotes, twitchEmoteSpans } from './chat-emotes.mjs';
+import { normalizeChatText } from '../public/chat-text.js';
 
 const AUTH = 'https://id.twitch.tv/oauth2/';
 const SOCKET = 'wss://eventsub.wss.twitch.tv/ws';
@@ -419,8 +420,8 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, o
       const identity = { userId: status.userId, displayName: status.displayName, login: status.login };
       if (status.phase !== 'connected') throw new PollError('Чат Twitch пока не подключён.', 409);
       if (!status.canSend) throw new PollError('Переподключите Twitch, чтобы разрешить отправку сообщений.', 409);
-      if (typeof rawText !== 'string' || !rawText.trim() || rawText.length > 500 || /[\p{Cc}\p{Cf}]/u.test(rawText.replace(/\u200d/g, ''))) throw new PollError('Сообщение должно содержать от 1 до 500 символов.', 400);
-      const text = rawText.trim();
+      const text = typeof rawText === 'string' ? normalizeChatText(rawText) : '';
+      if (!text || rawText.length > 500 || /[\p{Cc}\p{Cf}]/u.test(text.replace(/\u200d/g, ''))) throw new PollError('Сообщение должно содержать от 1 до 500 символов.', 400);
       let result;
       try {
         result = await request('https://api.twitch.tv/helix/chat/messages', {
@@ -453,6 +454,27 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, o
       if (!status.userId || !credentials.accessToken) return { emotes: [], requiresReconnect: false };
       const channelId = status.userId;
       const headers = { Authorization: `Bearer ${credentials.accessToken}`, 'Client-Id': clientId };
+      const ownName = status.displayName || status.login || '';
+      const withOwners = async emotes => {
+        const names = new Map(ownName ? [[channelId, ownName]] : []);
+        const avatars = new Map([[channelId, avatarUrl(status.profileImageUrl)]]);
+        const ids = [...new Set(emotes.flatMap(emote => emote.ownerId && !names.has(emote.ownerId) ? [emote.ownerId] : []))];
+        const requested = new Set(ids);
+        for (let offset = 0; offset < ids.length; offset += 100) {
+          const query = new URLSearchParams(ids.slice(offset, offset + 100).map(id => ['id', id]));
+          try {
+            const users = await request(`https://api.twitch.tv/helix/users?${query}`, { headers });
+            for (const user of Array.isArray(users.data) ? users.data : []) {
+              const name = user?.display_name || user?.login;
+              if (requested.has(user?.id) && typeof name === 'string' && name.length > 0 && name.length <= 100 && !/[\p{Cc}\p{Cf}]/u.test(name)) {
+                names.set(user.id, name);
+                avatars.set(user.id, avatarUrl(user.profile_image_url));
+              }
+            }
+          } catch { break; } // Missing names must never discard usable emotes.
+        }
+        return emotes.map(emote => names.has(emote.ownerId) ? { ...emote, ownerName: names.get(emote.ownerId), ownerAvatarUrl: avatars.get(emote.ownerId) || '' } : emote);
+      };
       if (status.canReadEmotes) {
         const emotes = [];
         const cursors = new Set();
@@ -466,14 +488,14 @@ export async function createTwitch({ filename, store, clientId, onChatMessage, o
           if (typeof cursor !== 'string' || !cursor || cursors.has(cursor) || emotes.length >= 10000) break;
           cursors.add(cursor);
         }
-        return { emotes: emotes.slice(0, 10000), requiresReconnect: false };
+        return { emotes: await withOwners(emotes.slice(0, 10000)), requiresReconnect: false };
       }
       const results = await Promise.allSettled([
         request('https://api.twitch.tv/helix/chat/emotes/global', { headers }),
         request(`https://api.twitch.tv/helix/chat/emotes?broadcaster_id=${channelId}`, { headers }),
       ]);
       if (results.every(result => result.status === 'rejected')) throw results[0].reason;
-      return { emotes: results.flatMap(result => result.status === 'fulfilled' ? nativeEmotes(result.value.data) : []), requiresReconnect: true };
+      return { emotes: results.flatMap((result, index) => result.status === 'fulfilled' ? nativeEmotes(result.value.data, index === 1 ? { ownerId: channelId, ownerName: ownName } : {}) : []), requiresReconnect: true };
     },
     async badges() {
       if (!status.userId || !credentials.accessToken) return {};

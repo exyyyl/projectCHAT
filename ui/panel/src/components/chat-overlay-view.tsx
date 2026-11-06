@@ -11,6 +11,7 @@ import type { CSSProperties } from "react"
 import { gsap } from "gsap"
 import {
   chatOverlayStyle,
+  chatOverlayMotion,
   visibleChatMessages,
 } from "../../../../public/chat-overlay-model.js"
 import type { ChatOverlaySettings } from "../../../../public/chat-overlay-model.js"
@@ -51,24 +52,27 @@ function ChatOverlayRow({
   const ref = useRef<HTMLDivElement>(null)
   const { message, leaving } = entry
   const animate = useEffectEvent((node: HTMLDivElement) => {
-    const duration =
-      reduced || settings.animation === "none"
-        ? 0
-        : settings.animationDuration / 1000
+    const motion = chatOverlayMotion(settings, reduced)
     return gsap.context(() => {
       if (leaving)
         gsap.to(node, {
           autoAlpha: 0,
-          y: settings.animation === "slide" ? -10 : 0,
-          duration: duration * 0.7,
+          ...motion.exit,
+          transformOrigin: motion.origin,
+          duration: motion.duration * 0.7,
           ease: "power2.in",
           onComplete: () => onExited(message.id),
         })
       else
         gsap.fromTo(
           node,
-          { autoAlpha: 0, y: settings.animation === "slide" ? 20 : 0 },
-          { autoAlpha: 1, y: 0, duration, ease: "power3.out" }
+          { autoAlpha: 0, ...motion.enter, transformOrigin: motion.origin },
+          {
+            autoAlpha: 1,
+            ...motion.settled,
+            duration: motion.duration,
+            ease: motion.ease,
+          }
         )
     }, node)
   })
@@ -202,10 +206,7 @@ export function ChatOverlayView({
             { y: delta },
             {
               y: 0,
-              duration:
-                reduced || settings.animation === "none"
-                  ? 0
-                  : settings.animationDuration / 1000,
+              duration: reduced ? 0 : settings.animationDuration / 1000,
               ease: "power3.out",
             }
           )

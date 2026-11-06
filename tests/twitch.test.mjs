@@ -154,6 +154,10 @@ test('chat send uses broadcaster identity and handles read-only legacy tokens', 
   const request = f.calls.find(call => call.url.endsWith('/helix/chat/messages'));
   assert.deepEqual(JSON.parse(request.options.body), { broadcaster_id: '123', sender_id: '123', message: 'Привет, чат!' });
   await assert.rejects(f.twitch.sendMessage('x'.repeat(501)), /500 символов/);
+  const multiline = await f.twitch.sendMessage('  Первая строка\r\n  \n Вторая строка\u2028Третья 👩‍💻  ');
+  assert.equal(multiline.text, 'Первая строка Вторая строка Третья 👩‍💻');
+  assert.equal(JSON.parse(f.calls.filter(call => call.url.endsWith('/helix/chat/messages')).at(-1).options.body).message, multiline.text);
+  await assert.rejects(f.twitch.sendMessage('\n\r\n  '), /500 символов/);
 
   const legacy = await fixture(t, url => url.endsWith('/validate') ? response({ ...account, scopes: ['user:read:chat'] }) : null);
   await legacy.authorize();
@@ -417,4 +421,36 @@ test('moderation uses authorized broadcaster identity, scoped permissions and an
   await assert.rejects(legacy.twitch.moderate('delete', target), /Переподключите/);
   await assert.rejects(legacy.twitch.moderate('timeout', target, 600), /Переподключите/);
   await assert.rejects(legacy.twitch.moderate('ban', target), /Переподключите/);
+});
+
+test('personal emote channel names resolve in batches of at most 100 users', async t => {
+  const f = await fixture(t, url => {
+    if (url.endsWith('/validate')) return response({...account, scopes:[...account.scopes,'user:read:emotes']});
+    if (url.includes('/emotes/user?')) return response({data:Array.from({length:205},(_,i)=>({id:`emotesv2_${i}`, name:`wave${i}`, owner_id:String(1000+i)})), pagination:{}});
+    if (url.includes('/helix/users?') && new URL(url).searchParams.get('id') !== '123') {
+      const ids = new URL(url).searchParams.getAll('id');
+      assert.ok(ids.length <= 100);
+      return response({data:ids.map(id=>({id,display_name:`Channel${id}`}))});
+    }
+  });
+  await f.authorize();
+  const result = await f.twitch.emotes();
+  assert.equal(result.emotes.length,205);
+  assert.equal(result.emotes[204].ownerName,'Channel1204');
+  assert.equal(result.emotes[204].ownerId,'1204');
+  assert.equal(result.emotes[204].scope,'channel');
+  assert.equal(f.calls.filter(c=>c.url.includes('/helix/users?') && new URL(c.url).searchParams.get('id') !== '123').length,3);
+});
+
+test('channel name lookup failures preserve usable personal emotes', async t => {
+  const f = await fixture(t, url => {
+    if (url.endsWith('/validate')) return response({...account, scopes:[...account.scopes,'user:read:emotes']});
+    if (url.includes('/emotes/user?')) return response({data:[{id:'emotesv2_unknown',name:'unknownWave',owner_id:'456'}],pagination:{}});
+    if (url.includes('/helix/users?id=456')) return response({error:'offline'},503);
+  });
+  await f.authorize();
+  const result = await f.twitch.emotes();
+  assert.equal(result.emotes[0].code,'unknownWave');
+  assert.equal(result.emotes[0].ownerId,'456');
+  assert.equal(result.requiresReconnect,false);
 });

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { Pause, Play } from "lucide-react"
 import { WidgetStudioToolbar } from "./widget-studio-toolbar"
 import type { WidgetKind } from "./widget-kind-tabs"
@@ -12,8 +13,10 @@ export function ChatWidgetToolbar({
   onTogglePlayback,
   onSceneChange,
   onSelectKind,
+  templateAction,
 }: {
   enabled: boolean
+  templateAction?: ReactNode
   source: ChatPreviewKind | "live"
   playing: boolean
   scene: string
@@ -34,6 +37,7 @@ export function ChatWidgetToolbar({
       onToggleOutput={onToggleOutput}
       onSceneChange={onSceneChange}
       onSelectKind={onSelectKind}
+      templateAction={templateAction}
       previewControls={
         <>
           <div

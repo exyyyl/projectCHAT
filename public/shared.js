@@ -98,7 +98,7 @@ export function createOverlay(root) {
         if (key === 'fontFamily') root.style.fontFamily = value;
         else root.style.setProperty(key, value);
       }
-      Object.assign(root.dataset, { layout: widget.layout, surface: widget.surface, optionStyle: widget.optionStyle, keywordStyle: widget.keywordStyle, highlight: String(widget.highlightWinner) });
+      Object.assign(root.dataset, { layout: widget.layout, alignment: widget.alignment, surface: widget.surface, optionStyle: widget.optionStyle, keywordStyle: widget.keywordStyle, highlight: String(widget.highlightWinner) });
       question.parentElement.className = 'cue-widget-heading';
       timer.className = 'cue-widget-clock';
       rows.className = 'cue-widget-options';

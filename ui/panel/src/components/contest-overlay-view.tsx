@@ -1,3 +1,4 @@
+import { widgetFontFamily } from "../../../../public/widget-fonts.js"
 import { useEffect, useState } from "react"
 import type { CSSProperties } from "react"
 import { Crown, Gift, Users } from "lucide-react"
@@ -13,21 +14,23 @@ export function ContestOverlayView({
   settings,
   offset = 0,
   preview = false,
+  snapshotTime,
 }: {
   contest: PublicContest | null
   settings: ContestOverlaySettings
   offset?: number
   preview?: boolean
+  snapshotTime?: number
 }) {
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
-    if (!contest) return
+    if (!contest || snapshotTime !== undefined) return
     const timer = setInterval(() => setNow(Date.now()), 100)
     return () => clearInterval(timer)
-  }, [contest])
+  }, [contest, snapshotTime])
   const presentation = contestPresentation(
     contest,
-    Math.max(now + offset, contest?.drawnAt || 0)
+    Math.max((snapshotTime ?? now) + offset, contest?.drawnAt || 0)
   )
   if (!contest || (!preview && !settings.enabled)) return null
   const winner = presentation.phase === "winner",
@@ -41,6 +44,7 @@ export function ContestOverlayView({
   const style = {
     width: settings.width,
     fontSize: settings.fontSize,
+    fontFamily: widgetFontFamily(settings.font),
     "--contest-accent": settings.accentColor,
     "--contest-text": settings.textColor,
     "--contest-background":
@@ -57,6 +61,8 @@ export function ContestOverlayView({
         style={style}
         aria-label="Конкурс на стриме"
         data-phase={presentation.phase}
+        data-layout={settings.layout || "stacked"}
+        data-alignment={settings.alignment || "auto"}
       >
         <header>
           <span>

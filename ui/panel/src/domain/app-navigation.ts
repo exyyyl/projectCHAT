@@ -1,3 +1,5 @@
+import type { SettingsSection } from "./settings-navigation.ts"
+
 export type AppView =
   | "home"
   | "polls"
@@ -5,17 +7,20 @@ export type AppView =
   | "widget"
   | "contests"
   | "decision-wheel"
+  | "donations"
   | "settings"
 export type TabView = AppView | "new"
 export type WorkspaceTab = {
   id: string
   history: TabView[]
   position: number
+  settingsSection?: SettingsSection
   visited: AppView[]
 }
 export type NavigationState = { tabs: WorkspaceTab[]; activeId: string }
 export type NavigationAction =
   | { type: "navigate"; view: AppView; tabId?: string }
+  | { type: "settings-section"; section: SettingsSection; tabId?: string }
   | { type: "create"; id: string }
   | { type: "select"; id: string }
   | { type: "close"; id: string }
@@ -31,7 +36,15 @@ export function initialNavigation(): NavigationState {
 }
 
 export function isViewAvailable(view: AppView, production: boolean): boolean {
-  return !production || view !== "presets"
+  return view !== "donations" && (!production || view !== "presets")
+}
+
+export function isSidebarCollapsed(
+  view: TabView,
+  compact: boolean,
+  manuallyCollapsed: boolean
+): boolean {
+  return view !== "settings" && (compact || manuallyCollapsed)
 }
 
 export function navigationReducer(
@@ -41,6 +54,15 @@ export function navigationReducer(
 ): NavigationState {
   if (action.type === "navigate" && !isViewAvailable(action.view, production))
     return state
+  if (action.type === "settings-section") {
+    const id = action.tabId || state.activeId
+    return {
+      ...state,
+      tabs: state.tabs.map((tab) =>
+        tab.id === id ? { ...tab, settingsSection: action.section } : tab
+      ),
+    }
+  }
   if (action.type === "create")
     return {
       tabs: [

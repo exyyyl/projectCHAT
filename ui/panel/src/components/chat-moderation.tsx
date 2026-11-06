@@ -35,6 +35,8 @@ export function ModeratedMessage({
 }) {
   const refusalAnimation = useRef<Animation | null>(null)
   const [feedback, setFeedback] = useState("")
+  const [feedbackLeaving, setFeedbackLeaving] = useState(false)
+  const [feedbackVersion, setFeedbackVersion] = useState(0)
   const permissions = { canDelete, canTimeout, isSelf }
   const row = useRef<HTMLDivElement>(null)
   const decline = useRef<HTMLButtonElement>(null)
@@ -107,12 +109,18 @@ export function ModeratedMessage({
   )
   useEffect(() => {
     if (!feedback) return
-    const timer = setTimeout(() => setFeedback(""), 2200)
-    return () => clearTimeout(timer)
-  }, [feedback])
+    const leave = setTimeout(() => setFeedbackLeaving(true), 2200)
+    const remove = setTimeout(() => setFeedback(""), 2420)
+    return () => {
+      clearTimeout(leave)
+      clearTimeout(remove)
+    }
+  }, [feedback, feedbackVersion])
   const explain = (text: string, shake = false) => {
     cancel()
     setPending(null)
+    setFeedbackLeaving(false)
+    setFeedbackVersion((version) => version + 1)
     setFeedback(text)
     if (
       shake &&
@@ -342,18 +350,25 @@ export function ModeratedMessage({
         inert={Boolean(confirmation || feedback)}
         aria-hidden={Boolean(confirmation || feedback) || undefined}
         style={{
-          opacity: feedback ? 0 : undefined,
+          opacity: feedback && !feedbackLeaving ? 0 : undefined,
           transform: confirmation
             ? "translateX(100%)"
-            : offset
-              ? `translateX(${offset}px)`
-              : undefined,
+            : feedback && !feedbackLeaving
+              ? "translateY(-5px)"
+              : offset
+                ? `translateX(${offset}px)`
+                : undefined,
         }}
       >
         {children}
       </article>
       {feedback && !confirmation && (
-        <div className="chat-swipe-feedback" role="status">
+        <div
+          key={feedbackVersion}
+          className="chat-swipe-feedback"
+          data-leaving={feedbackLeaving || undefined}
+          role="status"
+        >
           {isSelf ? <Ban aria-hidden="true" /> : <Info aria-hidden="true" />}
           <span>{feedback}</span>
         </div>

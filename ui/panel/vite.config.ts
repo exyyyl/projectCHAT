@@ -1,6 +1,7 @@
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
-import { defineConfig } from "vite"
+import { defineConfig, searchForWorkspaceRoot } from "vite"
+import { fileURLToPath } from "node:url"
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -9,6 +10,12 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     strictPort: true,
+    fs: {
+      allow: [
+        searchForWorkspaceRoot(fileURLToPath(new URL(".", import.meta.url))),
+        fileURLToPath(new URL("../../public/fonts", import.meta.url)),
+      ],
+    },
     proxy: {
       "/api": {
         target: "http://127.0.0.1:4317",

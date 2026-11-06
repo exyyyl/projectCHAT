@@ -3,6 +3,7 @@ export const widgetIds = [
   "timer",
   "counter",
   "notes",
+  "todos",
   "archive",
 ] as const
 export type WidgetId = (typeof widgetIds)[number]
@@ -12,6 +13,8 @@ export type TimerState = {
   remaining: number
   deadline: number | null
 }
+
+export const maxTimerDuration = 24 * 60 * 60
 
 export const defaultTimer: TimerState = {
   duration: 300,
@@ -43,11 +46,11 @@ export function normalizeTimer(value: unknown, now: number): TimerState {
   const timer = value as Partial<TimerState>
   if (
     !Number.isInteger(timer.duration) ||
-    (timer.duration ?? 0) < 10 ||
-    (timer.duration ?? 0) > 36000 ||
+    (timer.duration ?? 0) < 1 ||
+    (timer.duration ?? 0) > maxTimerDuration ||
     !Number.isInteger(timer.remaining) ||
     (timer.remaining ?? -1) < 0 ||
-    (timer.remaining ?? 0) > 36000
+    (timer.remaining ?? 0) > maxTimerDuration
   )
     return defaultTimer
   if (
@@ -66,7 +69,51 @@ export function normalizeWidgetOrder(value: unknown): WidgetId[] {
   const filtered = [
     ...new Set(value.filter((id): id is WidgetId => widgetIds.includes(id))),
   ]
-  return filtered.length || value.length === 0 ? filtered : [...widgetIds]
+  if (!filtered.length && value.length) return [...widgetIds]
+  // The live console is essential: always restore it at the top, even from
+  // layouts saved before it became a permanent block.
+  return ["activity", ...filtered.filter((id) => id !== "activity")]
+}
+
+export function restoreDashboardBlocks(value: unknown): WidgetId[] {
+  if (
+    value &&
+    typeof value === "object" &&
+    "version" in value &&
+    value.version === 2 &&
+    "order" in value
+  )
+    return normalizeWidgetOrder(value.order)
+  const order = normalizeWidgetOrder(value)
+  // The old notes block also held tasks; keep both visible after splitting it.
+  if (
+    Array.isArray(value) &&
+    order.includes("notes") &&
+    !order.includes("todos")
+  )
+    order.splice(order.indexOf("notes") + 1, 0, "todos")
+  return order
+}
+
+export function reorderDashboardBlock(
+  order: WidgetId[],
+  id: WidgetId,
+  over: WidgetId
+): WidgetId[] {
+  const next = normalizeWidgetOrder(order)
+  const from = next.indexOf(id),
+    to = next.indexOf(over)
+  if (
+    id === "activity" ||
+    over === "activity" ||
+    from < 1 ||
+    to < 1 ||
+    from === to
+  )
+    return next
+  next.splice(from, 1)
+  next.splice(to, 0, id)
+  return next
 }
 
 export type CounterState = {
@@ -107,7 +154,10 @@ export function extendTimer(
   seconds: number,
   now: number
 ): TimerState {
-  const remaining = Math.min(36000, timerRemaining(timer, now) + seconds)
+  const remaining = Math.min(
+    maxTimerDuration,
+    timerRemaining(timer, now) + seconds
+  )
   return {
     ...timer,
     remaining,
@@ -130,4 +180,36 @@ export function normalizeActivities(value: unknown): ActivityId[] {
       value.filter((id): id is ActivityId => activityIds.includes(id))
     ),
   ]
+}
+
+// Keep entered digits in place; add separators as each pair fills from the left.
+export function formatTimerInput(value: string): string {
+  const text = value.replace(/[^\d:]/g, "")
+  if (!text.includes(":")) {
+    return (
+      text
+        .slice(0, 6)
+        .match(/\d{1,2}/g)
+        ?.join(":") || ""
+    )
+  }
+  const parts = text.split(":").slice(0, 3)
+  const last = parts.length - 1
+  if (parts[last].length > 2 && parts.length < 3) {
+    parts.push(parts[last].slice(2, 4))
+    parts[last] = parts[last].slice(0, 2)
+  }
+  return parts
+    .map((part, index) => part.slice(0, index === 0 ? 3 : 2))
+    .join(":")
+}
+
+// The clock always begins with hours; omitted trailing groups mean zero.
+export function parseTimerDuration(value: string): number | null {
+  const text = value.trim()
+  if (!/^\d{1,2}(?::\d{1,2}){0,2}$/.test(text)) return null
+  const parts = text.split(":").map(Number)
+  if (parts.length > 1 && parts.slice(1).some((part) => part > 59)) return null
+  const seconds = parts[0] * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0)
+  return seconds >= 1 && seconds <= maxTimerDuration ? seconds : null
 }

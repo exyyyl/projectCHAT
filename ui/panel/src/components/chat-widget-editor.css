@@ -9,7 +9,7 @@
 .chat-look-art { position: relative; display: block; height: 76px; overflow: hidden; border-radius: 5px; background: #242529; pointer-events: none; }
 .chat-look-art > .cue-chat-overlay { gap: 5px; justify-content: center; padding: 8px 10px; font-size: 10px; }
 .chat-look-art .cue-chat-slot { display: block; }
-.chat-look-art .cue-chat-message { display: block; padding: 5px 8px; border-radius: 5px; }
+.chat-look-art .cue-chat-message { display: block; padding: 5px 8px; border-radius: var(--chat-radius); }
 .chat-look-art .cue-chat-author { font-size: 8px; line-height: 1.2; margin-bottom: 1px; }
 .chat-look-art .cue-chat-body { display: block; white-space: pre-wrap; font-size: 9px; }
 .chat-look-art [data-style='minimal'] .cue-chat-message { padding: 3px 0; }

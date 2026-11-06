@@ -37,6 +37,7 @@ export function PollOverlay({
     <article
       className="cue-poll-widget"
       data-layout={widget.layout}
+      data-alignment={widget.alignment}
       data-surface={widget.surface}
       data-option-style={widget.optionStyle}
       data-keyword-style={widget.keywordStyle}

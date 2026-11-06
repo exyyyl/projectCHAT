@@ -14,7 +14,13 @@ export type ContestParticipant = {
 }
 
 export type WinnerMessage = { id: string; text: string; at: number }
-export type ContestGuess = { id: string; viewerId: string; name: string; text: string; at: number }
+export type ContestGuess = {
+  id: string
+  viewerId: string
+  name: string
+  text: string
+  at: number
+}
 
 export type Contest = {
   id: string
@@ -55,3 +61,14 @@ export type ContestSetup = {
   duration: number
   source: "twitch" | "test"
 }
+
+export const defaultContestSetup = (): ContestSetup => ({
+  mode: "keyword",
+  keyword: "",
+  numberMin: 1,
+  numberMax: 100,
+  antiSpam: false,
+  allowedRoles: ["viewer", "subscriber", "vip", "moderator"],
+  duration: 60,
+  source: "twitch",
+})

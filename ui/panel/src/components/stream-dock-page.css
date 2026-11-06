@@ -1,56 +1,18 @@
-.stream-dock-launcher-marks { display: flex; flex-shrink: 0; align-items: center; gap: 8px; margin-left: 10px; }
-.stream-dock-launcher-marks img, .stream-dock-mini-poll { width: 30px; height: 30px; border-radius: 10px; }
-.stream-dock-mini-poll { display: grid; place-items: center; background: var(--utility-raised); color: var(--foreground); }
-.stream-dock-mini-poll svg { width: 18px; height: 18px; stroke-width: 2.5; }
-.stream-dock-window-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.stream-dock-services { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.stream-dock-service {
-  --service-surface: #e6daf9;
-  --service-top: #f0e8ff;
-  --service-ink: #24202f;
-  --service-muted: #68577e;
-  --service-action: #d8c7f4;
-  --service-action-ink: #6932bf;
-  min-width: 0;
-  padding: 16px;
-  border-radius: 24px;
-  background: linear-gradient(135deg, var(--service-top), var(--service-surface));
-  color: var(--service-ink);
-}
-.stream-dock-service--discord { --service-surface: #d4e3fc; --service-top: #e3edff; --service-ink: #1f2a42; --service-muted: #546889; --service-action: #bfd4f7; --service-action-ink: #204b9b; }
-.stream-dock-service-heading { display: flex; min-height: 52px; align-items: center; gap: 14px; }
-.stream-dock-service-mark { width: 52px; height: 52px; flex-shrink: 0; border-radius: 16px; }
-.stream-dock-service-name { min-width: 0; }
-.stream-dock-service-name h2 { margin: 0; font-size: 18px; font-weight: 550; letter-spacing: -.025em; line-height: 1.3; }
-.stream-dock-service-name p { margin-top: 5px; color: var(--service-muted); font-size: 11px; line-height: 1.4; }
-.stream-dock-service-name .stream-dock-installed { display: flex; align-items: center; gap: 4px; }
+.stream-dock-services { overflow: hidden; padding: 0 20px; border-radius: 16px; background: var(--surface-subtle); }
+.stream-dock-service { display: flex; min-width: 0; min-height: 88px; align-items: center; gap: 12px; padding: 16px 0; }
+.stream-dock-service + .stream-dock-service { border-top: 1px solid var(--border-subtle); }
+.stream-dock-service-mark, .stream-dock-service-symbol { width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px; }
+.stream-dock-service-symbol { display: grid; place-items: center; background: var(--surface-raised); color: var(--muted-foreground); }
+.stream-dock-service-symbol svg { width: 20px; height: 20px; }
+.stream-dock-service-name { min-width: 0; flex: 1; }
+.stream-dock-service-name h3 { margin: 0; font-size: 15px; font-weight: 500; }
+.stream-dock-service-name p { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; color: var(--muted-foreground); font-size: 13px; }
+.stream-dock-installed { display: inline-flex; align-items: center; gap: 4px; }
 .stream-dock-installed svg { width: 12px; height: 12px; }
-.stream-dock-download { display: flex; min-height: 40px; width: 100%; align-items: center; justify-content: center; gap: 8px; margin-top: 16px; padding: 8px 14px; border-radius: 20px; background: var(--service-action); color: var(--service-action-ink); font-size: 14px; font-weight: 550; transition: background-color 160ms ease-out; }
-.stream-dock-download svg { width: 18px; height: 18px; stroke-width: 1.8; }
-.stream-dock-download:hover { background: color-mix(in srgb, var(--service-action) 90%, #fff); }
-.stream-dock-download:focus-visible { outline: 2px solid var(--service-action-ink); outline-offset: 3px; }
-.stream-dock-poll { display: flex; min-height: 70px; align-items: center; gap: 14px; margin-top: 16px; padding: 14px 16px; border-radius: 24px; background: var(--utility-raised); }
-.stream-dock-poll-mark { display: grid; width: 40px; height: 40px; flex-shrink: 0; place-items: center; border-radius: 13px; background: color-mix(in srgb, var(--utility-surface) 82%, #000 18%); }
-.stream-dock-poll-mark svg { width: 23px; height: 23px; stroke-width: 2.6; }
-.stream-dock-poll-name { min-width: 0; }
-.stream-dock-poll-name h2 { margin: 0; font-size: 14px; font-weight: 550; }
-.stream-dock-poll-name p { display: flex; align-items: center; gap: 4px; margin-top: 4px; color: var(--utility-muted); font-size: 11px; }
-.stream-dock-poll-name p svg { width: 12px; height: 12px; }
-.stream-dock-poll-state { margin-left: auto; color: var(--utility-muted); font-size: 11px; }
+.stream-dock-state { flex-shrink: 0; color: var(--muted-foreground); font-size: 13px; }
 .stream-dock-error { margin-bottom: 16px; color: var(--destructive); font-size: 12px; line-height: 1.5; }
-@media (max-width: 540px) {
-  .stream-dock-services { gap: 12px; }
-  .stream-dock-service { padding: 14px; border-radius: 21px; }
-  .stream-dock-service-heading { flex-direction: column; align-items: flex-start; gap: 10px; min-height: 105px; }
-  .stream-dock-service-mark { width: 42px; height: 42px; border-radius: 13px; }
-  .stream-dock-service-name h2 { font-size: 16px; }
-  .stream-dock-download { margin-top: 12px; padding-inline: 6px; font-size: 13px; }
-  .stream-dock-poll { gap: 10px; padding: 12px 14px; border-radius: 21px; }
-  .stream-dock-launcher-marks { gap: 5px; margin-left: 0; }
-  .stream-dock-launcher-marks img, .stream-dock-mini-poll { width: 25px; height: 25px; border-radius: 8px; }
+@media (max-width: 420px) {
+  .stream-dock-services { padding-inline: 14px; }
+  .stream-dock-service { gap: 10px; }
+  .stream-dock-service-mark, .stream-dock-service-symbol { width: 32px; height: 32px; border-radius: 8px; }
 }
-@media (max-width: 360px) {
-  .stream-dock-launcher-marks { display: none; }
-  .stream-dock-poll-mark { display: none; }
-}
-@media (prefers-reduced-motion: reduce) { .stream-dock-download { transition: none; } }

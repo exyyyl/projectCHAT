@@ -1,3 +1,5 @@
+@import "../../../../public/fonts/widget-fonts.css";
+
 @font-face { font-family: Geist; src: url('/fonts/geist-cyrillic.woff2') format('woff2'); font-style: normal; font-weight: 100 900; font-display: swap; }
 @font-face { font-family: Geist; src: url('/fonts/geist-latin.woff2') format('woff2'); font-style: normal; font-weight: 100 900; font-display: swap; unicode-range: U+0000-00FF; }
 .cue-chat-overlay { box-sizing: border-box; position: relative; display: flex; width: 100%; height: 100%; min-height: 0; min-width: 0; flex-direction: column; justify-content: flex-end; gap: var(--chat-gap); padding: 12px; overflow: hidden; color: var(--chat-text); font-family: Geist, system-ui, sans-serif; font-size: var(--chat-font-size); line-height: 1.4; }

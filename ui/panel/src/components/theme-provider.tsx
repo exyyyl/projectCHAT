@@ -1,7 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 import * as React from "react"
+import { appThemes, isAppTheme, type AppTheme } from "@/domain/app-themes"
 
-export type AppTheme = "lime" | "violet" | "ice" | "mono"
+export type { AppTheme } from "@/domain/app-themes"
 
 type ThemeProviderProps = {
   children: React.ReactNode
@@ -14,19 +15,14 @@ type ThemeProviderState = {
   setTheme: (theme: AppTheme) => void
 }
 
-const THEMES: AppTheme[] = ["lime", "violet", "ice", "mono"]
 const ThemeProviderContext = React.createContext<
   ThemeProviderState | undefined
 >(undefined)
 
-function isTheme(value: string | null): value is AppTheme {
-  return value !== null && THEMES.includes(value as AppTheme)
-}
-
 function applyTheme(theme: AppTheme) {
   const root = document.documentElement
   root.classList.add("dark")
-  for (const value of THEMES) root.classList.remove(`theme-${value}`)
+  for (const { id } of appThemes) root.classList.remove(`theme-${id}`)
   root.classList.add(`theme-${theme}`)
 }
 
@@ -36,13 +32,21 @@ export function ThemeProvider({
   storageKey = "projectchat-theme",
 }: ThemeProviderProps) {
   const [theme, setThemeState] = React.useState<AppTheme>(() => {
-    const storedTheme = localStorage.getItem(storageKey)
-    return isTheme(storedTheme) ? storedTheme : defaultTheme
+    try {
+      const storedTheme = localStorage.getItem(storageKey)
+      return isAppTheme(storedTheme) ? storedTheme : defaultTheme
+    } catch {
+      return defaultTheme
+    }
   })
 
   const setTheme = React.useCallback(
     (nextTheme: AppTheme) => {
-      localStorage.setItem(storageKey, nextTheme)
+      try {
+        localStorage.setItem(storageKey, nextTheme)
+      } catch {
+        // Theme selection remains available without persistent storage.
+      }
       applyTheme(nextTheme)
       setThemeState(nextTheme)
     },
@@ -51,13 +55,17 @@ export function ThemeProvider({
 
   React.useLayoutEffect(() => {
     applyTheme(theme)
-    void window.streamPollsDesktop?.setWindowTheme(theme)
+    void window.streamPollsDesktop?.setWindowTheme(theme).catch(() => {
+      // An older desktop shell may not know a newly added panel theme yet.
+    })
   }, [theme])
 
   React.useEffect(() => {
     const handleStorageChange = (event: StorageEvent) => {
       if (event.storageArea !== localStorage || event.key !== storageKey) return
-      const nextTheme = isTheme(event.newValue) ? event.newValue : defaultTheme
+      const nextTheme = isAppTheme(event.newValue)
+        ? event.newValue
+        : defaultTheme
       applyTheme(nextTheme)
       setThemeState(nextTheme)
     }

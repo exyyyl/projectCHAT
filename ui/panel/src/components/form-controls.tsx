@@ -1,11 +1,4 @@
-import {
-  useId,
-  useLayoutEffect,
-  useRef,
-  type ReactNode,
-  type ComponentPropsWithoutRef,
-} from "react"
-import { gsap } from "gsap"
+import { useId, type ReactNode, type ComponentPropsWithoutRef } from "react"
 import { Check, ChevronDown, Plus } from "lucide-react"
 import { Select } from "radix-ui"
 import { Button } from "@/components/ui/button"
@@ -69,58 +62,10 @@ export function FormSegmented({
   onChange: (value: string) => void
 }) {
   const labelId = useId()
-  const root = useRef<HTMLDivElement>(null)
-  const indicator = useRef<HTMLSpanElement>(null)
-  const positioned = useRef(false)
-  useLayoutEffect(() => {
-    const group = root.current
-    const mark = indicator.current
-    if (!group || !mark) return
-    const place = (animate: boolean) => {
-      const selected = group.querySelector<HTMLElement>('[data-state="on"]')
-      if (!selected) {
-        gsap.set(mark, { opacity: 0 })
-        return
-      }
-      const vars = {
-        x: selected.offsetLeft,
-        y: selected.offsetTop,
-        width: selected.offsetWidth,
-        height: selected.offsetHeight,
-        opacity: 1,
-      }
-      gsap.to(mark, {
-        ...vars,
-        duration:
-          animate &&
-          positioned.current &&
-          !window.matchMedia("(prefers-reduced-motion: reduce)").matches
-            ? 0.22
-            : 0,
-        ease: "power2.out",
-        overwrite: true,
-      })
-      positioned.current = true
-    }
-    place(true)
-    let width = group.clientWidth
-    const observer = new ResizeObserver(() => {
-      if (group.clientWidth !== width) {
-        width = group.clientWidth
-        place(false)
-      }
-    })
-    observer.observe(group)
-    return () => {
-      observer.disconnect()
-      gsap.killTweensOf(mark)
-    }
-  }, [value, options.length])
 
   return (
     <FormField label={label} labelId={labelId} hideLabel={hideLabel}>
       <ToggleGroup
-        ref={root}
         type="single"
         value={value}
         disabled={disabled}
@@ -131,11 +76,6 @@ export function FormSegmented({
           gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
         }}
       >
-        <span
-          className="form-segmented-indicator"
-          ref={indicator}
-          aria-hidden="true"
-        />
         {options.map(([option, title]) => (
           <ToggleGroupItem key={option} value={option}>
             {title}
@@ -223,12 +163,14 @@ export function FormSelect({
   options,
   disabled,
   onChange,
+  renderOption,
 }: {
   label: string
   value: string
   options: ReadonlyArray<readonly [string, string]>
   disabled: boolean
   onChange: (value: string) => void
+  renderOption?: (value: string, label: string) => ReactNode
 }) {
   return (
     <div className="flex min-h-11 items-center justify-between gap-3">
@@ -250,14 +192,16 @@ export function FormSelect({
             align="end"
             className="z-50 min-w-40 overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-border"
           >
-            <Select.Viewport>
+            <Select.Viewport className="max-h-[min(320px,var(--radix-select-content-available-height))] overflow-y-auto">
               {options.map(([option, title]) => (
                 <Select.Item
                   key={option}
                   value={option}
                   className="relative flex min-h-8 cursor-default items-center rounded-md py-2 pr-7 pl-2.5 text-xs outline-none data-highlighted:bg-surface-raised"
                 >
-                  <Select.ItemText>{title}</Select.ItemText>
+                  <Select.ItemText>
+                    {renderOption ? renderOption(option, title) : title}
+                  </Select.ItemText>
                   <Select.ItemIndicator className="absolute right-2">
                     <Check className="size-3" />
                   </Select.ItemIndicator>

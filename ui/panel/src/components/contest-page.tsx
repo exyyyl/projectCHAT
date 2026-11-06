@@ -1,3 +1,6 @@
+import { TemplateSaveButton, type SaveTemplate } from "./template-save-button"
+import { defaultContestSetup } from "@/domain/contest"
+import type { SavedTemplate } from "@/domain/templates"
 import { ContestLoadingSkeleton } from "@/components/loading-skeletons"
 import {
   ArrowLeft,
@@ -62,22 +65,24 @@ const formatMessageTime = (value: number) =>
 export function ContestPage({
   twitchConnected,
   controller,
+  template,
+  onSaveTemplate,
 }: {
   twitchConnected: boolean
   controller: ContestController
+  template?: Extract<SavedTemplate, { kind: "contest" }>
+  onSaveTemplate?: SaveTemplate
 }) {
   const { enabled: demoEnabled } = useDemoMode()
   const showToast = useToast()
-  const [setup, setSetup] = useState<ContestSetup>({
-    mode: "keyword",
-    keyword: "",
-    numberMin: 1,
-    numberMax: 100,
-    antiSpam: false,
-    allowedRoles: ["viewer", "subscriber", "vip", "moderator"],
-    duration: 60,
-    source: "twitch",
-  })
+  const [setup, setSetup] = useState<ContestSetup>(() =>
+    template
+      ? {
+          ...structuredClone(template.data),
+          source: demoEnabled ? template.data.source : "twitch",
+        }
+      : defaultContestSetup()
+  )
   const [validation, setValidation] = useState(false)
   const contest = controller.contest
 
@@ -134,24 +139,52 @@ export function ContestPage({
   }
 
   return (
-    <ContestConsole
-      contest={activeContest}
-      setup={setup}
-      busy={controller.busy}
-      serverNow={controller.state.serverNow}
-      twitchConnected={twitchConnected}
-      demoEnabled={demoEnabled}
-      validation={validation}
-      onSetupChange={setSetup}
-      onStart={start}
-      onClose={() => void controller.close()}
-      onDraw={() => void controller.draw()}
-      onReset={() => void controller.reset()}
-      onClear={() => void controller.clearEligibility()}
-      onEligibility={(participantId, eligible) =>
-        void controller.setEligibility(participantId, eligible)
-      }
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      {onSaveTemplate && (
+        <div className="flex justify-end px-6 pt-4">
+          <TemplateSaveButton
+            kind="contest"
+            current={template}
+            onSave={onSaveTemplate}
+            disabled={controller.busy}
+            data={
+              activeContest
+                ? {
+                    mode: activeContest.mode,
+                    keyword: activeContest.keyword,
+                    numberMin: activeContest.numberMin ?? 1,
+                    numberMax: activeContest.numberMax ?? 100,
+                    antiSpam: activeContest.antiSpam,
+                    allowedRoles: activeContest.allowedRoles,
+                    duration: activeContest.duration,
+                    source: activeContest.source,
+                  }
+                : setup
+            }
+          />
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
+        <ContestConsole
+          contest={activeContest}
+          setup={setup}
+          busy={controller.busy}
+          serverNow={controller.state.serverNow}
+          twitchConnected={twitchConnected}
+          demoEnabled={demoEnabled}
+          validation={validation}
+          onSetupChange={setSetup}
+          onStart={start}
+          onClose={() => void controller.close()}
+          onDraw={() => void controller.draw()}
+          onReset={() => void controller.reset()}
+          onClear={() => void controller.clearEligibility()}
+          onEligibility={(participantId, eligible) =>
+            void controller.setEligibility(participantId, eligible)
+          }
+        />
+      </div>
+    </div>
   )
 }
 

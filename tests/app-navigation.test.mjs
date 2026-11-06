@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialNavigation, navigationReducer as reduce } from '../ui/panel/src/domain/app-navigation.ts';
+import { initialNavigation, isSidebarCollapsed, navigationReducer as reduce } from '../ui/panel/src/domain/app-navigation.ts';
 
 test('sidebar navigation stays inside a tab; explicit new tabs may show the same section', () => {
   let state = reduce(initialNavigation(), { type: 'navigate', view: 'presets' });
@@ -56,4 +56,46 @@ test('packaged navigation keeps templates unavailable while development retains 
     assert.equal(reduce(start,{type:'navigate',view},true).tabs[0].history.at(-1),view);
   const second = reduce(start,{type:'create',id:'second'},true);
   assert.equal(reduce(second,{type:'navigate',tabId:'initial',view:'presets'},true),second);
+});
+
+test('settings sections switch directly without adding page history and remain local to their tab', () => {
+  let state = reduce(initialNavigation(), { type: 'navigate', view: 'settings' });
+  state = reduce(state, { type: 'settings-section', section: 'plugins' });
+  state = reduce(state, { type: 'settings-section', section: 'diagnostics' });
+  assert.deepEqual(state.tabs[0].history, ['home', 'settings']);
+  assert.equal(state.tabs[0].settingsSection, 'diagnostics');
+  state = reduce(state, { type: 'create', id: 'second' });
+  state = reduce(state, { type: 'navigate', view: 'settings' });
+  state = reduce(state, { type: 'settings-section', section: 'appearance' });
+  assert.equal(state.tabs[0].settingsSection, 'diagnostics');
+  assert.equal(state.tabs[1].settingsSection, 'appearance');
+  state = reduce(state, { type: 'history', offset: -1 });
+  state = reduce(state, { type: 'history', offset: 1 });
+  assert.equal(state.tabs[1].settingsSection, 'appearance');
+});
+
+test('a journal request for an inactive tab cannot replace the selected settings section in another tab', () => {
+  let state = reduce(initialNavigation(), { type: 'create', id: 'second' });
+  state = reduce(state, { type: 'settings-section', section: 'plugins' });
+  state = reduce(state, { type: 'settings-section', tabId: 'initial', section: 'diagnostics' });
+  assert.equal(state.activeId, 'second');
+  assert.equal(state.tabs[0].settingsSection, 'diagnostics');
+  assert.equal(state.tabs[1].settingsSection, 'plugins');
+  assert.deepEqual(state.tabs[0].history, ['home']);
+});
+
+test('settings pin the sidebar without changing the collapse policy for normal pages', () => {
+  for (const compact of [false, true]) for (const preference of [false, true]) {
+    assert.equal(isSidebarCollapsed('settings', compact, preference), false);
+    assert.equal(isSidebarCollapsed('home', compact, preference), compact || preference);
+  }
+});
+
+test('donations remain unavailable in development and packaged builds', () => {
+  for (const production of [false, true]) {
+    const start = initialNavigation();
+    assert.equal(reduce(start, { type: 'navigate', view: 'donations' }, production), start);
+    const second = reduce(start, { type: 'create', id: 'second' }, production);
+    assert.equal(reduce(second, { type: 'navigate', view: 'donations', tabId: 'initial' }, production), second);
+  }
 });
