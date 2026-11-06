@@ -17,7 +17,12 @@ import {
   runtimeExecutable,
   verifyRuntime,
 } from "./archive.mjs";
-import { compareVersions, validVersion, versionChannel } from "./source.mjs";
+import {
+  compareVersions,
+  staleBetaCode,
+  validVersion,
+  versionChannel,
+} from "./source.mjs";
 
 const channels = ["stable", "beta"];
 const channel = (value) => {
@@ -81,6 +86,7 @@ export function createVersionManager({
     message: "",
     available: {},
     errors: {},
+    notices: {},
   };
   const currentPointer = () =>
     inside(join(root, "slots"), executable)
@@ -293,15 +299,18 @@ export function createVersionManager({
       return operation("checking", null, async () => {
         if (!source) throw new Error("Источник версий ещё не настроен.");
         const available = {},
-          errors = {};
+          errors = {},
+          notices = {};
         for (const key of channels) {
           try {
             available[key] = await source.describe(key);
           } catch (error) {
-            errors[key] = error.message;
+            // No newer beta is an expected state, not a failure.
+            if (error.code === staleBetaCode) notices[key] = error.message;
+            else errors[key] = error.message;
           }
         }
-        publish({ phase: "idle", available, errors, target: null });
+        publish({ phase: "idle", available, errors, notices, target: null });
         return snapshot();
       });
     },

@@ -35,8 +35,8 @@ export function initialNavigation(): NavigationState {
   }
 }
 
-export function isViewAvailable(view: AppView, production: boolean): boolean {
-  return view !== "donations" && (!production || view !== "presets")
+export function isViewAvailable(view: AppView): boolean {
+  return view !== "donations"
 }
 
 export function isSidebarCollapsed(
@@ -49,11 +49,9 @@ export function isSidebarCollapsed(
 
 export function navigationReducer(
   state: NavigationState,
-  action: NavigationAction,
-  production = false
+  action: NavigationAction
 ): NavigationState {
-  if (action.type === "navigate" && !isViewAvailable(action.view, production))
-    return state
+  if (action.type === "navigate" && !isViewAvailable(action.view)) return state
   if (action.type === "settings-section") {
     const id = action.tabId || state.activeId
     return {

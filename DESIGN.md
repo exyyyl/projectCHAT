@@ -108,7 +108,7 @@ Hidden viewer count uses the fixed word “Скрыт” in place of the value. 
 
 Moderation refusals never silently discard a deliberate gesture: self-timeout and self-ban attempts explain that the streamer cannot moderate themselves and give a 360ms damped horizontal shake. Reduced-motion users receive the same text without the shake. Incomplete horizontal swipes explain the remaining threshold; permission failures explain why no action occurred. Track active movement and release on the window so capture transfer or capture loss does not terminate a held swipe; true pointer cancellation and window blur reset quietly. Use the captured row width for release decisions. The six-dot grip has an accessible name and no hover tooltip.
 
-Packaged builds keep Templates visible only as a disabled “Скоро” entry in the sidebar and new-tab launcher. Block navigation to its workspace and hide or disable template-saving entry points; development retains access. Donations appears with “Скоро” in the sidebar and new-tab launcher and remains unavailable in both development and packaged builds. Moderation feedback temporarily replaces the contents of its existing row for 2.2 seconds, without adding height below the message, then restores the original contents.
+Templates is available in packaged and development builds, including its template-saving entry points. Donations appears with “Скоро” in the sidebar and new-tab launcher and remains unavailable in both development and packaged builds. Moderation feedback temporarily replaces the contents of its existing row for 2.2 seconds, without adding height below the message, then restores the original contents.
 
 
 ## Studio archive, notes and timer

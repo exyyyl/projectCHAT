@@ -15,6 +15,8 @@ type DesktopVersionState = {
   progress: number
   message: string
   errors: Partial<Record<"stable" | "beta", string>>
+  /** Expected, non-error states such as "no beta newer than stable yet". */
+  notices?: Partial<Record<"stable" | "beta", string>>
   slots: Record<
     "stable" | "beta",
     {

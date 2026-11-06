@@ -34,6 +34,34 @@ export function compareVersions(left, right) {
   }
   return 0;
 }
+export const staleBetaCode = "STALE_BETA";
+function staleBeta(stableVersion) {
+  const error = new Error(
+    `Новой беты пока нет: стабильная ${stableVersion} уже новее последней бета-версии.`,
+  );
+  error.code = staleBetaCode;
+  error.stableVersion = stableVersion;
+  return error;
+}
+/** Newest published stable version from a GitHub releases listing. */
+export function latestStableTag(releases) {
+  let latest = null;
+  for (const item of releases) {
+    const version =
+      typeof item?.tag_name === "string"
+        ? item.tag_name.replace(/^v/u, "")
+        : "";
+    if (
+      item.draft ||
+      item.prerelease ||
+      !validVersion(version) ||
+      versionChannel(version) !== "stable"
+    )
+      continue;
+    if (!latest || compareVersions(version, latest) > 0) latest = version;
+  }
+  return latest;
+}
 export function validateDescriptor(value, { channel, platform, arch }) {
   if (
     !value ||
@@ -142,7 +170,8 @@ export function createVersionSource(
       if (!["stable", "beta"].includes(channel))
         throw new Error("Неизвестная ветка.");
       const name = `${channel}-${platform}-${arch}.json`;
-      let manifestUrl;
+      let manifestUrl,
+        stableVersion = null;
       if (github) {
         const [_, owner, repo] = github;
         const releases = await json(
@@ -157,6 +186,7 @@ export function createVersionSource(
             item.prerelease === (channel === "beta") &&
             item.assets?.some((asset) => asset.name === name),
         );
+        if (channel === "beta") stableVersion = latestStableTag(releases);
         const asset = release?.assets.find((asset) => asset.name === name);
         if (!asset)
           throw new Error(
@@ -177,6 +207,28 @@ export function createVersionSource(
         platform,
         arch,
       });
+      if (channel === "beta" && !github)
+        stableVersion = await json(
+          new URL(
+            `stable-${platform}-${arch}.json`,
+            configured.href.replace(/\/?$/u, "/"),
+          ).href,
+        ).then(
+          (value) =>
+            validVersion(value?.version) &&
+            versionChannel(value.version) === "stable"
+              ? value.version
+              : null,
+          () => null,
+        );
+      // A beta that is not newer than the stable release is stale: once 0.8.3
+      // ships, 0.8.3-beta.3 must not be offered until 0.8.4-beta.1 exists.
+      if (
+        channel === "beta" &&
+        stableVersion &&
+        compareVersions(descriptor.version, stableVersion) <= 0
+      )
+        throw staleBeta(stableVersion);
       return {
         ...descriptor,
         url: new URL(descriptor.archive, manifestUrl).href,

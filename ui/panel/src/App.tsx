@@ -135,7 +135,7 @@ function AppContent() {
   const { enabled: demoEnabled } = useDemoMode()
   const [navigation, dispatch] = useReducer(
     (state: NavigationState, action: NavigationAction) =>
-      navigationReducer(state, action, import.meta.env.PROD),
+      navigationReducer(state, action),
     undefined,
     initialNavigation
   )
@@ -614,9 +614,7 @@ function TabWorkspace({
             template={loadedWheelTemplate}
             onSpinningChange={setWheelSpinning}
             onSaveTemplate={
-              isViewAvailable("presets", import.meta.env.PROD) && connected
-                ? saveTemplate
-                : undefined
+              isViewAvailable("presets") && connected ? saveTemplate : undefined
             }
           />
         </div>
@@ -633,7 +631,7 @@ function TabWorkspace({
                     key={item.id}
                     type="button"
                     className="new-tab-tile"
-                    disabled={!isViewAvailable(item.id, import.meta.env.PROD)}
+                    disabled={!isViewAvailable(item.id)}
                     data-wide={item.wide || undefined}
                     data-accent={item.accent || undefined}
                     onClick={() => navigate(item.id)}
@@ -644,7 +642,7 @@ function TabWorkspace({
                     <span className="new-tab-tile-copy">
                       <span className="new-tab-tile-title">
                         {item.label}
-                        {!isViewAvailable(item.id, import.meta.env.PROD) && (
+                        {!isViewAvailable(item.id) && (
                           <span className="section-soon">Скоро</span>
                         )}
                       </span>
@@ -677,8 +675,7 @@ function TabWorkspace({
             onVote={(option) => void controller.vote(option)}
             onSimulate={controller.simulate}
             canCreatePreset={
-              isViewAvailable("presets", import.meta.env.PROD) &&
-              state.presets.length < 30
+              isViewAvailable("presets") && state.presets.length < 30
             }
             onSaveAsPreset={(presetDraft) => {
               setPresetDialog({
@@ -693,7 +690,7 @@ function TabWorkspace({
         </div>
       )}
 
-      {isViewAvailable("presets", import.meta.env.PROD) && (
+      {isViewAvailable("presets") && (
         <div
           className={view === "presets" ? "h-full" : "hidden"}
           aria-hidden={view === "presets" ? undefined : true}
@@ -782,9 +779,7 @@ function TabWorkspace({
             key={`contest-${templateGeneration.contest}`}
             template={loadedContestTemplate}
             onSaveTemplate={
-              isViewAvailable("presets", import.meta.env.PROD) && connected
-                ? saveTemplate
-                : undefined
+              isViewAvailable("presets") && connected ? saveTemplate : undefined
             }
             twitchConnected={twitch.phase === "connected"}
             controller={contestController}
@@ -799,9 +794,7 @@ function TabWorkspace({
             initialKind={widgetKind}
             templates={associatedTemplates}
             onSaveTemplate={
-              isViewAvailable("presets", import.meta.env.PROD) && connected
-                ? saveTemplate
-                : undefined
+              isViewAvailable("presets") && connected ? saveTemplate : undefined
             }
             contest={contestController.contest}
             poll={poll}

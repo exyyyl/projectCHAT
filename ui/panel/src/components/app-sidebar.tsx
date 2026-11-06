@@ -165,7 +165,7 @@ function SidebarNavButton({
   onClick: () => void
 }) {
   const Icon = item.icon
-  const available = isViewAvailable(item.id, import.meta.env.PROD)
+  const available = isViewAvailable(item.id)
   return (
     <button
       type="button"

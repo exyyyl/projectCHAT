@@ -412,6 +412,59 @@ test("beta source uses published prereleases and never selects drafts or a diffe
   assert.equal((await source.describe("beta")).version, "1.2.0-beta.1");
 });
 
+test("beta is hidden as stale once a stable release is not older than it", async () => {
+  const source = (betaVersion) => {
+    const item = runtime(betaVersion, "beta");
+    const url = `https://github.com/owner/Cue/releases/download/v${betaVersion}/beta-win32-x64.json`;
+    return createVersionSource(
+      "https://github.com/owner/Cue/releases/latest/download",
+      {
+        platform: "win32",
+        arch: "x64",
+        fetcher: async (input) => {
+          if (input.startsWith("https://api.github.com/"))
+            return new Response(
+              JSON.stringify([
+                { draft: true, prerelease: false, tag_name: "v9.9.9", assets: [] },
+                { draft: false, prerelease: false, tag_name: "v0.8.3", assets: [] },
+                { draft: false, prerelease: false, tag_name: "v0.8.2", assets: [] },
+                {
+                  draft: false,
+                  prerelease: true,
+                  tag_name: `v${betaVersion}`,
+                  assets: [
+                    { name: "beta-win32-x64.json", browser_download_url: url },
+                  ],
+                },
+              ]),
+            );
+          return new Response(JSON.stringify(item.descriptor));
+        },
+      },
+    );
+  };
+  await assert.rejects(source("0.8.3-beta.3").describe("beta"), (error) => {
+    assert.equal(error.code, "STALE_BETA");
+    assert.equal(error.stableVersion, "0.8.3");
+    return true;
+  });
+  assert.equal((await source("0.8.4-beta.1").describe("beta")).version, "0.8.4-beta.1");
+});
+
+test("a stale beta becomes a notice, not an error, when checking versions", async () => {
+  const f = await fixture();
+  f.artifacts.beta = runtime("1.1.0-beta.4", "beta");
+  const manager = createVersionManager(f.options);
+  await manager.initialize();
+  await manager.markHealthy();
+  await manager.check();
+  const snapshot = manager.snapshot();
+  assert.equal(snapshot.slots.beta.availableVersion, null);
+  assert.equal(snapshot.errors.beta, undefined);
+  assert.match(snapshot.notices.beta, /стабильная 1\.1\.0/u);
+  assert.equal(snapshot.slots.stable.availableVersion, "1.1.0");
+});
+
 test("release packaging writes the runtime checksum manifest consumed by the client", async () => {
   const { writeRuntimeManifest } =
     await import("../scripts/write-runtime-manifest.mjs");

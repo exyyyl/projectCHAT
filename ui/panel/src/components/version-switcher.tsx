@@ -79,7 +79,8 @@ export function VersionSwitcher({ children }: { children?: ReactNode }) {
     slot?.installedVersion ||
     (running ? state?.currentVersion : null) ||
     slot?.availableVersion
-  const needsDownload = !slot?.installedVersion || newer
+  const notice = state?.notices?.[branch] || ""
+  const needsDownload = !notice && (!slot?.installedVersion || newer)
   const canRestart = Boolean(slot?.installedVersion && !slot.current)
   const subtitle = !state?.supported
     ? bridge
@@ -140,7 +141,9 @@ export function VersionSwitcher({ children }: { children?: ReactNode }) {
             {version || "—"}
           </div>
           <p role="status" className="mt-1 text-xs text-muted-foreground">
-            {subtitle}
+            {notice && !downloading && !slot?.installedVersion
+              ? "Ждём новую бету"
+              : subtitle}
           </p>
         </div>
         {state?.supported &&
@@ -216,6 +219,9 @@ export function VersionSwitcher({ children }: { children?: ReactNode }) {
           children
         )}
       </div>
+      {notice && !failure && !downloading && (
+        <p className="text-xs text-muted-foreground">{notice}</p>
+      )}
       {failure && !downloading && (
         <ErrorNotice error={failure} context="versions" />
       )}

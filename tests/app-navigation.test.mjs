@@ -48,14 +48,13 @@ test('late navigation targets its originating tab rather than the currently sele
   assert.deepEqual(state.tabs[0].history, ['home', 'presets']);
 });
 
-test('packaged navigation keeps templates unavailable while development retains access', () => {
-  const start = initialNavigation();
-  assert.equal(reduce(start,{type:'navigate',view:'presets'},true),start);
-  assert.equal(reduce(start,{type:'navigate',view:'presets'},false).tabs[0].history.at(-1),'presets');
-  for (const view of ['home','polls','widget','contests','decision-wheel','settings'])
-    assert.equal(reduce(start,{type:'navigate',view},true).tabs[0].history.at(-1),view);
-  const second = reduce(start,{type:'create',id:'second'},true);
-  assert.equal(reduce(second,{type:'navigate',tabId:'initial',view:'presets'},true),second);
+test('templates are available in packaged and development builds', () => {
+  for (const production of [false, true]) {
+    const start = initialNavigation();
+    assert.equal(reduce(start,{type:'navigate',view:'presets'},production).tabs[0].history.at(-1),'presets');
+    for (const view of ['home','polls','widget','contests','decision-wheel','settings'])
+      assert.equal(reduce(start,{type:'navigate',view},production).tabs[0].history.at(-1),view);
+  }
 });
 
 test('settings sections switch directly without adding page history and remain local to their tab', () => {
